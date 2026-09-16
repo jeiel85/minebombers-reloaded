@@ -83,6 +83,7 @@ export type GameEvent =
     }
   | { kind: 'tile_changed'; index: number; tile: TileKind }
   | { kind: 'treasure_collected'; playerId: string; entityId: string; value: number }
+  | { kind: 'pickup_collected'; playerId: string; entityId: string; definitionId: string }
   | { kind: 'damage'; playerId: string; sourceId: string; amount: number; hpAfter: number }
   | { kind: 'player_eliminated'; playerId: string; killerPlayerId: string | null }
   | { kind: 'cash_changed'; playerId: string; cash: number; reason: string }

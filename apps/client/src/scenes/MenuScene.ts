@@ -60,9 +60,24 @@ export class MenuScene extends Phaser.Scene {
 
     // 1. Play Solo / Practice (Instant Play vs Bots)
     this.createButton(width / 2, currentY, '⚔️ PLAY SOLO PRACTICE (VS BOTS)', 0x27ae60, () => {
-      this.scene.start('game', {
+      this.scene.start('shop', {
         mode: 'solo',
         displayName: this.displayName,
+        cash: 500,
+        inventory: {
+          selectedSlot: 0,
+          items: { small_charge: 2 },
+          upgrades: { pickaxe_1: 1 },
+        },
+        onSoloShopComplete: (cash: number, inventory: { selectedSlot: number; items: Record<string, number>; upgrades: Record<string, number> }) => {
+          this.scene.start('game', {
+            mode: 'solo',
+            displayName: this.displayName,
+            soloRoundIndex: 1,
+            soloCash: cash,
+            soloInventory: inventory,
+          });
+        },
       });
     });
 

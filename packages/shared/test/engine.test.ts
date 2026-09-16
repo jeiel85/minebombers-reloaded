@@ -70,4 +70,70 @@ describe('WorldSimulation Headless Engine', () => {
     // Phase transitioned to round_result
     expect(sim.phase).toBe('round_result');
   });
+
+  it('performs pickaxe melee attack when player has 0 bombs', () => {
+    const seed = 99;
+    const map = generateClassicMine(seed, 2);
+    const p1Inv = createDefaultInventory();
+    p1Inv.items['small_charge'] = 0; // 0 bombs!
+
+    const players = [
+      { id: 'p1', name: 'Alice', cash: 500, inventory: p1Inv },
+      { id: 'p2', name: 'Bob', cash: 500, inventory: createDefaultInventory() },
+    ];
+
+    const sim = new WorldSimulation(seed, map, players, 1, 60_000);
+    // Advance past invulnerability
+    for (let i = 0; i < 30; i++) sim.step(50);
+
+    const p1 = sim.players[0]!;
+    const p2 = sim.players[1]!;
+    p1.x = 5 * WORLD_UNITS_PER_TILE + 512;
+    p1.y = 5 * WORLD_UNITS_PER_TILE + 512;
+    p2.x = 5 * WORLD_UNITS_PER_TILE + 700; // adjacent close melee range
+    p2.y = 5 * WORLD_UNITS_PER_TILE + 512;
+    p2.hp = 25;
+
+    // p1 attempts to place_bomb (with 0 bombs, becomes pickaxe melee swing)
+    sim.queueAction('p1', 'place_bomb', 0, 1);
+    const events = sim.step(50);
+
+    // p2 takes 25 pickaxe damage and gets eliminated
+    expect(p2.hp).toBe(0);
+    expect(p2.alive).toBe(false);
+    expect(events.some((e) => e.kind === 'damage' && e.sourceId === 'pickaxe')).toBe(true);
+    expect(events.some((e) => e.kind === 'player_eliminated')).toBe(true);
+    expect(p1.cash).toBe(500 + KILL_BOUNTY + SURVIVOR_BONUS);
+  });
+
+  it('collects ammo and med kit pickups correctly', () => {
+    const seed = 123;
+    const map = generateClassicMine(seed, 2);
+    const p1Inv = createDefaultInventory();
+    p1Inv.items['small_charge'] = 0;
+
+    const players = [
+      { id: 'p1', name: 'Alice', cash: 500, inventory: p1Inv },
+    ];
+
+    const sim = new WorldSimulation(seed, map, players, 1, 60_000);
+    const p1 = sim.players[0]!;
+    p1.x = 4 * WORLD_UNITS_PER_TILE + 512;
+    p1.y = 4 * WORLD_UNITS_PER_TILE + 512;
+
+    // Add an ammo pickup at (4,4)
+    sim.pickups.push({
+      id: 'pickup_ammo_1',
+      tileX: 4,
+      tileY: 4,
+      definitionId: 'ammo',
+      collected: false,
+    });
+
+    const events = sim.step(50);
+    expect(p1.inventory.items['small_charge']).toBe(2);
+    expect(sim.pickups[0]!.collected).toBe(true);
+    expect(events.some((e) => e.kind === 'pickup_collected' && e.definitionId === 'ammo')).toBe(true);
+  });
 });
+

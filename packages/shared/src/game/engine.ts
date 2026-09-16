@@ -2,6 +2,7 @@ import {
   BASE_SOIL_DURABILITY,
   DEFAULT_ROUND_DURATION_MS,
   INPUT_STALE_MS,
+  KILL_BOUNTY,
   MAP_HEIGHT,
   MAP_WIDTH,
   MAX_HP,
@@ -19,6 +20,7 @@ import type {
   SimExplosive,
   SimMatchStandingsEntry,
   SimMine,
+  SimPickupItem,
   SimPlayer,
   SimRoundStandingsEntry,
   SimTileState,
@@ -56,6 +58,7 @@ export class WorldSimulation {
   public explosives: SimExplosive[] = [];
   public mines: SimMine[] = [];
   public treasures: SimTreasureEntity[] = [];
+  public pickups: SimPickupItem[] = [];
 
   public pendingActions: ActionQueueItem[] = [];
   public recentEvents: GameEvent[] = [];
@@ -211,6 +214,21 @@ export class WorldSimulation {
             index: digRes.tileIndex,
             tile: 'floor',
           });
+
+          // If no treasure on this tile, 20% chance to drop ammo or med kit
+          if (!digRes.revealedTreasure) {
+            const rand = Math.random();
+            if (rand < 0.20) {
+              const defId: 'ammo' | 'med_kit' = rand < 0.13 ? 'ammo' : 'med_kit';
+              this.pickups.push({
+                id: `pickup_${digRes.tileIndex}`,
+                tileX: digRes.tileIndex % MAP_WIDTH,
+                tileY: Math.floor(digRes.tileIndex / MAP_WIDTH),
+                definitionId: defId,
+                collected: false,
+              });
+            }
+          }
         }
       }
     }
@@ -345,6 +363,36 @@ export class WorldSimulation {
             cash: player.cash,
             reason: 'treasure',
           });
+          break;
+        }
+      }
+    }
+
+    for (const pickup of this.pickups) {
+      if (pickup.collected) continue;
+      const tBox = getTileAABB(pickup.tileX, pickup.tileY);
+      for (const player of this.players) {
+        if (!player.alive) continue;
+        const pBox = getPlayerAABB(player.x, player.y);
+        if (aabbIntersects(pBox, tBox)) {
+          pickup.collected = true;
+          if (pickup.definitionId === 'ammo') {
+            player.inventory.items['small_charge'] = (player.inventory.items['small_charge'] ?? 0) + 2;
+            stepEvents.push({
+              kind: 'pickup_collected',
+              playerId: player.id,
+              entityId: pickup.id,
+              definitionId: 'ammo',
+            });
+          } else if (pickup.definitionId === 'med_kit') {
+            player.inventory.items['med_kit'] = (player.inventory.items['med_kit'] ?? 0) + 1;
+            stepEvents.push({
+              kind: 'pickup_collected',
+              playerId: player.id,
+              entityId: pickup.id,
+              definitionId: 'med_kit',
+            });
+          }
           break;
         }
       }
@@ -490,6 +538,50 @@ export class WorldSimulation {
         tileY,
         explodeAt: armedAt,
       });
+    } else {
+      // Pickaxe Melee Attack when out of explosives or in close melee range
+      let target: SimPlayer | null = null;
+      let minDistance = 1024; // 1 tile range
+
+      for (const opp of this.players) {
+        if (opp.id === player.id || !opp.alive) continue;
+        const dist = Math.hypot(opp.x - player.x, opp.y - player.y);
+        if (dist <= minDistance) {
+          minDistance = dist;
+          target = opp;
+        }
+      }
+
+      if (target) {
+        const damage = 25;
+        target.hp = Math.max(0, target.hp - damage);
+        const eliminated = target.hp <= 0;
+        if (eliminated) target.alive = false;
+
+        stepEvents.push({
+          kind: 'damage',
+          playerId: target.id,
+          sourceId: 'pickaxe',
+          amount: damage,
+          hpAfter: target.hp,
+        });
+
+        if (eliminated) {
+          player.cash += KILL_BOUNTY;
+          player.stats.kills += 1;
+          stepEvents.push({
+            kind: 'player_eliminated',
+            playerId: target.id,
+            killerPlayerId: player.id,
+          });
+          stepEvents.push({
+            kind: 'cash_changed',
+            playerId: player.id,
+            cash: player.cash,
+            reason: 'bounty',
+          });
+        }
+      }
     }
   }
 
@@ -540,6 +632,15 @@ export class WorldSimulation {
           tileY: t.tileY,
           value: t.value,
           rarity: t.rarity,
+        })),
+      ...this.pickups
+        .filter((p) => !p.collected)
+        .map((p): EntityView => ({
+          kind: 'pickup',
+          id: p.id,
+          tileX: p.tileX,
+          tileY: p.tileY,
+          definitionId: p.definitionId,
         })),
     ];
 

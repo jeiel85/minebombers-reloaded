@@ -64,6 +64,9 @@ export class GameScene extends Phaser.Scene {
   private botAiTimer: ReturnType<typeof setInterval> | null = null;
   private soloRoundIndex = 1;
   private totalRounds = 5;
+  private botStates = new Map<string, { dx: -1 | 0 | 1; dy: -1 | 0 | 1; holdMs: number; retreatMs: number }>();
+  private isPaused = false;
+  private pauseContainer: Phaser.GameObjects.Container | null = null;
 
   // Tiles State
   private currentTiles: SimTileState[] = [];
@@ -79,6 +82,8 @@ export class GameScene extends Phaser.Scene {
     this.socket = data.socket;
     this.myPlayerId = data.myPlayerId ?? 'player_1';
     this.soloRoundIndex = data.soloRoundIndex ?? 1;
+    this.isPaused = false;
+    this.botStates.clear();
   }
 
   create(): void {
@@ -113,7 +118,7 @@ export class GameScene extends Phaser.Scene {
     this.hpText = this.add.text(160, 12, '100/100', { fontFamily: 'monospace', fontSize: '14px', color: '#ffffff' }).setDepth(501);
 
     // Cash
-    this.cashText = this.add.text(260, 12, 'CASH: $500', {
+    this.cashText = this.add.text(250, 12, 'CASH: $500', {
       fontFamily: 'monospace',
       fontSize: '16px',
       fontStyle: 'bold',
@@ -121,14 +126,14 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(501);
 
     // Ammo / Equipped
-    this.ammoText = this.add.text(420, 12, '💣 Small Charge: 2', {
+    this.ammoText = this.add.text(390, 12, '💣 Small Charge: 2', {
       fontFamily: 'monospace',
       fontSize: '15px',
       color: '#f1c40f',
     }).setDepth(501);
 
     // Timer
-    this.timerText = this.add.text(700, 12, 'TIME: 05:00', {
+    this.timerText = this.add.text(640, 12, 'TIME: 05:00', {
       fontFamily: 'monospace',
       fontSize: '16px',
       fontStyle: 'bold',
@@ -136,11 +141,95 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(501);
 
     // Alive
-    this.aliveText = this.add.text(860, 12, 'MINERS: 4/4', {
+    this.aliveText = this.add.text(780, 12, 'MINERS: 4/4', {
       fontFamily: 'monospace',
       fontSize: '15px',
       color: '#3498db',
     }).setDepth(501);
+
+    // Pause / Menu button
+    const menuBtn = this.add.text(arenaWidth - 12, 10, '⚙️ MENU', {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+      backgroundColor: '#34495e',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(1, 0).setDepth(501).setInteractive({ useHandCursor: true });
+
+    menuBtn.on('pointerdown', () => this.togglePauseMenu());
+  }
+
+  private togglePauseMenu(): void {
+    if (this.pauseContainer) {
+      this.pauseContainer.destroy();
+      this.pauseContainer = null;
+      this.isPaused = false;
+      return;
+    }
+
+    this.isPaused = true;
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+
+    const bg = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.75).setInteractive();
+    const panel = this.add.rectangle(width / 2, height / 2, 360, 260, 0x1f242d, 0.95);
+    panel.setStrokeStyle(2, 0xe67e22);
+
+    const title = this.add.text(width / 2, height / 2 - 80, 'GAME PAUSED', {
+      fontFamily: 'monospace',
+      fontSize: '22px',
+      fontStyle: 'bold',
+      color: '#f39c12',
+    }).setOrigin(0.5);
+
+    const resumeBtn = this.add.text(width / 2, height / 2 - 25, '▶️ RESUME', {
+      fontFamily: 'monospace',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+      backgroundColor: '#27ae60',
+      padding: { x: 20, y: 8 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    resumeBtn.on('pointerdown', () => this.togglePauseMenu());
+
+    const skipBtn = this.add.text(width / 2, height / 2 + 30, '⚡ SKIP ROUND (SURRENDER)', {
+      fontFamily: 'monospace',
+      fontSize: '15px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+      backgroundColor: '#d35400',
+      padding: { x: 16, y: 8 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    skipBtn.on('pointerdown', () => {
+      this.togglePauseMenu();
+      if (this.dataPayload.mode === 'solo' && this.soloSim) {
+        const myP = this.soloSim.players.find((p) => p.id === this.myPlayerId);
+        if (myP) {
+          myP.hp = 0;
+          myP.alive = false;
+        }
+        this.soloSim.phase = 'round_result';
+        this.handleSoloRoundEnd();
+      }
+    });
+
+    const quitBtn = this.add.text(width / 2, height / 2 + 85, '🚪 QUIT TO MAIN MENU', {
+      fontFamily: 'monospace',
+      fontSize: '15px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+      backgroundColor: '#c0392b',
+      padding: { x: 16, y: 8 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    quitBtn.on('pointerdown', () => {
+      this.togglePauseMenu();
+      if (this.soloTimer) clearInterval(this.soloTimer);
+      if (this.botAiTimer) clearInterval(this.botAiTimer);
+      this.scene.start('menu');
+    });
+
+    this.pauseContainer = this.add.container(0, 0, [bg, panel, title, resumeBtn, skipBtn, quitBtn]).setDepth(1000);
   }
 
   // --- SOLO PRACTICE MODE ---
@@ -170,7 +259,7 @@ export class GameScene extends Phaser.Scene {
 
     // 20 Hz Simulation Step
     this.soloTimer = setInterval(() => {
-      if (!this.soloSim) return;
+      if (!this.soloSim || this.isPaused) return;
       const events = this.soloSim.step(50);
       this.handleGameEvents(events);
 
@@ -180,14 +269,14 @@ export class GameScene extends Phaser.Scene {
       }
     }, 50);
 
-    // Bot AI Decision Loop (~400ms)
+    // Bot AI Decision Loop (~100ms)
     this.botAiTimer = setInterval(() => {
-      this.runBotAI();
-    }, 400);
+      this.runBotAI(100);
+    }, 100);
   }
 
-  private runBotAI(): void {
-    if (!this.soloSim || this.soloSim.phase !== 'playing') return;
+  private runBotAI(stepMs: number): void {
+    if (!this.soloSim || this.soloSim.phase !== 'playing' || this.isPaused) return;
 
     const directions: Array<[-1 | 0 | 1, -1 | 0 | 1]> = [
       [0, -1], [0, 1], [-1, 0], [1, 0],
@@ -197,11 +286,131 @@ export class GameScene extends Phaser.Scene {
       const bot = this.soloSim.players[i]!;
       if (!bot.alive) continue;
 
-      // Random cardinal movement toward treasure or soil
-      const dir = directions[Math.floor(Math.random() * directions.length)]!;
-      const shouldDropBomb = Math.random() < 0.05; // 5% chance to drop bomb
+      let state = this.botStates.get(bot.id);
+      if (!state) {
+        state = { dx: 0, dy: 1, holdMs: 1500, retreatMs: 0 };
+        this.botStates.set(bot.id, state);
+      }
 
-      this.soloSim.setPlayerInput(bot.id, dir[0], dir[1], ++bot.input.seq, Date.now(), this.soloSim.simTime, shouldDropBomb);
+      const botTileX = Math.floor(bot.x / WORLD_UNITS_PER_TILE);
+      const botTileY = Math.floor(bot.y / WORLD_UNITS_PER_TILE);
+
+      // 1. Retreat from nearby bombs if any
+      if (state.retreatMs > 0) {
+        state.retreatMs -= stepMs;
+      } else {
+        const nearBomb = this.soloSim.explosives.find(
+          (e) => Math.abs(e.tileX - botTileX) + Math.abs(e.tileY - botTileY) <= 2,
+        );
+        if (nearBomb) {
+          const fdx: -1 | 0 | 1 = botTileX < nearBomb.tileX ? -1 : botTileX > nearBomb.tileX ? 1 : 0;
+          const fdy: -1 | 0 | 1 = botTileY < nearBomb.tileY ? -1 : botTileY > nearBomb.tileY ? 1 : 0;
+          state.dx = fdx !== 0 ? fdx : (Math.random() < 0.5 ? -1 : 1);
+          state.dy = fdy !== 0 && fdx === 0 ? fdy : 0;
+          state.retreatMs = 1800;
+          state.holdMs = 1800;
+        }
+      }
+
+      // 2. Opponent proximity check (Melee / Bomb)
+      let primaryAction = false;
+      let secondaryAction = false;
+      let nearOpponent = false;
+
+      for (const opp of this.soloSim.players) {
+        if (opp.id === bot.id || !opp.alive) continue;
+        const dist = Math.hypot(opp.x - bot.x, opp.y - bot.y);
+        if (dist <= 1200) {
+          nearOpponent = true;
+          const ammoCount = bot.inventory.items['small_charge'] ?? 0;
+          if (ammoCount > 0 && Math.random() < 0.25) {
+            primaryAction = true;
+            // Retreat after planting bomb
+            state.dx = bot.x < opp.x ? -1 : 1;
+            state.dy = 0;
+            state.retreatMs = 2000;
+            state.holdMs = 2000;
+          } else {
+            // Out of ammo or close quarters -> melee pickaxe swing!
+            primaryAction = true;
+            const diffX = opp.x - bot.x;
+            const diffY = opp.y - bot.y;
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+              state.dx = diffX > 0 ? 1 : -1;
+              state.dy = 0;
+            } else {
+              state.dx = 0;
+              state.dy = diffY > 0 ? 1 : -1;
+            }
+          }
+          break;
+        }
+      }
+
+      // 3. Digging and Path Navigation
+      if (state.retreatMs <= 0 && !nearOpponent) {
+        state.holdMs -= stepMs;
+        if (state.holdMs <= 0) {
+          // Check for nearest uncollected treasure or pickup within 8 tiles
+          let target: { tileX: number; tileY: number } | null = null;
+          let minD = 999;
+
+          for (const t of this.soloSim.treasures) {
+            if (t.collected) continue;
+            const d = Math.abs(t.tileX - botTileX) + Math.abs(t.tileY - botTileY);
+            if (d < minD && d <= 8) {
+              minD = d;
+              target = t;
+            }
+          }
+
+          if (!target) {
+            for (const p of this.soloSim.pickups) {
+              if (p.collected) continue;
+              const d = Math.abs(p.tileX - botTileX) + Math.abs(p.tileY - botTileY);
+              if (d < minD && d <= 8) {
+                minD = d;
+                target = p;
+              }
+            }
+          }
+
+          if (target) {
+            const diffX = target.tileX - botTileX;
+            const diffY = target.tileY - botTileY;
+            if (Math.abs(diffX) > Math.abs(diffY) && diffX !== 0) {
+              state.dx = diffX > 0 ? 1 : -1;
+              state.dy = 0;
+            } else if (diffY !== 0) {
+              state.dx = 0;
+              state.dy = diffY > 0 ? 1 : -1;
+            }
+          } else {
+            // Pick a random cardinal direction
+            const dir = directions[Math.floor(Math.random() * directions.length)]!;
+            state.dx = dir[0];
+            state.dy = dir[1];
+          }
+
+          state.holdMs = 1500; // Hold for 1.5s to ensure soil digging completes
+        }
+      }
+
+      // 4. Med Kit use if hurt
+      if (bot.hp <= 50 && (bot.inventory.items['med_kit'] ?? 0) > 0) {
+        secondaryAction = true;
+      }
+
+      this.soloSim.setPlayerInput(
+        bot.id,
+        state.dx,
+        state.dy,
+        ++bot.input.seq,
+        Date.now(),
+        this.soloSim.simTime,
+        primaryAction,
+        secondaryAction,
+      );
     }
   }
 
@@ -358,7 +567,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private syncEntities(entities: Array<{ id: string; kind: string; tileX: number; tileY: number }>): void {
+  private syncEntities(entities: Array<{ id: string; kind: string; tileX: number; tileY: number; rarity?: string; definitionId?: string }>): void {
     const currentEntityIds = new Set(entities.map((e) => e.id));
 
     // Remove obsolete
@@ -380,11 +589,22 @@ export class GameScene extends Phaser.Scene {
           sprite = this.add.sprite(px, py, 'bombs', 0);
           sprite.play('bomb_tick');
         } else if (entity.kind === 'treasure') {
-          sprite = this.add.sprite(px, py, 'pickups', 0);
+          const frame = entity.rarity === 'rare' ? 1 : 0;
+          sprite = this.add.sprite(px, py, 'pickups', frame);
           this.tweens.add({
             targets: sprite,
             y: py - 4,
             duration: 500,
+            yoyo: true,
+            repeat: -1,
+          });
+        } else if (entity.kind === 'pickup') {
+          const frame = entity.definitionId === 'med_kit' ? 3 : 2;
+          sprite = this.add.sprite(px, py, 'pickups', frame);
+          this.tweens.add({
+            targets: sprite,
+            y: py - 3,
+            duration: 400,
             yoyo: true,
             repeat: -1,
           });
@@ -448,6 +668,25 @@ export class GameScene extends Phaser.Scene {
             onComplete: () => txt.destroy(),
           });
         }
+      } else if (ev.kind === 'pickup_collected') {
+        const p = this.playerSprites.get(ev.playerId);
+        if (p) {
+          const label = ev.definitionId === 'ammo' ? '+2 Bombs!' : '+1 Med Kit!';
+          const color = ev.definitionId === 'ammo' ? '#f1c40f' : '#2ecc71';
+          const txt = this.add.text(p.x, p.y - 20, label, {
+            fontFamily: 'monospace',
+            fontSize: '14px',
+            fontStyle: 'bold',
+            color,
+          }).setOrigin(0.5);
+          this.tweens.add({
+            targets: txt,
+            y: txt.y - 24,
+            alpha: 0,
+            duration: 800,
+            onComplete: () => txt.destroy(),
+          });
+        }
       }
     }
   }
@@ -459,7 +698,7 @@ export class GameScene extends Phaser.Scene {
       // Direct local simulation input
       const myPlayer = this.soloSim.players.find((p) => p.id === this.myPlayerId);
       if (myPlayer && myPlayer.alive) {
-        if (shouldTransmit) {
+        if (shouldTransmit && !this.isPaused) {
           this.soloSim.setPlayerInput(
             this.myPlayerId,
             state.dx,
@@ -493,6 +732,22 @@ export class GameScene extends Phaser.Scene {
       // Sync Entities for Solo
       const snap = this.soloSim.getSnapshot(this.myPlayerId);
       this.syncEntities(snap.entities);
+
+      // Apply changed tiles (cracking / opening) in Solo
+      for (const delta of snap.changedTiles) {
+        const sprite = this.tileSprites.get(delta.index);
+        if (sprite) {
+          if (delta.kind === 'floor') {
+            sprite.destroy();
+            this.tileSprites.delete(delta.index);
+          } else if (delta.digProgressPermille && delta.digProgressPermille > 150) {
+            sprite.setFrame(3); // cracked soil
+          }
+        }
+        if (this.currentTiles[delta.index]) {
+          this.currentTiles[delta.index]!.kind = delta.kind;
+        }
+      }
 
       const aliveCount = this.soloSim.players.filter((p) => p.alive).length;
       this.aliveText.setText(`MINERS: ${aliveCount}/${this.soloSim.players.length}`);
@@ -568,6 +823,10 @@ export class GameScene extends Phaser.Scene {
   shutdown(): void {
     if (this.soloTimer) clearInterval(this.soloTimer);
     if (this.botAiTimer) clearInterval(this.botAiTimer);
+    if (this.pauseContainer) {
+      this.pauseContainer.destroy();
+      this.pauseContainer = null;
+    }
     this.debugOverlay.destroy();
   }
 }

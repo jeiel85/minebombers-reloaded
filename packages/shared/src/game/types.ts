@@ -67,6 +67,14 @@ export interface SimTreasureEntity {
   collected: boolean;
 }
 
+export interface SimPickupItem {
+  id: string;
+  tileX: number;
+  tileY: number;
+  definitionId: 'ammo' | 'med_kit';
+  collected: boolean;
+}
+
 export interface SimTileState {
   kind: TileKind;
   durability: number; // remaining dig work (0 to BASE_SOIL_DURABILITY)
