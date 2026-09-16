@@ -1,0 +1,335 @@
+{
+  "name": "minebombers-web-multiplayer-design",
+  "revision": "v2-implementation-readiness-audit",
+  "generated": "2026-09-16",
+  "architecture": "GitHub Pages + Cloudflare Worker + Durable Objects",
+  "graphics": "project-original 32x32 placeholder pipeline; no original Mine Bombers asset reuse",
+  "fileCount": 65,
+  "files": [
+    {
+      "path": "CHECKLIST.md",
+      "bytes": 2058,
+      "sha256": "84db54b84c1b7dd86af4e368380c085abc71c71f2f1f8d8943fdf22c1348ec95"
+    },
+    {
+      "path": "IMPLEMENTATION_HANDOFF.md",
+      "bytes": 3043,
+      "sha256": "1053fd724726ed9e0654699383b12016815feea86f7fe4d49b27e510970856ec"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6068,
+      "sha256": "6550800798b0957e2f491e41a017357c61e08a0193519c74bb7c038d042259c6"
+    },
+    {
+      "path": "assets/LICENSE-NOTES.md",
+      "bytes": 523,
+      "sha256": "8c7ebd62e6c2b615519d333cfea0e170a9c579e2e2bcb2434f0dee93843e90bd"
+    },
+    {
+      "path": "assets/README.md",
+      "bytes": 567,
+      "sha256": "7cf267392a00f6adf9fd7c8199f9d6d97ad742427adf8c4b3a650762c9592121"
+    },
+    {
+      "path": "assets/placeholders/bombs.png",
+      "bytes": 544,
+      "sha256": "ec3b46cf940fbc6b583879c2ba5b9cf374a98a93d69a0ce904c0db4357528285"
+    },
+    {
+      "path": "assets/placeholders/explosions.png",
+      "bytes": 1402,
+      "sha256": "857b5934faaf4eb52ccdf92647841fc05d9b08c17f24c7a5fc11d9536e5dbd95"
+    },
+    {
+      "path": "assets/placeholders/miner.png",
+      "bytes": 765,
+      "sha256": "dc404c027dea981602758da4171d1610fb0099c75cb859b01e8e1d8dfcefbefc"
+    },
+    {
+      "path": "assets/placeholders/pickups.png",
+      "bytes": 1173,
+      "sha256": "5d658f119544748be2d0eb1463d65ca1f7cdf94ab2f0ff8760f3587ab0654fd1"
+    },
+    {
+      "path": "assets/placeholders/tiles_world.png",
+      "bytes": 1067,
+      "sha256": "e0c46ce2666337538b9a776d1008525472d586f5c1d80901aea6dfea1e453f2a"
+    },
+    {
+      "path": "assets/placeholders/ui_icons.png",
+      "bytes": 1094,
+      "sha256": "b5ba687eeff73a409d5cf9afd53b9c5c53c3c13a66f135499b145ab9d5367169"
+    },
+    {
+      "path": "assets/spec/asset-manifest.json",
+      "bytes": 2257,
+      "sha256": "bec4be4ac3bcd1271baca08f95a58aa711830beb04075fa07c6c2541a1ab06c9"
+    },
+    {
+      "path": "docs/01-architecture.md",
+      "bytes": 4007,
+      "sha256": "32baff2931601381d18b4832cb06d04f12c931c901123196af70d371d6234277"
+    },
+    {
+      "path": "docs/02-gameplay-spec.md",
+      "bytes": 3124,
+      "sha256": "f1209d939019e48c2340d9cd37fcb27f7daf64964ba67e4f581222c8c8dbdf01"
+    },
+    {
+      "path": "docs/03-network-protocol.md",
+      "bytes": 4471,
+      "sha256": "f39ab342dab86f4da111503feb12580e525dff63d7c024c41a2307aa42b4785d"
+    },
+    {
+      "path": "docs/04-authoritative-simulation.md",
+      "bytes": 3113,
+      "sha256": "f9bb03b7fd0338fae939dd0ef1d8fef3686517e720938591153687bc4da186e5"
+    },
+    {
+      "path": "docs/05-room-reconnect.md",
+      "bytes": 1882,
+      "sha256": "787be3e0c43255ca228a789f9713fecb3a5dd3692c37d6f54ae9831430cb8205"
+    },
+    {
+      "path": "docs/06-security-cheat.md",
+      "bytes": 2579,
+      "sha256": "78c60fec72911121902ee24f829bbd5b8bfda4ead66e63a568684e300f035008"
+    },
+    {
+      "path": "docs/07-deployment.md",
+      "bytes": 2414,
+      "sha256": "c79d47acb41cf94a8bc99899d0cfe30618497fd542e358ba6ee3db679ce3ae6c"
+    },
+    {
+      "path": "docs/08-testing.md",
+      "bytes": 2232,
+      "sha256": "1f5659a4fd141423874e7f3143e9df1a56c381266d1b93c7d50155b0a0e41d2c"
+    },
+    {
+      "path": "docs/09-cost-capacity.md",
+      "bytes": 3493,
+      "sha256": "f174a727742c036fed80bff3f481b2228fadf21dda620a2ce99bbfa93d275878"
+    },
+    {
+      "path": "docs/10-implementation-plan.md",
+      "bytes": 3418,
+      "sha256": "9a9cc1736fd14df5b193c8af53dd1790ae74cff61376c566b9db574479e549d9"
+    },
+    {
+      "path": "docs/11-production-risks.md",
+      "bytes": 1941,
+      "sha256": "568bc3cf8e97dba7b0ce1460e6ffac499ec928cbfa16971984836d44e831dae4"
+    },
+    {
+      "path": "docs/12-readiness-audit.md",
+      "bytes": 3847,
+      "sha256": "9c042784354b7f7b89bab69509d7ef995561633983b802c9ec1aacd7554ff3cc"
+    },
+    {
+      "path": "docs/13-graphics-assets.md",
+      "bytes": 5515,
+      "sha256": "c30332b249b9e977eafb7dfe007f71a1ebc3e1478000880584027cd592ae5807"
+    },
+    {
+      "path": "docs/14-classic-mode-exact-spec.md",
+      "bytes": 5926,
+      "sha256": "8249566052b106198d4b02a5dbd25ec30587c1931454ee2334a259d81265ea83"
+    },
+    {
+      "path": "docs/15-server-timing-cost.md",
+      "bytes": 5319,
+      "sha256": "eb7b531851aeeb19da6888951dfa6d744bdd0751bfad37beee86b8ca94e997ba"
+    },
+    {
+      "path": "docs/16-storage-reconnect-contract.md",
+      "bytes": 3005,
+      "sha256": "64a6fde0427343a20643deb3d82f9a3d5fc325ce7a123139df448b99f400c274"
+    },
+    {
+      "path": "docs/17-ui-scene-flow.md",
+      "bytes": 2370,
+      "sha256": "6b2ea0c941a821cb8e6737ced05ddc829d4b7f578226fb99da68bf7f7eab5039"
+    },
+    {
+      "path": "docs/18-file-by-file-implementation.md",
+      "bytes": 2512,
+      "sha256": "a2ba4cc0866571cb9c5945674036bc2e0440d3baa0e4637a67f36d8532a180d1"
+    },
+    {
+      "path": "docs/19-map-generator-determinism.md",
+      "bytes": 3658,
+      "sha256": "a6ee7b4d3c42a78b98cdae826ceaf19cc94a756072f90fd5b9a99e2714e6f376"
+    },
+    {
+      "path": "starter/.env.example",
+      "bytes": 36,
+      "sha256": "d62416f7051741d0566e77d442e7a9f450fb54bfea131f5ce60cfe4d7bca9507"
+    },
+    {
+      "path": "starter/.github/workflows/pages.yml",
+      "bytes": 969,
+      "sha256": "bc85f5ecc692cd74e41d570798c2c3b55d7eacf0500901dd5f1877a0466e5d4a"
+    },
+    {
+      "path": "starter/.gitignore",
+      "bytes": 67,
+      "sha256": "e25281e830983fb91829869523aac523fd74689464482aa3b09c314f375bb25d"
+    },
+    {
+      "path": "starter/START_HERE.md",
+      "bytes": 2189,
+      "sha256": "19cf4d146cf4dca16852e26c325000b584d423c00826817850f27efe04335a62"
+    },
+    {
+      "path": "starter/apps/client/index.html",
+      "bytes": 300,
+      "sha256": "11235fbbcdc73de984e8191917517114bd59661e5fc748ceff2f4ebfded6174e"
+    },
+    {
+      "path": "starter/apps/client/package.json",
+      "bytes": 383,
+      "sha256": "3fc1e829ad6130ff408ad3bf74b1efbce09ab03103a6d479c64da6e9cf02a3cd"
+    },
+    {
+      "path": "starter/apps/client/public/assets/gfx/bombs.png",
+      "bytes": 544,
+      "sha256": "ec3b46cf940fbc6b583879c2ba5b9cf374a98a93d69a0ce904c0db4357528285"
+    },
+    {
+      "path": "starter/apps/client/public/assets/gfx/explosions.png",
+      "bytes": 1402,
+      "sha256": "857b5934faaf4eb52ccdf92647841fc05d9b08c17f24c7a5fc11d9536e5dbd95"
+    },
+    {
+      "path": "starter/apps/client/public/assets/gfx/miner.png",
+      "bytes": 765,
+      "sha256": "dc404c027dea981602758da4171d1610fb0099c75cb859b01e8e1d8dfcefbefc"
+    },
+    {
+      "path": "starter/apps/client/public/assets/gfx/pickups.png",
+      "bytes": 1173,
+      "sha256": "5d658f119544748be2d0eb1463d65ca1f7cdf94ab2f0ff8760f3587ab0654fd1"
+    },
+    {
+      "path": "starter/apps/client/public/assets/gfx/tiles_world.png",
+      "bytes": 1067,
+      "sha256": "e0c46ce2666337538b9a776d1008525472d586f5c1d80901aea6dfea1e453f2a"
+    },
+    {
+      "path": "starter/apps/client/public/assets/gfx/ui_icons.png",
+      "bytes": 1094,
+      "sha256": "b5ba687eeff73a409d5cf9afd53b9c5c53c3c13a66f135499b145ab9d5367169"
+    },
+    {
+      "path": "starter/apps/client/public/assets/spec/asset-manifest.json",
+      "bytes": 2257,
+      "sha256": "bec4be4ac3bcd1271baca08f95a58aa711830beb04075fa07c6c2541a1ab06c9"
+    },
+    {
+      "path": "starter/apps/client/src/main.ts",
+      "bytes": 2323,
+      "sha256": "4e20b53f6d28c6546b9a4e8a4ef35767d168a8937c5ee3ac467bb0cf958660e7"
+    },
+    {
+      "path": "starter/apps/client/src/net/GameSocket.ts",
+      "bytes": 2447,
+      "sha256": "adfbba5e292f1cf946c64e2680238ba075fb5590e5a77778969aea0eb812b163"
+    },
+    {
+      "path": "starter/apps/client/tsconfig.json",
+      "bytes": 195,
+      "sha256": "5e73f1df7bbe227bb60ea23401bb8b237c1742dec20ea0f0a0b1d2bb5e25b275"
+    },
+    {
+      "path": "starter/apps/client/vite.config.ts",
+      "bytes": 167,
+      "sha256": "c651ac66121b964f013f28423719fca5dc3b7b962cd41de29dc4c81fde3afae2"
+    },
+    {
+      "path": "starter/apps/server/package.json",
+      "bytes": 427,
+      "sha256": "26d396fbfb19bd01fe12eeccc145ebdbe21aea03e9dc1db6a97de5a830fccd75"
+    },
+    {
+      "path": "starter/apps/server/src/index.ts",
+      "bytes": 3632,
+      "sha256": "3ac2fd50c8d000b9f5fa52f2de1c7c818490254e107007f2f905d916f083d979"
+    },
+    {
+      "path": "starter/apps/server/src/room/GameRoom.ts",
+      "bytes": 9292,
+      "sha256": "2b7d45e4cf0273269c3d38031f23085b9947e6fce5f1821053fa540603362e06"
+    },
+    {
+      "path": "starter/apps/server/tsconfig.json",
+      "bytes": 145,
+      "sha256": "edc433758c449a6637d494038333cdb8d16247923f18147578d3a5bbbdd6f558"
+    },
+    {
+      "path": "starter/apps/server/wrangler.jsonc",
+      "bytes": 441,
+      "sha256": "38f3e4e175ba5baada5b4f37887a47c80f5dd65ccedbcc1b4284d3facccd1973"
+    },
+    {
+      "path": "starter/package.json",
+      "bytes": 482,
+      "sha256": "f1eac90156f307cd527b64c9796efd3ee15aeb17dc108aedcf640c8b18b06169"
+    },
+    {
+      "path": "starter/packages/shared/package.json",
+      "bytes": 195,
+      "sha256": "d4e424b2625918cee0f2a217eabeb352b2aca2e75cffe677e718a665ad8f267f"
+    },
+    {
+      "path": "starter/packages/shared/src/config.ts",
+      "bytes": 251,
+      "sha256": "4da8942e23a95660b198de15834b68a8e14afb88cfcf9a06a53a381efe582740"
+    },
+    {
+      "path": "starter/packages/shared/src/game/constants.ts",
+      "bytes": 775,
+      "sha256": "b44754de4b72f5459b6c68ca0d38eb34ca4d18c744ceb8115aebca9b28d6b0a4"
+    },
+    {
+      "path": "starter/packages/shared/src/game/equipment.ts",
+      "bytes": 1173,
+      "sha256": "72216296180fbcd54df822243bc844e9384ae5e1f836eea432a3109b2d52614d"
+    },
+    {
+      "path": "starter/packages/shared/src/game/index.ts",
+      "bytes": 114,
+      "sha256": "92bd767a0372691442405cf70621fb17c62428f78c8e16601a8f45d5485b17e7"
+    },
+    {
+      "path": "starter/packages/shared/src/game/mapGenerator.ts",
+      "bytes": 5251,
+      "sha256": "625e9cd3726f32930db117948b85839eda75d3ec592768e56103726461e5bba2"
+    },
+    {
+      "path": "starter/packages/shared/src/game/prng.ts",
+      "bytes": 531,
+      "sha256": "c2820fd1acd4b35a4fd4c0d83cd7ed35f1891c28f422c89f0a76aa1707e7bbae"
+    },
+    {
+      "path": "starter/packages/shared/src/index.ts",
+      "bytes": 78,
+      "sha256": "9ffe9d54b12ae78cfaebfbf372c2415a5c45f720696f795701831bae867a98e7"
+    },
+    {
+      "path": "starter/packages/shared/src/protocol.ts",
+      "bytes": 7874,
+      "sha256": "967750ec990adb301f1bef0bc5411b06028c9b891723fb3d52b893a7201bf446"
+    },
+    {
+      "path": "starter/packages/shared/tsconfig.json",
+      "bytes": 131,
+      "sha256": "48dea69a98ad833a42957f98e2bd13b44aa9f9e2a7312f8f84893a43c11ec3b8"
+    },
+    {
+      "path": "starter/tsconfig.base.json",
+      "bytes": 263,
+      "sha256": "89a8596c7555f24157015efe9a389644a80538e888083bb8215051885e39d87b"
+    }
+  ]
+}

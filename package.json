@@ -1,0 +1,20 @@
+{
+  "name": "minebombers-web",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:client": "npm --workspace @minebombers/client run dev",
+    "dev:server": "npm --workspace @minebombers/server run dev",
+    "build": "npm --workspaces run build --if-present",
+    "deploy:server": "npm --workspace @minebombers/server run deploy",
+    "typecheck": "npm --workspaces run typecheck --if-present",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^5.0.1"
+  }
+}

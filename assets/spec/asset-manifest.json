@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "tileSize": 32,
+  "pixelArt": true,
+  "filtering": "nearest",
+  "assets": [
+    {
+      "id": "world.tiles",
+      "file": "public/assets/gfx/tiles_world.png",
+      "kind": "spritesheet",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "frames": 8,
+      "source": "generated-for-project",
+      "license": "generated-for-project-no-third-party-source",
+      "developmentSource": "assets/placeholders/tiles_world.png"
+    },
+    {
+      "id": "miner.base",
+      "file": "public/assets/gfx/miner.png",
+      "kind": "spritesheet",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "columns": 4,
+      "rows": 4,
+      "source": "generated-for-project",
+      "license": "generated-for-project-no-third-party-source",
+      "developmentSource": "assets/placeholders/miner.png"
+    },
+    {
+      "id": "explosive.small",
+      "file": "public/assets/gfx/bombs.png",
+      "kind": "spritesheet",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "frames": 4,
+      "source": "generated-for-project",
+      "license": "generated-for-project-no-third-party-source",
+      "developmentSource": "assets/placeholders/bombs.png"
+    },
+    {
+      "id": "fx.explosion",
+      "file": "public/assets/gfx/explosions.png",
+      "kind": "spritesheet",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "columns": 5,
+      "rows": 4,
+      "source": "generated-for-project",
+      "license": "generated-for-project-no-third-party-source",
+      "developmentSource": "assets/placeholders/explosions.png"
+    },
+    {
+      "id": "pickup.items",
+      "file": "public/assets/gfx/pickups.png",
+      "kind": "spritesheet",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "frames": 8,
+      "source": "generated-for-project",
+      "license": "generated-for-project-no-third-party-source",
+      "developmentSource": "assets/placeholders/pickups.png"
+    },
+    {
+      "id": "ui.equipment",
+      "file": "public/assets/gfx/ui_icons.png",
+      "kind": "spritesheet",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "frames": 8,
+      "source": "generated-for-project",
+      "license": "generated-for-project-no-third-party-source",
+      "developmentSource": "assets/placeholders/ui_icons.png"
+    }
+  ]
+}
