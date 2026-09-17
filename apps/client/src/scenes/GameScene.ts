@@ -40,6 +40,9 @@ export interface GameSceneData {
   socket?: GameSocket;
   myPlayerId?: string;
   selectedMap?: string;
+  botCount?: number;
+  botDifficulty?: 'easy' | 'normal' | 'hardcore';
+  persistedBots?: Array<{ id: string; name: string; cash: number; inventory: ReturnType<typeof createDefaultInventory> }>;
   startData?: Extract<ServerMessage, { t: 's.start' }>;
   soloRoundIndex?: number;
   soloCash?: number;
@@ -85,6 +88,9 @@ export class GameScene extends Phaser.Scene {
   private botAiTimer: ReturnType<typeof setInterval> | null = null;
   private soloRoundIndex = 1;
   private totalRounds = 5;
+  private botCount = 3;
+  private botDifficulty: 'easy' | 'normal' | 'hardcore' = 'normal';
+  private persistedBots?: Array<{ id: string; name: string; cash: number; inventory: ReturnType<typeof createDefaultInventory> }>;
   private botAiStates = new Map<string, {
     dx: -1 | 0 | 1;
     dy: -1 | 0 | 1;
@@ -112,6 +118,9 @@ export class GameScene extends Phaser.Scene {
     this.socket = data.socket;
     this.myPlayerId = data.myPlayerId ?? 'player_1';
     this.soloRoundIndex = data.soloRoundIndex ?? 1;
+    this.botCount = data.botCount ?? 3;
+    this.botDifficulty = data.botDifficulty ?? 'normal';
+    this.persistedBots = data.persistedBots;
     this.isPaused = false;
     this.botAiStates.clear();
   }
@@ -346,10 +355,11 @@ export class GameScene extends Phaser.Scene {
     this.pauseContainer = this.add.container(0, 0, [bg, panel, title, resumeBtn, skipBtn, quitBtn]).setDepth(1000).setScrollFactor(0);
   }
 
-  // --- SOLO PRACTICE MODE ---
+  // --- SOLO PRACTICE / TOURNAMENT MODE ---
   private initSoloGame(): void {
+    const totalPlayers = Math.min(8, Math.max(2, 1 + this.botCount));
     const seed = Math.floor(Math.random() * 1000000);
-    const map = generateClassicMine(seed, 4, this.dataPayload.selectedMap);
+    const map = generateClassicMine(seed, totalPlayers, this.dataPayload.selectedMap);
 
     this.currentTiles = map.tiles.map((kind) => ({ kind, durability: kind === 'soil' ? 1000 : 0 }));
     this.renderInitialMap(map.tiles);
@@ -357,12 +367,65 @@ export class GameScene extends Phaser.Scene {
     const soloInventory = this.dataPayload.soloInventory ?? createDefaultInventory();
     const soloCash = this.dataPayload.soloCash ?? 500;
 
-    const initialPlayers = [
-      { id: this.myPlayerId, name: this.dataPayload.displayName, cash: soloCash, inventory: soloInventory },
-      { id: 'bot_1', name: 'Garry (Bot)', cash: 500, inventory: createDefaultInventory() },
-      { id: 'bot_2', name: 'Rusty (Bot)', cash: 500, inventory: createDefaultInventory() },
-      { id: 'bot_3', name: 'Dynamo (Bot)', cash: 500, inventory: createDefaultInventory() },
+    const BOT_NAMES = [
+      'Garry (Bot)',
+      'Rusty (Bot)',
+      'Dynamo (Bot)',
+      'Blaster (Bot)',
+      'Sapper (Bot)',
+      'Nitro (Bot)',
+      'Sparky (Bot)',
     ];
+
+    const initialPlayers: Array<{
+      id: string;
+      name: string;
+      cash: number;
+      inventory: ReturnType<typeof createDefaultInventory>;
+    }> = [
+      { id: this.myPlayerId, name: this.dataPayload.displayName, cash: soloCash, inventory: soloInventory },
+    ];
+
+    for (let i = 1; i <= this.botCount; i++) {
+      const botId = `bot_${i}`;
+      const botName = BOT_NAMES[i - 1] ?? `Bot ${i}`;
+
+      if (this.persistedBots && this.persistedBots[i - 1]) {
+        const saved = this.persistedBots[i - 1]!;
+        initialPlayers.push({
+          id: botId,
+          name: botName,
+          cash: saved.cash,
+          inventory: {
+            selectedSlot: 0,
+            items: { ...saved.inventory.items },
+            upgrades: { ...saved.inventory.upgrades },
+          },
+        });
+      } else {
+        const botInv = createDefaultInventory();
+        if (this.botDifficulty === 'hardcore') {
+          botInv.items['small_charge'] = 4;
+          botInv.items['dynamite'] = 2;
+          botInv.items['rocket'] = 2;
+          botInv.items['med_kit'] = 1;
+          botInv.upgrades['pickaxe_2'] = 1;
+        } else if (this.botDifficulty === 'normal') {
+          botInv.items['small_charge'] = 3;
+          botInv.items['dynamite'] = 1;
+          botInv.items['rocket'] = 1;
+        } else {
+          // Easy
+          botInv.items['small_charge'] = 2;
+        }
+        initialPlayers.push({
+          id: botId,
+          name: botName,
+          cash: 500,
+          inventory: botInv,
+        });
+      }
+    }
 
     this.soloSim = new WorldSimulation(seed, map, initialPlayers, this.soloRoundIndex, 300_000);
     this.roundEndsAt = Date.now() + 300_000;
@@ -383,14 +446,18 @@ export class GameScene extends Phaser.Scene {
       }
     }, 50);
 
-    // Bot AI Decision Loop (~100ms)
+    // Bot AI Decision Loop with interval based on difficulty
+    const aiIntervalMs = this.botDifficulty === 'hardcore' ? 60 : this.botDifficulty === 'easy' ? 140 : 100;
     this.botAiTimer = setInterval(() => {
-      this.runBotAI(100);
-    }, 100);
+      this.runBotAI(aiIntervalMs);
+    }, aiIntervalMs);
   }
 
   private runBotAI(stepMs: number): void {
     if (!this.soloSim || this.soloSim.phase !== 'playing' || this.isPaused) return;
+
+    const isEasy = this.botDifficulty === 'easy';
+    const isHardcore = this.botDifficulty === 'hardcore';
 
     const directions: Array<[-1 | 0 | 1, -1 | 0 | 1]> = [
       [0, -1], [0, 1], [-1, 0], [1, 0],
@@ -436,18 +503,22 @@ export class GameScene extends Phaser.Scene {
       let secondaryAction = false;
       let selectedSlot = bot.inventory.selectedSlot ?? 0;
 
-      // 1. Health recovery: use med kit if HP <= 50
-      if (bot.hp <= 50 && (bot.inventory.items['med_kit'] ?? 0) > 0) {
-        secondaryAction = true;
+      // 1. Health recovery: use med kit if HP below threshold
+      const medThreshold = isHardcore ? 65 : isEasy ? 35 : 50;
+      if (bot.hp <= medThreshold && (bot.inventory.items['med_kit'] ?? 0) > 0) {
+        if (!isEasy || Math.random() < 0.75) {
+          secondaryAction = true;
+        }
       }
 
       // 2. Bomb / Danger Avoidance (Top priority!)
+      const alertRadius = isHardcore ? 2 : isEasy ? 0 : 1;
       const dangerousExplosive = this.soloSim.explosives.find((e) => {
         const d = Math.abs(e.tileX - botTileX) + Math.abs(e.tileY - botTileY);
-        return d <= (e.radius || 2) + 1;
+        return d <= (e.radius || 2) + alertRadius;
       }) ?? this.soloSim.mines.find((m) => {
         const d = Math.abs(m.tileX - botTileX) + Math.abs(m.tileY - botTileY);
-        return d <= 2 && this.soloSim!.simTime >= m.armedAt;
+        return d <= (1 + alertRadius) && this.soloSim!.simTime >= m.armedAt;
       });
 
       if (dangerousExplosive) {
@@ -474,20 +545,23 @@ export class GameScene extends Phaser.Scene {
           });
           state.dx = safeDirs[0]![0];
           state.dy = safeDirs[0]![1];
-          state.retreatMs = 1200;
-          state.holdMs = 500;
+          state.retreatMs = isHardcore ? 1600 : isEasy ? 800 : 1200;
+          state.holdMs = isHardcore ? 400 : isEasy ? 600 : 500;
         }
       }
 
       // 3. Combat: Ranged attack (Mini-Rocket)
-      if (state.retreatMs <= 0 && (bot.inventory.items['rocket'] ?? 0) > 0) {
+      const maxRocketDist = isHardcore ? 16 : isEasy ? 7 : 12;
+      const fireChance = isHardcore ? 1.0 : isEasy ? 0.45 : 0.85;
+
+      if (state.retreatMs <= 0 && (bot.inventory.items['rocket'] ?? 0) > 0 && Math.random() <= fireChance) {
         for (const opp of this.soloSim.players) {
           if (opp.id === bot.id || !opp.alive) continue;
           const oppTileX = Math.floor(opp.x / WORLD_UNITS_PER_TILE);
           const oppTileY = Math.floor(opp.y / WORLD_UNITS_PER_TILE);
 
           // Horizontal alignment
-          if (oppTileY === botTileY && Math.abs(oppTileX - botTileX) <= 12 && oppTileX !== botTileX) {
+          if (oppTileY === botTileY && Math.abs(oppTileX - botTileX) <= maxRocketDist && oppTileX !== botTileX) {
             const stepX = Math.sign(oppTileX - botTileX);
             let clear = true;
             for (let checkX = botTileX + stepX; checkX !== oppTileX; checkX += stepX) {
@@ -505,7 +579,7 @@ export class GameScene extends Phaser.Scene {
             }
           }
           // Vertical alignment
-          if (oppTileX === botTileX && Math.abs(oppTileY - botTileY) <= 12 && oppTileY !== botTileY) {
+          if (oppTileX === botTileX && Math.abs(oppTileY - botTileY) <= maxRocketDist && oppTileY !== botTileY) {
             const stepY = Math.sign(oppTileY - botTileY);
             let clear = true;
             for (let checkY = botTileY + stepY; checkY !== oppTileY; checkY += stepY) {
@@ -526,21 +600,24 @@ export class GameScene extends Phaser.Scene {
       }
 
       // 4. Combat: Close Quarters (Melee / Bomb plant)
+      const engageDist = isHardcore ? 1400 : isEasy ? 900 : 1200;
+      const bombCooldownTime = isHardcore ? 1600 : isEasy ? 4500 : 3000;
+
       if (state.retreatMs <= 0 && !primaryAction) {
         for (const opp of this.soloSim.players) {
           if (opp.id === bot.id || !opp.alive) continue;
           const dist = Math.hypot(opp.x - bot.x, opp.y - bot.y);
-          if (dist <= 1200) {
+          if (dist <= engageDist) {
             const hasBomb = (bot.inventory.items['small_charge'] ?? 0) > 0 || (bot.inventory.items['dynamite'] ?? 0) > 0;
             if (hasBomb && state.bombCooldownMs <= 0) {
               selectedSlot = (bot.inventory.items['small_charge'] ?? 0) > 0 ? 0 : 1;
               primaryAction = true;
-              state.bombCooldownMs = 3000;
+              state.bombCooldownMs = bombCooldownTime;
               const fdx = bot.x < opp.x ? -1 : 1;
               state.dx = fdx;
               state.dy = 0;
-              state.retreatMs = 1800;
-              state.holdMs = 1800;
+              state.retreatMs = isHardcore ? 1600 : isEasy ? 1200 : 1800;
+              state.holdMs = state.retreatMs;
             } else {
               // Melee pickaxe strike!
               primaryAction = true;
@@ -571,11 +648,11 @@ export class GameScene extends Phaser.Scene {
         if ((hasSmall || hasDyna) && nextKind === 'soil' && state.bombCooldownMs <= 0) {
           selectedSlot = hasSmall ? 0 : 1;
           primaryAction = true;
-          state.bombCooldownMs = 3000;
+          state.bombCooldownMs = bombCooldownTime;
           state.dx = -state.dx as -1 | 0 | 1;
           state.dy = -state.dy as -1 | 0 | 1;
-          state.retreatMs = 2000;
-          state.holdMs = 2000;
+          state.retreatMs = isHardcore ? 1600 : 2000;
+          state.holdMs = state.retreatMs;
         } else {
           // Switch to an alternative non-rock direction
           const nonRockDirs = directions.filter(([ddx, ddy]) => {
@@ -588,7 +665,7 @@ export class GameScene extends Phaser.Scene {
             const picked = nonRockDirs[Math.floor(Math.random() * nonRockDirs.length)]!;
             state.dx = picked[0];
             state.dy = picked[1];
-            state.holdMs = 1200;
+            state.holdMs = isHardcore ? 600 : 1200;
           }
         }
       }
@@ -600,10 +677,11 @@ export class GameScene extends Phaser.Scene {
         let bestScore = 99999;
 
         // 6a. Uncollected treasures
+        const rareBonus = isHardcore ? 10 : 6;
         for (const t of this.soloSim.treasures) {
           if (t.collected) continue;
           const dist = Math.abs(t.tileX - botTileX) + Math.abs(t.tileY - botTileY);
-          const score = dist - (t.rarity === 'rare' ? 6 : 0);
+          const score = dist - (t.rarity === 'rare' ? rareBonus : 0);
           if (score < bestScore) {
             bestScore = score;
             targetX = t.tileX;
@@ -612,7 +690,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         // 6b. Pickups (crates, med kits, rockets)
-        if (bestScore > 12) {
+        if (bestScore > (isHardcore ? 8 : 12)) {
           for (const p of this.soloSim.pickups) {
             if (p.collected) continue;
             const dist = Math.abs(p.tileX - botTileX) + Math.abs(p.tileY - botTileY);
@@ -624,8 +702,8 @@ export class GameScene extends Phaser.Scene {
           }
         }
 
-        // 6c. Opponent hunting if no treasures/pickups
-        if (targetX < 0) {
+        // 6c. Opponent hunting if no nearby treasures/pickups
+        if (targetX < 0 || (isHardcore && bestScore > 14)) {
           for (const opp of this.soloSim.players) {
             if (opp.id === bot.id || !opp.alive) continue;
             const ox = Math.floor(opp.x / WORLD_UNITS_PER_TILE);
@@ -665,7 +743,7 @@ export class GameScene extends Phaser.Scene {
           state.dx = bestDir[0];
           state.dy = bestDir[1];
           const nextKind = this.soloSim.tiles[(botTileY + state.dy) * MAP_WIDTH + (botTileX + state.dx)]?.kind;
-          state.holdMs = nextKind === 'soil' ? 1200 : 350;
+          state.holdMs = nextKind === 'soil' ? (isHardcore ? 800 : 1200) : (isHardcore ? 200 : 350);
         } else {
           // Random wandering among non-rock tiles
           const valid = directions.filter(([ddx, ddy]) => {
@@ -678,7 +756,7 @@ export class GameScene extends Phaser.Scene {
             const p = valid[Math.floor(Math.random() * valid.length)]!;
             state.dx = p[0];
             state.dy = p[1];
-            state.holdMs = 800;
+            state.holdMs = isHardcore ? 500 : 800;
           }
         }
       }
@@ -697,6 +775,51 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private simulateBotShopping(inventory: ReturnType<typeof createDefaultInventory>, cash: number, difficulty: string): number {
+    let remaining = cash;
+    if (difficulty === 'hardcore') {
+      if (remaining >= 500 && (inventory.upgrades['pickaxe_2'] ?? 0) === 0) {
+        remaining -= 500;
+        inventory.upgrades['pickaxe_2'] = 1;
+      }
+      if (remaining >= 450 && (inventory.upgrades['kevlar_armor'] ?? 0) === 0) {
+        remaining -= 450;
+        inventory.upgrades['kevlar_armor'] = 1;
+      }
+      while (remaining >= 180 && (inventory.items['rocket'] ?? 0) < 4) {
+        remaining -= 180;
+        inventory.items['rocket'] = (inventory.items['rocket'] ?? 0) + 1;
+      }
+      while (remaining >= 160 && (inventory.items['dynamite'] ?? 0) < 4) {
+        remaining -= 160;
+        inventory.items['dynamite'] = (inventory.items['dynamite'] ?? 0) + 1;
+      }
+      if (remaining >= 150 && (inventory.items['med_kit'] ?? 0) < 2) {
+        remaining -= 150;
+        inventory.items['med_kit'] = (inventory.items['med_kit'] ?? 0) + 1;
+      }
+    } else if (difficulty === 'normal') {
+      while (remaining >= 160 && (inventory.items['dynamite'] ?? 0) < 2) {
+        remaining -= 160;
+        inventory.items['dynamite'] = (inventory.items['dynamite'] ?? 0) + 1;
+      }
+      while (remaining >= 180 && (inventory.items['rocket'] ?? 0) < 2) {
+        remaining -= 180;
+        inventory.items['rocket'] = (inventory.items['rocket'] ?? 0) + 1;
+      }
+      if (remaining >= 150 && (inventory.items['med_kit'] ?? 0) < 1) {
+        remaining -= 150;
+        inventory.items['med_kit'] = (inventory.items['med_kit'] ?? 0) + 1;
+      }
+    } else {
+      if (remaining >= 120 && (inventory.items['small_charge'] ?? 0) < 3) {
+        remaining -= 120;
+        inventory.items['small_charge'] = (inventory.items['small_charge'] ?? 0) + 1;
+      }
+    }
+    return remaining;
+  }
+
   private handleSoloRoundEnd(): void {
     if (this.soloTimer) clearInterval(this.soloTimer);
     if (this.botAiTimer) clearInterval(this.botAiTimer);
@@ -706,6 +829,22 @@ export class GameScene extends Phaser.Scene {
     const matchStandings = isMatchEnd ? calculateMatchStandings(this.soloSim!.players) : undefined;
 
     const myPlayer = this.soloSim!.players.find((p) => p.id === this.myPlayerId);
+
+    // Persist bot states and simulate shopping for next round
+    const updatedBots = this.soloSim!.players.slice(1).map((bot) => {
+      const bInv = {
+        selectedSlot: 0,
+        items: { ...bot.inventory.items },
+        upgrades: { ...bot.inventory.upgrades },
+      };
+      const remainingCash = this.simulateBotShopping(bInv, bot.cash, this.botDifficulty);
+      return {
+        id: bot.id,
+        name: bot.name,
+        cash: remainingCash,
+        inventory: bInv,
+      };
+    });
 
     this.scene.start('result', {
       mode: 'solo',
@@ -723,6 +862,9 @@ export class GameScene extends Phaser.Scene {
           displayName: this.dataPayload.displayName,
           myPlayerId: this.myPlayerId,
           selectedMap: this.dataPayload.selectedMap,
+          botCount: this.botCount,
+          botDifficulty: this.botDifficulty,
+          persistedBots: updatedBots,
           cash: myPlayer?.cash ?? 500,
           inventory: myPlayer?.inventory ?? createDefaultInventory(),
           onSoloShopComplete: (updatedCash: number, updatedInventory: ReturnType<typeof createDefaultInventory>) => {
@@ -731,6 +873,9 @@ export class GameScene extends Phaser.Scene {
               displayName: this.dataPayload.displayName,
               myPlayerId: this.myPlayerId,
               selectedMap: this.dataPayload.selectedMap,
+              botCount: this.botCount,
+              botDifficulty: this.botDifficulty,
+              persistedBots: updatedBots,
               soloRoundIndex: this.soloRoundIndex + 1,
               soloCash: updatedCash,
               soloInventory: updatedInventory,

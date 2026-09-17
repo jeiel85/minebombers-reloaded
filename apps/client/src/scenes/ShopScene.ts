@@ -13,6 +13,9 @@ export interface ShopSceneData {
   cash?: number;
   inventory?: InventoryState;
   selectedMap?: string;
+  botCount?: number;
+  botDifficulty?: 'easy' | 'normal' | 'hardcore';
+  persistedBots?: Array<{ id: string; name: string; cash: number; inventory: InventoryState }>;
   shopData?: Extract<ServerMessage, { t: 's.shop' }>;
   onSoloShopComplete?: (cash: number, inventory: InventoryState) => void;
 }
@@ -119,8 +122,19 @@ export class ShopScene extends Phaser.Scene {
       color: '#e74c3c',
     }).setOrigin(1, 0.5);
 
+    // Solo Battle Info
+    if (this.dataPayload.mode === 'solo') {
+      const bots = this.dataPayload.botCount ?? 3;
+      const diff = (this.dataPayload.botDifficulty ?? 'normal').toUpperCase();
+      this.add.text(width / 2, 54, `⚔️ SOLO BATTLE: VS ${bots} BOTS [${diff} AI]`, {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#00ffcc',
+      }).setOrigin(0.5);
+    }
+
     // Feedback notification banner
-    this.feedbackText = this.add.text(width / 2, 62, '', {
+    this.feedbackText = this.add.text(width / 2, 70, '', {
       fontFamily: 'monospace',
       fontSize: '13px',
       color: '#f1c40f',

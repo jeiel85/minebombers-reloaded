@@ -11,6 +11,11 @@ export class MenuScene extends Phaser.Scene {
   private mapText!: Phaser.GameObjects.Text;
   private mapSubtitle!: Phaser.GameObjects.Text;
 
+  private botCount = 3;
+  private botDifficulty: 'easy' | 'normal' | 'hardcore' = 'normal';
+  private botCountText!: Phaser.GameObjects.Text;
+  private botDiffText!: Phaser.GameObjects.Text;
+
   constructor() {
     super('menu');
   }
@@ -29,10 +34,16 @@ export class MenuScene extends Phaser.Scene {
       RetroAudio.playBGM('huippe');
     });
 
-    // Load saved name
+    // Load saved settings
     try {
       const savedName = localStorage.getItem('minebombers_name');
       if (savedName) this.displayName = savedName;
+      const savedBots = localStorage.getItem('minebombers_bot_count');
+      if (savedBots) this.botCount = Math.max(1, Math.min(7, parseInt(savedBots, 10) || 3));
+      const savedDiff = localStorage.getItem('minebombers_bot_diff');
+      if (savedDiff && ['easy', 'normal', 'hardcore'].includes(savedDiff)) {
+        this.botDifficulty = savedDiff as 'easy' | 'normal' | 'hardcore';
+      }
     } catch { /* storage disabled */ }
 
     // Audio Controls (Top Right)
@@ -70,27 +81,27 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // Title & Logo
-    this.add.text(width / 2, 55, 'MINE BOMBERS', {
+    this.add.text(width / 2, 50, 'MINE BOMBERS', {
       fontFamily: 'monospace',
-      fontSize: '44px',
+      fontSize: '42px',
       fontStyle: 'bold',
       color: '#f39c12',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, 95, 'RETRO MULTIPLAYER MINING & DEMOLITION', {
+    this.add.text(width / 2, 86, 'RETRO MULTIPLAYER MINING & DEMOLITION', {
       fontFamily: 'monospace',
-      fontSize: '15px',
+      fontSize: '14px',
       color: '#bdc3c7',
     }).setOrigin(0.5);
 
     // Miner preview animation
-    const previewMiner = this.add.sprite(width / 2, 145, 'miner', 0).setScale(2.5);
+    const previewMiner = this.add.sprite(width / 2, 132, 'miner', 0).setScale(2.2);
     previewMiner.play('miner_down');
 
     // Player Name display & edit button
-    const nameText = this.add.text(width / 2, 195, `Name: ${this.displayName} [Edit]`, {
+    const nameText = this.add.text(width / 2, 180, `Name: ${this.displayName} [Edit]`, {
       fontFamily: 'monospace',
-      fontSize: '16px',
+      fontSize: '15px',
       color: '#ecf0f1',
       backgroundColor: '#2c3e50',
       padding: { x: 12, y: 5 },
@@ -107,10 +118,10 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // Map Selector UI (Classic 46 Maps vs Procedural)
-    const mapY = 245;
+    const mapY = 226;
     const prevMapBtn = this.add.text(width / 2 - 210, mapY, '◀', {
       fontFamily: 'monospace',
-      fontSize: '22px',
+      fontSize: '20px',
       fontStyle: 'bold',
       color: '#f1c40f',
       backgroundColor: '#1f242d',
@@ -119,23 +130,23 @@ export class MenuScene extends Phaser.Scene {
 
     this.mapText = this.add.text(width / 2, mapY, this.getMapLabel(), {
       fontFamily: 'monospace',
-      fontSize: '17px',
+      fontSize: '16px',
       fontStyle: 'bold',
       color: '#00ffcc',
       backgroundColor: '#1b2631',
-      padding: { x: 16, y: 6 },
+      padding: { x: 16, y: 5 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     const nextMapBtn = this.add.text(width / 2 + 210, mapY, '▶', {
       fontFamily: 'monospace',
-      fontSize: '22px',
+      fontSize: '20px',
       fontStyle: 'bold',
       color: '#f1c40f',
       backgroundColor: '#1f242d',
       padding: { x: 10, y: 4 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    this.mapSubtitle = this.add.text(width / 2, mapY + 28, this.getMapSubLabel(), {
+    this.mapSubtitle = this.add.text(width / 2, mapY + 25, this.getMapSubLabel(), {
       fontFamily: 'monospace',
       fontSize: '12px',
       color: '#95a5a6',
@@ -177,25 +188,106 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
-    // Buttons
-    let currentY = 300;
+    // --- Bot Configuration Controls (Bot Count & Difficulty) ---
+    const botY = 282;
 
-    // 0. Play 100% Original DOS PC Version
-    this.createButton(width / 2, currentY, '🕹️ PLAY ORIGINAL PC DOS VERSION (1995)', 0xd35400, () => {
+    // Bot Count Selector: ◀ 🤖 BOTS: 3 (4 Miners) ▶
+    const prevBotBtn = this.add.text(width / 2 - 220, botY, '◀', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#3498db',
+      backgroundColor: '#1f242d',
+      padding: { x: 8, y: 3 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    this.botCountText = this.add.text(width / 2 - 120, botY, this.getBotCountLabel(), {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#ecf0f1',
+      backgroundColor: '#243342',
+      padding: { x: 10, y: 5 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    const nextBotBtn = this.add.text(width / 2 - 20, botY, '▶', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#3498db',
+      backgroundColor: '#1f242d',
+      padding: { x: 8, y: 3 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    const updateBotCount = (delta: number) => {
       RetroAudio.playClick();
-      window.location.href = './dos.html';
-    });
+      this.botCount += delta;
+      if (this.botCount > 7) this.botCount = 1;
+      if (this.botCount < 1) this.botCount = 7;
+      this.botCountText.setText(this.getBotCountLabel());
+      try { localStorage.setItem('minebombers_bot_count', String(this.botCount)); } catch { /* ignore */ }
+    };
 
-    currentY += 56;
+    prevBotBtn.on('pointerdown', () => updateBotCount(-1));
+    nextBotBtn.on('pointerdown', () => updateBotCount(1));
+    this.botCountText.on('pointerdown', () => updateBotCount(1));
 
-    // 1. Play Solo / Practice (Instant Play vs Bots)
-    this.createButton(width / 2, currentY, '⚔️ PLAY SOLO PRACTICE (VS BOTS)', 0x27ae60, () => {
+    // Bot Difficulty Selector: ◀ ⚡ AI: NORMAL ▶
+    const prevDiffBtn = this.add.text(width / 2 + 20, botY, '◀', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#e67e22',
+      backgroundColor: '#1f242d',
+      padding: { x: 8, y: 3 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    this.botDiffText = this.add.text(width / 2 + 120, botY, this.getBotDiffLabel(), {
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: this.getBotDiffColor(),
+      backgroundColor: '#243342',
+      padding: { x: 12, y: 5 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    const nextDiffBtn = this.add.text(width / 2 + 220, botY, '▶', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#e67e22',
+      backgroundColor: '#1f242d',
+      padding: { x: 8, y: 3 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    const difficulties: Array<'easy' | 'normal' | 'hardcore'> = ['easy', 'normal', 'hardcore'];
+    const updateBotDifficulty = (delta: number) => {
+      RetroAudio.playClick();
+      const currIdx = difficulties.indexOf(this.botDifficulty);
+      const nextIdx = (currIdx + delta + difficulties.length) % difficulties.length;
+      this.botDifficulty = difficulties[nextIdx]!;
+      this.botDiffText.setText(this.getBotDiffLabel());
+      this.botDiffText.setColor(this.getBotDiffColor());
+      try { localStorage.setItem('minebombers_bot_diff', this.botDifficulty); } catch { /* ignore */ }
+    };
+
+    prevDiffBtn.on('pointerdown', () => updateBotDifficulty(-1));
+    nextDiffBtn.on('pointerdown', () => updateBotDifficulty(1));
+    this.botDiffText.on('pointerdown', () => updateBotDifficulty(1));
+
+    // Buttons
+    let currentY = 338;
+
+    // 1. Play Solo Battle (Instant Play vs Configured Bots)
+    this.createButton(width / 2, currentY, '⚔️ PLAY SOLO BATTLE (VS BOTS)', 0x27ae60, () => {
       RetroAudio.playClick();
       const selectedMap = this.getSelectedMapPreset();
       this.scene.start('shop', {
         mode: 'solo',
         displayName: this.displayName,
         selectedMap,
+        botCount: this.botCount,
+        botDifficulty: this.botDifficulty,
         cash: 500,
         inventory: {
           selectedSlot: 0,
@@ -207,12 +299,22 @@ export class MenuScene extends Phaser.Scene {
             mode: 'solo',
             displayName: this.displayName,
             selectedMap,
+            botCount: this.botCount,
+            botDifficulty: this.botDifficulty,
             soloRoundIndex: 1,
             soloCash: cash,
             soloInventory: inventory,
           });
         },
       });
+    });
+
+    currentY += 58;
+
+    // 2. Play 100% Original DOS PC Version
+    this.createButton(width / 2, currentY, '🕹️ PLAY ORIGINAL PC DOS VERSION (1995)', 0xd35400, () => {
+      RetroAudio.playClick();
+      window.location.href = './dos.html';
     });
 
     currentY += 60;
@@ -285,6 +387,26 @@ export class MenuScene extends Phaser.Scene {
       return 'Procedural Cavern Generator (Dynamic Spawns & Ores)';
     }
     return 'Official 1995 DOS Classic Arena (Skaven / Tuomas Ihme)';
+  }
+
+  private getBotCountLabel(): string {
+    const total = 1 + this.botCount;
+    return `🤖 BOTS: ${this.botCount} (${total} Miners)`;
+  }
+
+  private getBotDiffLabel(): string {
+    return `⚡ AI: ${this.botDifficulty.toUpperCase()}`;
+  }
+
+  private getBotDiffColor(): string {
+    switch (this.botDifficulty) {
+      case 'easy':
+        return '#2ecc71';
+      case 'normal':
+        return '#f1c40f';
+      case 'hardcore':
+        return '#e74c3c';
+    }
   }
 
   private createButton(x: number, y: number, label: string, color: number, onClick: () => void): Phaser.GameObjects.Text {
