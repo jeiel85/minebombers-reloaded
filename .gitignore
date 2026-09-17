@@ -9,3 +9,6 @@ dist/
 .DS_Store
 Thumbs.db
 res/
+tools/
+temp_jsdos_pack/
+

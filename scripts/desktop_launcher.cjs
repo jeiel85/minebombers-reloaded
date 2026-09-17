@@ -68,7 +68,7 @@ server.listen(PORT, '127.0.0.1', () => {
   const pathSuffix = isDos ? '/dos.html' : '';
   const url = `http://127.0.0.1:${PORT}${pathSuffix}`;
   console.log(`====================================================`);
-  console.log(`  💣 MINE BOMBERS (1995) - ${isDos ? '100% Original DOS PC Edition' : 'Modern Edition'}   `);
+  console.log(`  💣 MINE BOMBERS 3.11 (1995) - 100% Original DOS PC Edition   `);
   console.log(`====================================================`);
   console.log(`Local Engine Server running at: ${url}`);
   console.log(`Launching standalone Desktop Window...`);
