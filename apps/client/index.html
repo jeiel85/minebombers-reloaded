@@ -1,18 +1,457 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script src="/coi-serviceworker.js"></script>
-    <script>
-      if (window.location.search.includes('dos=1') || window.location.search.includes('pc=1')) {
-        window.location.replace('./dos.html');
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mine Bombers 3.11 (1995) - Original PC DOS Edition</title>
+  <script src="./coi-serviceworker.js"></script>
+  <link rel="stylesheet" href="./js-dos/js-dos.css">
+  <script src="./js-dos/js-dos.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      background-color: #0b0e14;
+      color: #ecf0f1;
+      font-family: 'Courier New', Courier, monospace;
+      overflow: hidden;
+    }
+    #top-nav {
+      height: 52px;
+      background: #151922;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 2px solid #f39c12;
+      z-index: 100;
+      gap: 10px;
+    }
+    .brand {
+      font-size: 15px;
+      font-weight: bold;
+      color: #f39c12;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .badge {
+      font-size: 11px;
+      background: #d35400;
+      color: #fff;
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-weight: normal;
+    }
+    .speed-panel {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #1e2634;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid #2c3e50;
+    }
+    .speed-label-title {
+      font-size: 12px;
+      color: #f1c40f;
+      font-weight: bold;
+    }
+    .speed-badge {
+      font-size: 13px;
+      font-weight: bold;
+      color: #00ffcc;
+      background: #0f141c;
+      padding: 3px 8px;
+      border-radius: 4px;
+      min-width: 82px;
+      text-align: center;
+      border: 1px solid #1abc9c55;
+    }
+    .btn-step {
+      background: #34495e;
+      color: #ffffff;
+      border: 1px solid #4b6584;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 3px;
+      user-select: none;
+    }
+    .btn-step:hover {
+      background: #f39c12;
+      color: #000;
+    }
+    .preset-group {
+      display: flex;
+      gap: 3px;
+    }
+    .btn-preset {
+      background: #242e3e;
+      color: #bdc3c7;
+      border: 1px solid #34495e;
+      padding: 3px 7px;
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: all 0.15s;
+    }
+    .btn-preset:hover {
+      background: #2c3e50;
+      color: #fff;
+    }
+    .btn-preset.active {
+      background: #27ae60;
+      color: #fff;
+      font-weight: bold;
+      border-color: #2ecc71;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .btn {
+      background: #2c3e50;
+      color: #fff;
+      border: 1px solid #34495e;
+      padding: 6px 12px;
+      font-family: inherit;
+      font-weight: bold;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: #34495e;
+    }
+    .btn-action {
+      background: #8e44ad;
+      border-color: #9b59b6;
+    }
+    .btn-action:hover {
+      background: #9b59b6;
+    }
+    #dos-container {
+      width: 100%;
+      height: calc(100% - 52px);
+      position: relative;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #dos {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Controls Modal Dialog */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.82);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-card {
+      background: #151922;
+      border: 2px solid #f39c12;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 720px;
+      width: 90%;
+      max-height: 88vh;
+      overflow-y: auto;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.9);
+    }
+    .modal-title {
+      font-size: 20px;
+      color: #f39c12;
+      font-weight: bold;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #34495e;
+      padding-bottom: 8px;
+    }
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: #e74c3c;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .controls-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .controls-table th, .controls-table td {
+      padding: 8px 10px;
+      border: 1px solid #2c3e50;
+      text-align: left;
+    }
+    .controls-table th {
+      background: #1f2733;
+      color: #f1c40f;
+    }
+    .shortcut-tag {
+      display: inline-block;
+      background: #2c3e50;
+      color: #00ffcc;
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid #46627f;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div id="top-nav">
+    <div class="brand">
+      <span>💣 MINE BOMBERS 3.11</span>
+      <span class="badge">1995 ORIGINAL PC DOS</span>
+    </div>
+
+    <!-- Speed Adjustment Controller -->
+    <div class="speed-panel">
+      <span class="speed-label-title">⚡ SPEED:</span>
+      <button class="btn-step" onclick="adjustSpeedDelta(-2000)" title="Slow down speed (-2,000 cycles)">-</button>
+      <span id="speed-label" class="speed-badge">1.0x (20k)</span>
+      <button class="btn-step" onclick="adjustSpeedDelta(2000)" title="Speed up (+2,000 cycles)">+</button>
+      <div class="preset-group">
+        <button class="btn-preset" data-cycles="10000" onclick="setSpeedCycles(10000)">0.5x</button>
+        <button class="btn-preset" data-cycles="15000" onclick="setSpeedCycles(15000)">0.75x</button>
+        <button class="btn-preset active" data-cycles="20000" onclick="setSpeedCycles(20000)">1.0x</button>
+        <button class="btn-preset" data-cycles="25000" onclick="setSpeedCycles(25000)">1.25x</button>
+        <button class="btn-preset" data-cycles="30000" onclick="setSpeedCycles(30000)">1.5x</button>
+        <button class="btn-preset" data-cycles="40000" onclick="setSpeedCycles(40000)">2.0x</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" onclick="openControlsModal()">⌨️ Controls</button>
+      <button class="btn btn-action" onclick="restartGame()">🔄 Restart</button>
+      <button class="btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+  <div id="dos-container">
+    <div id="dos"></div>
+  </div>
+
+  <!-- Keyboard Controls Modal -->
+  <div id="modal-overlay" class="modal-overlay" onclick="onModalOverlayClick(event)">
+    <div class="modal-card">
+      <div class="modal-title">
+        <span>🎮 MINE BOMBERS ORIGINAL DOS CONTROLS</span>
+        <button class="close-btn" onclick="closeControlsModal()">&times;</button>
+      </div>
+
+      <table class="controls-table">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Move & Dig</th>
+            <th>Plant Bomb / Strike</th>
+            <th>Detonate Remote</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong style="color: #f1c40f;">Player 1 (Yellow)</strong></td>
+            <td><span class="shortcut-tag">Arrow Keys</span></td>
+            <td><span class="shortcut-tag">Right Ctrl</span></td>
+            <td><span class="shortcut-tag">Right Shift</span></td>
+          </tr>
+          <tr>
+            <td><strong style="color: #e74c3c;">Player 2 (Red)</strong></td>
+            <td><span class="shortcut-tag">W</span> <span class="shortcut-tag">A</span> <span class="shortcut-tag">S</span> <span class="shortcut-tag">D</span></td>
+            <td><span class="shortcut-tag">Left Shift</span></td>
+            <td><span class="shortcut-tag">Left Ctrl</span></td>
+          </tr>
+          <tr>
+            <td><strong style="color: #3498db;">Player 3 (Blue)</strong></td>
+            <td><span class="shortcut-tag">I</span> <span class="shortcut-tag">J</span> <span class="shortcut-tag">K</span> <span class="shortcut-tag">L</span></td>
+            <td><span class="shortcut-tag">Spacebar</span></td>
+            <td><span class="shortcut-tag">B</span></td>
+          </tr>
+          <tr>
+            <td><strong style="color: #2ecc71;">Player 4 (Green)</strong></td>
+            <td><span class="shortcut-tag">Numpad 8 4 5 6</span></td>
+            <td><span class="shortcut-tag">Numpad Enter</span></td>
+            <td><span class="shortcut-tag">Numpad +</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4 style="color: #f1c40f; margin-bottom: 8px;">⚡ Emulation & Speed Hotkeys:</h4>
+      <p style="font-size: 13px; line-height: 1.8; color: #bdc3c7;">
+        • <span class="shortcut-tag">Ctrl + F11</span> : Slow Down Game Speed (-2,000 cycles)<br>
+        • <span class="shortcut-tag">Ctrl + F12</span> : Speed Up Game Speed (+2,000 cycles)<br>
+        • <span class="shortcut-tag">Alt + F12</span> : Turbo Mode (Hold/Toggle Fast-Forward)<br>
+        • <span class="shortcut-tag">Alt + Enter</span> : Fullscreen Toggle<br>
+        • <span class="shortcut-tag">Esc</span> : Game Menu / Cancel | <span class="shortcut-tag">F10</span> : Exit Game
+      </p>
+
+      <div style="margin-top: 18px; text-align: center;">
+        <button class="btn" style="padding: 8px 24px; margin: 0 auto;" onclick="closeControlsModal()">Got it! Back to Game</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let dosInstance = null;
+    let currentCycles = 20000;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      try {
+        if (typeof Dos !== 'undefined') {
+          dosInstance = Dos(document.getElementById("dos"), {
+            url: "./minebomb.jsdos",
+            pathPrefix: "./js-dos/emulators/",
+            autoStart: true,
+            kiosk: false,
+            backend: "dosbox",
+            workerThread: false,
+          });
+
+          // Check for saved speed preference
+          try {
+            const saved = localStorage.getItem('minebombers_dos_cycles');
+            if (saved) {
+              const num = parseInt(saved, 10);
+              if (!isNaN(num) && num >= 4000 && num <= 100000) {
+                setTimeout(() => setSpeedCycles(num), 1200);
+              }
+            }
+          } catch(e) {}
+        } else {
+          document.getElementById("dos").innerHTML = '<div style="padding: 40px; text-align: center; color: #e74c3c;">Failed to load js-dos emulator library. Please refresh the page.</div>';
+        }
+      } catch (err) {
+        console.error("DOS init error:", err);
       }
-    </script>
-    <title>MineBombers Web</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+    });
+
+    function setSpeedCycles(cycles) {
+      currentCycles = Math.max(4000, Math.min(100000, cycles));
+      const speedPct = Math.round((currentCycles / 20000) * 100);
+
+      // Apply to js-dos emulation backend if running
+      if (dosInstance) {
+        if (typeof dosInstance.setCycles === 'function') {
+          dosInstance.setCycles(currentCycles);
+        }
+        if (typeof dosInstance.setSpeed === 'function') {
+          dosInstance.setSpeed(speedPct);
+        }
+      }
+
+      // Update UI readout
+      const ratio = (currentCycles / 20000).toFixed(2).replace(/\\.00$/, '').replace(/(\\.\\d)0$/, '$1') + 'x';
+      const badge = document.getElementById('speed-label');
+      if (badge) {
+        badge.textContent = `${ratio} (${Math.round(currentCycles / 1000)}k)`;
+      }
+
+      // Update active preset button highlight
+      document.querySelectorAll('.btn-preset').forEach((btn) => {
+        const pVal = parseInt(btn.getAttribute('data-cycles'), 10);
+        if (Math.abs(pVal - currentCycles) <= 1200) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      // Save preference
+      try {
+        localStorage.setItem('minebombers_dos_cycles', String(currentCycles));
+      } catch(e) {}
+    }
+
+    function adjustSpeedDelta(delta) {
+      setSpeedCycles(currentCycles + delta);
+    }
+
+    // Keyboard Shortcuts for Speed Adjustment
+    window.addEventListener('keydown', (e) => {
+      // Ctrl + F11: Slow down
+      if (e.ctrlKey && e.key === 'F11') {
+        e.preventDefault();
+        adjustSpeedDelta(-2000);
+      }
+      // Ctrl + F12: Speed up
+      else if (e.ctrlKey && e.key === 'F12') {
+        e.preventDefault();
+        adjustSpeedDelta(2000);
+      }
+      // Alt + F12: Turbo Mode
+      else if (e.altKey && e.key === 'F12') {
+        e.preventDefault();
+        setSpeedCycles(currentCycles >= 40000 ? 20000 : 40000);
+      }
+    });
+
+    function toggleFullscreen() {
+      const elem = document.getElementById("dos-container");
+      if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    function restartGame() {
+      if (confirm('Restart Mine Bombers?')) {
+        window.location.reload();
+      }
+    }
+
+    function openControlsModal() {
+      document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function closeControlsModal() {
+      document.getElementById('modal-overlay').classList.remove('active');
+    }
+
+    function onModalOverlayClick(e) {
+      if (e.target.id === 'modal-overlay') {
+        closeControlsModal();
+      }
+    }
+  </script>
+</body>
 </html>

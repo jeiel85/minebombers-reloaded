@@ -40,7 +40,9 @@ scaler=normal2x
 [cpu]
 core=auto
 cputype=auto
-cycles=max
+cycles=20000
+cycleup=2000
+cycledown=2000
 
 [mixer]
 nosound=false
