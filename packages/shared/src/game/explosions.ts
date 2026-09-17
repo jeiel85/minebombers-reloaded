@@ -67,52 +67,79 @@ export function computeExplosion(
     }
   }
 
-  // 2. Cardinal rays
-  const directions = [
-    { dx: 0, dy: -1 },
-    { dx: 0, dy: 1 },
-    { dx: -1, dy: 0 },
-    { dx: 1, dy: 0 },
-  ];
-
-  for (const dir of directions) {
-    let extraPenetration = penetration;
-    for (let dist = 1; dist <= radius; dist++) {
-      const cx = centerTileX + dir.dx * dist;
-      const cy = centerTileY + dir.dy * dist;
-      if (cx < 0 || cx >= MAP_WIDTH || cy < 0 || cy >= MAP_HEIGHT) break;
-
-      const idx = tileIndexOf(cx, cy);
-      const tile = tiles[idx];
-      if (!tile) break;
-
-      // Rock blocks ray unconditionally
-      if (tile.kind === 'rock') {
-        break;
+  // 2. Rays (cardinal for standard bombs, omnidirectional circle for Nuke radius >= 8)
+  if (radius >= 8) {
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.hypot(dx, dy) <= radius) {
+          const cx = centerTileX + dx;
+          const cy = centerTileY + dy;
+          if (cx <= 0 || cx >= MAP_WIDTH - 1 || cy <= 0 || cy >= MAP_HEIGHT - 1) continue;
+          const idx = tileIndexOf(cx, cy);
+          const tile = tiles[idx];
+          if (!tile) continue;
+          affectedCells.push({ x: cx, y: cy });
+          if (tile.kind === 'soil' || (tile.kind === 'rock' && Math.random() < 0.5)) {
+            tile.kind = 'floor';
+            tile.durability = 0;
+            openedTiles.push(idx);
+            events.push({ kind: 'tile_changed', index: idx, tile: 'floor' });
+            const hidden = treasures.find((t) => t.tileIndex === idx && !t.revealed && !t.collected);
+            if (hidden) {
+              hidden.revealed = true;
+              revealedTreasures.push(hidden);
+            }
+          }
+        }
       }
+    }
+  } else {
+    const directions = [
+      { dx: 0, dy: -1 },
+      { dx: 0, dy: 1 },
+      { dx: -1, dy: 0 },
+      { dx: 1, dy: 0 },
+    ];
 
-      // Soil is affected and destroyed
-      if (tile.kind === 'soil') {
-        affectedCells.push({ x: cx, y: cy });
-        tile.kind = 'floor';
-        tile.durability = 0;
-        openedTiles.push(idx);
-        events.push({ kind: 'tile_changed', index: idx, tile: 'floor' });
+    for (const dir of directions) {
+      let extraPenetration = penetration;
+      for (let dist = 1; dist <= radius; dist++) {
+        const cx = centerTileX + dir.dx * dist;
+        const cy = centerTileY + dir.dy * dist;
+        if (cx < 0 || cx >= MAP_WIDTH || cy < 0 || cy >= MAP_HEIGHT) break;
 
-        const hidden = treasures.find((t) => t.tileIndex === idx && !t.revealed && !t.collected);
-        if (hidden) {
-          hidden.revealed = true;
-          revealedTreasures.push(hidden);
+        const idx = tileIndexOf(cx, cy);
+        const tile = tiles[idx];
+        if (!tile) break;
+
+        // Rock blocks ray unconditionally
+        if (tile.kind === 'rock') {
+          break;
         }
 
-        if (extraPenetration > 0) {
-          extraPenetration--;
+        // Soil is affected and destroyed
+        if (tile.kind === 'soil') {
+          affectedCells.push({ x: cx, y: cy });
+          tile.kind = 'floor';
+          tile.durability = 0;
+          openedTiles.push(idx);
+          events.push({ kind: 'tile_changed', index: idx, tile: 'floor' });
+
+          const hidden = treasures.find((t) => t.tileIndex === idx && !t.revealed && !t.collected);
+          if (hidden) {
+            hidden.revealed = true;
+            revealedTreasures.push(hidden);
+          }
+
+          if (extraPenetration > 0) {
+            extraPenetration--;
+          } else {
+            break; // Stop ray
+          }
         } else {
-          break; // Stop ray
+          // Floor or other passable
+          affectedCells.push({ x: cx, y: cy });
         }
-      } else {
-        // Floor or other passable
-        affectedCells.push({ x: cx, y: cy });
       }
     }
   }
@@ -169,8 +196,14 @@ export function computeExplosion(
     });
 
     if (inAffected) {
-      const actualDmg = Math.min(player.hp, damage);
-      player.hp = Math.max(0, player.hp - damage);
+      let finalDamage = damage;
+      // Kevlar armor damage reduction
+      if (player.inventory.upgrades['kevlar_armor'] || player.inventory.items['kevlar_armor']) {
+        finalDamage = Math.round(damage * (1 - 0.40));
+      }
+
+      const actualDmg = Math.min(player.hp, finalDamage);
+      player.hp = Math.max(0, player.hp - finalDamage);
       const eliminated = player.hp <= 0;
       if (eliminated) {
         player.alive = false;

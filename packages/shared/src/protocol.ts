@@ -37,6 +37,7 @@ export interface ExplosiveView {
   tileX: number;
   tileY: number;
   explodeAt: number;
+  isRemote?: boolean;
 }
 
 export interface TreasureView {
@@ -45,7 +46,7 @@ export interface TreasureView {
   tileX: number;
   tileY: number;
   value: number;
-  rarity: 'basic' | 'rare';
+  rarity: 'basic' | 'rare' | 'silver' | 'ruby' | 'diamond' | 'chest';
 }
 
 export interface PickupView {
@@ -56,7 +57,39 @@ export interface PickupView {
   definitionId: string;
 }
 
-export type EntityView = ExplosiveView | TreasureView | PickupView;
+export interface ProjectileView {
+  kind: 'projectile';
+  id: string;
+  definitionId: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}
+
+export interface MonsterView {
+  kind: 'monster';
+  id: string;
+  monsterKind: 'slime' | 'bat';
+  x: number;
+  y: number;
+  hp: number;
+}
+
+export interface FallingRockView {
+  kind: 'falling_rock';
+  id: string;
+  tileX: number;
+  tileY: number;
+}
+
+export type EntityView =
+  | ExplosiveView
+  | TreasureView
+  | PickupView
+  | ProjectileView
+  | MonsterView
+  | FallingRockView;
 
 export interface TileDelta {
   index: number;
@@ -88,6 +121,10 @@ export type GameEvent =
   | { kind: 'player_eliminated'; playerId: string; killerPlayerId: string | null }
   | { kind: 'cash_changed'; playerId: string; cash: number; reason: string }
   | { kind: 'phase_changed'; phase: RoomPhase; at: number }
+  | { kind: 'projectile_fired'; id: string; ownerId: string; x: number; y: number; vx: number; vy: number }
+  | { kind: 'flame_burst'; playerId: string; cells: Array<{ x: number; y: number }> }
+  | { kind: 'mine_collapse'; fallingRocks: Array<{ tileX: number; tileY: number }> }
+  | { kind: 'teleported'; playerId: string; tileX: number; tileY: number }
   | {
       kind: 'round_ended';
       roundIndex: number;

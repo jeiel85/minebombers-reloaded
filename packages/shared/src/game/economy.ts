@@ -62,7 +62,7 @@ export function processPurchase(
   player.cash -= totalPrice;
 
   // Add to inventory
-  if (def.kind === 'tool') {
+  if (def.kind === 'tool' || def.kind === 'passive') {
     player.inventory.upgrades[equipmentId] = (player.inventory.upgrades[equipmentId] ?? 0) + quantity;
   } else {
     player.inventory.items[equipmentId] = (player.inventory.items[equipmentId] ?? 0) + quantity;

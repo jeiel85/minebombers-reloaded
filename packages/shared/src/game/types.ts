@@ -41,6 +41,7 @@ export interface SimExplosive {
   radius: number;
   damage: number;
   penetration: number;
+  isRemote?: boolean;
 }
 
 export interface SimMine {
@@ -56,12 +57,47 @@ export interface SimMine {
   detonated?: boolean;
 }
 
+export interface SimProjectile {
+  id: string;
+  ownerId: string;
+  definitionId: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  damage: number;
+  blastRadiusTiles: number;
+  active: boolean;
+}
+
+export interface SimMonster {
+  id: string;
+  kind: 'slime' | 'bat';
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  moveTimerMs: number;
+  dx: -1 | 0 | 1;
+  dy: -1 | 0 | 1;
+  alive: boolean;
+  bounty: number;
+}
+
+export interface SimFallingRock {
+  id: string;
+  tileX: number;
+  tileY: number;
+  impactTime: number;
+  dropped: boolean;
+}
+
 export interface SimTreasureEntity {
   id: string;
   tileIndex: number;
   tileX: number;
   tileY: number;
-  rarity: 'basic' | 'rare';
+  rarity: 'basic' | 'rare' | 'silver' | 'ruby' | 'diamond' | 'chest';
   value: number;
   revealed: boolean;
   collected: boolean;
@@ -71,7 +107,7 @@ export interface SimPickupItem {
   id: string;
   tileX: number;
   tileY: number;
-  definitionId: 'ammo' | 'med_kit';
+  definitionId: 'ammo' | 'med_kit' | 'dynamite' | 'rocket';
   collected: boolean;
 }
 

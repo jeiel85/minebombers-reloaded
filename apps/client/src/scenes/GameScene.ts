@@ -9,7 +9,9 @@ import {
   calculateMatchStandings,
   createDefaultInventory,
   generateClassicMine,
+  type EntityView,
   type GameEvent,
+  type InventoryState,
   type ServerMessage,
   type SimTileState,
 } from '@minebombers/shared';
@@ -18,6 +20,18 @@ import { InputController } from '../game/InputController';
 import { ClientPrediction } from '../game/Prediction';
 import { RemoteEntityInterpolation } from '../game/Interpolation';
 import { DebugOverlay } from '../ui/DebugOverlay';
+import { RetroAudio } from '../audio/RetroAudio';
+
+export const HOTBAR_ITEMS = [
+  { id: 'small_charge', name: 'Small Bomb', icon: 0 },
+  { id: 'dynamite', name: 'Dynamite', icon: 1 },
+  { id: 'heavy_charge', name: 'Heavy Bomb', icon: 2 },
+  { id: 'remote_bomb', name: 'Remote Bomb', icon: 3 },
+  { id: 'proximity_mine', name: 'Landmine', icon: 4 },
+  { id: 'rocket', name: 'Mini-Rocket', icon: 5 },
+  { id: 'flamethrower', name: 'Flamethrower', icon: 6 },
+  { id: 'nuke', name: 'Nuke', icon: 7 },
+];
 
 export interface GameSceneData {
   mode: 'multiplayer' | 'solo';
@@ -41,6 +55,7 @@ export class GameScene extends Phaser.Scene {
   private tileSprites = new Map<number, Phaser.GameObjects.Sprite>();
   private playerSprites = new Map<string, Phaser.GameObjects.Sprite>();
   private playerLabels = new Map<string, Phaser.GameObjects.Text>();
+  private playerPrevPositions = new Map<string, { x: number; y: number }>();
   private entitySprites = new Map<string, Phaser.GameObjects.Sprite>();
 
   // HUD
@@ -51,6 +66,11 @@ export class GameScene extends Phaser.Scene {
   private ammoText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
   private aliveText!: Phaser.GameObjects.Text;
+
+  // Bottom Hotbar HUD
+  private hotbarBorders: Phaser.GameObjects.Rectangle[] = [];
+  private hotbarSlotBgs: Phaser.GameObjects.Rectangle[] = [];
+  private hotbarCounts: Phaser.GameObjects.Text[] = [];
 
   // Controllers & Net
   private inputController!: InputController;
@@ -97,8 +117,9 @@ export class GameScene extends Phaser.Scene {
     this.inputController = new InputController(this);
     this.debugOverlay = new DebugOverlay(this);
 
-    // Create HUD
+    // Create HUD & Hotbar
     this.createHUD(arenaWidth);
+    this.createHotbar(arenaWidth, arenaHeight);
 
     if (this.dataPayload.mode === 'solo') {
       this.initSoloGame();
@@ -126,7 +147,7 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(501);
 
     // Ammo / Equipped
-    this.ammoText = this.add.text(390, 12, '💣 Small Charge: 2', {
+    this.ammoText = this.add.text(390, 12, '💣 Small Bomb: 2', {
       fontFamily: 'monospace',
       fontSize: '15px',
       color: '#f1c40f',
@@ -158,6 +179,81 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(1, 0).setDepth(501).setInteractive({ useHandCursor: true });
 
     menuBtn.on('pointerdown', () => this.togglePauseMenu());
+  }
+
+  private createHotbar(arenaWidth: number, arenaHeight: number): void {
+    const slotCount = HOTBAR_ITEMS.length; // 8
+    const slotSize = 42;
+    const gap = 6;
+    const totalWidth = slotCount * slotSize + (slotCount - 1) * gap;
+    const startX = (arenaWidth - totalWidth) / 2 + slotSize / 2;
+    const posY = arenaHeight - 26;
+
+    // Panel background
+    const bgPanel = this.add.rectangle(arenaWidth / 2, posY, totalWidth + 20, 48, 0x0e1117, 0.9).setDepth(500);
+    bgPanel.setStrokeStyle(1, 0x2c3e50);
+
+    for (let i = 0; i < slotCount; i++) {
+      const item = HOTBAR_ITEMS[i]!;
+      const sx = startX + i * (slotSize + gap);
+
+      const slotBg = this.add.rectangle(sx, posY, slotSize, slotSize, 0x1a202c, 0.95).setDepth(501);
+      const border = this.add.rectangle(sx, posY, slotSize, slotSize).setStrokeStyle(1, 0x34495e).setDepth(502);
+      this.add.sprite(sx, posY, 'ui_icons', item.icon).setScale(0.9).setDepth(503);
+
+      this.add.text(sx - 17, posY - 18, `${i + 1}`, {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: '#f39c12',
+      }).setDepth(504);
+
+      const count = this.add.text(sx + 18, posY + 6, '0', {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: '#7f8c8d',
+      }).setOrigin(1, 0).setDepth(504);
+
+      slotBg.setInteractive({ useHandCursor: true });
+      slotBg.on('pointerdown', () => {
+        this.inputController.setSlot(i);
+        RetroAudio.playClick();
+      });
+
+      this.hotbarSlotBgs.push(slotBg);
+      this.hotbarBorders.push(border);
+      this.hotbarCounts.push(count);
+    }
+  }
+
+  private updateHotbar(inventory: InventoryState, selectedSlot: number): void {
+    for (let i = 0; i < HOTBAR_ITEMS.length; i++) {
+      const item = HOTBAR_ITEMS[i]!;
+      const count = inventory.items[item.id] ?? 0;
+      const isSelected = i === selectedSlot;
+
+      const border = this.hotbarBorders[i];
+      const bg = this.hotbarSlotBgs[i];
+      const countTxt = this.hotbarCounts[i];
+
+      if (border && bg && countTxt) {
+        if (isSelected) {
+          border.setStrokeStyle(2, 0xf1c40f);
+          bg.fillColor = 0x2c3e50;
+        } else {
+          border.setStrokeStyle(1, 0x34495e);
+          bg.fillColor = 0x1a202c;
+        }
+
+        countTxt.setText(`${count}`);
+        countTxt.setColor(count > 0 ? '#2ecc71' : '#7f8c8d');
+      }
+    }
+
+    const currentItem = HOTBAR_ITEMS[selectedSlot];
+    const currentCount = currentItem ? (inventory.items[currentItem.id] ?? 0) : 0;
+    this.ammoText.setText(`[${selectedSlot + 1}] ${currentItem?.name ?? 'Bomb'}: ${currentCount}`);
   }
 
   private togglePauseMenu(): void {
@@ -567,7 +663,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private syncEntities(entities: Array<{ id: string; kind: string; tileX: number; tileY: number; rarity?: string; definitionId?: string }>): void {
+  private syncEntities(entities: EntityView[]): void {
     const currentEntityIds = new Set(entities.map((e) => e.id));
 
     // Remove obsolete
@@ -580,16 +676,36 @@ export class GameScene extends Phaser.Scene {
 
     // Add or update
     for (const entity of entities) {
-      const px = entity.tileX * TILE_SIZE_PX + 16;
-      const py = entity.tileY * TILE_SIZE_PX + 16;
+      let px = 0;
+      let py = 0;
+      if (entity.kind === 'projectile' || entity.kind === 'monster') {
+        px = (entity.x / WORLD_UNITS_PER_TILE) * TILE_SIZE_PX;
+        py = (entity.y / WORLD_UNITS_PER_TILE) * TILE_SIZE_PX;
+      } else {
+        px = entity.tileX * TILE_SIZE_PX + 16;
+        py = entity.tileY * TILE_SIZE_PX + 16;
+      }
 
       let sprite = this.entitySprites.get(entity.id);
       if (!sprite) {
         if (entity.kind === 'explosive') {
           sprite = this.add.sprite(px, py, 'bombs', 0);
           sprite.play('bomb_tick');
+          if (entity.isRemote) {
+            sprite.setTint(0xff6666);
+          } else if (entity.definitionId === 'proximity_mine') {
+            sprite.setTint(0x55ff55);
+          } else if (entity.definitionId === 'nuke') {
+            sprite.setTint(0xffbb00);
+          }
         } else if (entity.kind === 'treasure') {
-          const frame = entity.rarity === 'rare' ? 1 : 0;
+          let frame = 0;
+          if (entity.rarity === 'silver') frame = 4;
+          else if (entity.rarity === 'ruby') frame = 1;
+          else if (entity.rarity === 'diamond') frame = 5;
+          else if (entity.rarity === 'chest') frame = 6;
+          else frame = 0; // gold / rare
+
           sprite = this.add.sprite(px, py, 'pickups', frame);
           this.tweens.add({
             targets: sprite,
@@ -599,7 +715,9 @@ export class GameScene extends Phaser.Scene {
             repeat: -1,
           });
         } else if (entity.kind === 'pickup') {
-          const frame = entity.definitionId === 'med_kit' ? 3 : 2;
+          let frame = 2; // ammo crate
+          if (entity.definitionId === 'med_kit') frame = 3;
+          else if (entity.definitionId === 'rocket') frame = 7;
           sprite = this.add.sprite(px, py, 'pickups', frame);
           this.tweens.add({
             targets: sprite,
@@ -608,8 +726,32 @@ export class GameScene extends Phaser.Scene {
             yoyo: true,
             repeat: -1,
           });
+        } else if (entity.kind === 'projectile') {
+          sprite = this.add.sprite(px, py, 'projectiles', 0).setDepth(210);
+          sprite.setRotation(Math.atan2(entity.vy, entity.vx));
+        } else if (entity.kind === 'monster') {
+          const frame = entity.monsterKind === 'slime' ? 0 : 2;
+          sprite = this.add.sprite(px, py, 'monsters', frame).setDepth(205);
+          sprite.play(entity.monsterKind === 'slime' ? 'slime_idle' : 'bat_fly');
+        } else if (entity.kind === 'falling_rock') {
+          sprite = this.add.sprite(px, py, 'projectiles', 2).setDepth(220);
+          this.tweens.add({
+            targets: sprite,
+            y: py,
+            from: py - 32,
+            duration: 250,
+            ease: 'Bounce.easeOut',
+          });
         }
         if (sprite) this.entitySprites.set(entity.id, sprite);
+      } else {
+        // Entity exists: update positions if mobile
+        if (entity.kind === 'projectile') {
+          sprite.setPosition(px, py);
+          sprite.setRotation(Math.atan2(entity.vy, entity.vx));
+        } else if (entity.kind === 'monster') {
+          sprite.setPosition(px, py);
+        }
       }
     }
   }
@@ -621,28 +763,44 @@ export class GameScene extends Phaser.Scene {
         if (sprite && ev.tile === 'floor') {
           sprite.destroy();
           this.tileSprites.delete(ev.index);
+          RetroAudio.playDig();
         }
         if (this.currentTiles[ev.index]) {
           this.currentTiles[ev.index]!.kind = ev.tile;
         }
       } else if (ev.kind === 'explosion') {
-        // Spawn animated explosion segments and camera shake
-        this.cameras.main.shake(150, 0.01);
+        const numCells = ev.cells.length;
+        if (numCells >= 25) {
+          // Nuclear blast
+          this.cameras.main.shake(700, 0.04);
+          this.cameras.main.flash(300, 255, 255, 255);
+          RetroAudio.playExplosion('nuke');
+        } else if (numCells >= 13) {
+          this.cameras.main.shake(300, 0.02);
+          RetroAudio.playExplosion('heavy');
+        } else if (numCells >= 8) {
+          this.cameras.main.shake(200, 0.015);
+          RetroAudio.playExplosion('medium');
+        } else {
+          this.cameras.main.shake(120, 0.01);
+          RetroAudio.playExplosion('small');
+        }
+
         for (const cell of ev.cells) {
           const fx = this.add.sprite(cell.x * TILE_SIZE_PX + 16, cell.y * TILE_SIZE_PX + 16, 'explosions', 0);
           fx.play('explode');
           fx.once('animationcomplete', () => fx.destroy());
         }
       } else if (ev.kind === 'damage') {
+        RetroAudio.playHurt();
         const p = this.playerSprites.get(ev.playerId);
         if (p) {
-          // Floating damage text
           const txt = this.add.text(p.x, p.y - 20, `-${ev.amount} HP`, {
             fontFamily: 'monospace',
             fontSize: '14px',
             fontStyle: 'bold',
             color: '#ff4757',
-          }).setOrigin(0.5);
+          }).setOrigin(0.5).setDepth(300);
           this.tweens.add({
             targets: txt,
             y: txt.y - 24,
@@ -652,6 +810,7 @@ export class GameScene extends Phaser.Scene {
           });
         }
       } else if (ev.kind === 'treasure_collected') {
+        RetroAudio.playPickup();
         const p = this.playerSprites.get(ev.playerId);
         if (p) {
           const txt = this.add.text(p.x, p.y - 20, `+$${ev.value}`, {
@@ -659,7 +818,7 @@ export class GameScene extends Phaser.Scene {
             fontSize: '14px',
             fontStyle: 'bold',
             color: '#2ed573',
-          }).setOrigin(0.5);
+          }).setOrigin(0.5).setDepth(300);
           this.tweens.add({
             targets: txt,
             y: txt.y - 24,
@@ -669,22 +828,74 @@ export class GameScene extends Phaser.Scene {
           });
         }
       } else if (ev.kind === 'pickup_collected') {
+        RetroAudio.playPickup();
         const p = this.playerSprites.get(ev.playerId);
         if (p) {
-          const label = ev.definitionId === 'ammo' ? '+2 Bombs!' : '+1 Med Kit!';
-          const color = ev.definitionId === 'ammo' ? '#f1c40f' : '#2ecc71';
+          let label = '+2 Bombs!';
+          let color = '#f1c40f';
+          if (ev.definitionId === 'med_kit') {
+            label = '+50 HP Med Kit!';
+            color = '#2ecc71';
+          } else if (ev.definitionId === 'rocket') {
+            label = '+1 Rocket!';
+            color = '#e74c3c';
+          }
           const txt = this.add.text(p.x, p.y - 20, label, {
             fontFamily: 'monospace',
             fontSize: '14px',
             fontStyle: 'bold',
             color,
-          }).setOrigin(0.5);
+          }).setOrigin(0.5).setDepth(300);
           this.tweens.add({
             targets: txt,
             y: txt.y - 24,
             alpha: 0,
             duration: 800,
             onComplete: () => txt.destroy(),
+          });
+        }
+      } else if (ev.kind === 'projectile_fired') {
+        RetroAudio.playRocket();
+      } else if (ev.kind === 'flame_burst') {
+        RetroAudio.playFlame();
+        for (const cell of ev.cells) {
+          const flame = this.add.sprite(cell.x * TILE_SIZE_PX + 16, cell.y * TILE_SIZE_PX + 16, 'projectiles', 1).setDepth(215);
+          this.tweens.add({
+            targets: flame,
+            alpha: 0,
+            scale: 1.3,
+            duration: 250,
+            onComplete: () => flame.destroy(),
+          });
+        }
+      } else if (ev.kind === 'mine_collapse') {
+        RetroAudio.playAlarm();
+        this.cameras.main.shake(600, 0.025);
+        const banner = this.add.text(this.cameras.main.width / 2, 70, '⚠️ WARNING: MINE COLLAPSE IN PROGRESS! ⚠️', {
+          fontFamily: 'monospace',
+          fontSize: '18px',
+          fontStyle: 'bold',
+          color: '#ff3838',
+          backgroundColor: '#000000cc',
+          padding: { x: 16, y: 6 },
+        }).setOrigin(0.5).setDepth(600);
+        this.tweens.add({
+          targets: banner,
+          alpha: 0,
+          duration: 3000,
+          onComplete: () => banner.destroy(),
+        });
+      } else if (ev.kind === 'teleported') {
+        RetroAudio.playTeleport();
+        const p = this.playerSprites.get(ev.playerId);
+        if (p) {
+          const flash = this.add.circle(p.x, p.y, 24, 0x00ffff, 0.8).setDepth(205);
+          this.tweens.add({
+            targets: flash,
+            scale: 2,
+            alpha: 0,
+            duration: 300,
+            onComplete: () => flash.destroy(),
           });
         }
       }
@@ -708,19 +919,19 @@ export class GameScene extends Phaser.Scene {
             this.soloSim.simTime,
             state.primary,
             state.secondary,
+            state.slot,
           );
         }
 
         // Render Local Player
         this.updatePlayerSprite(myPlayer.id, myPlayer.x, myPlayer.y, myPlayer.name, 0, myPlayer.alive);
 
-        // Update HUD
+        // Update HUD & Hotbar
         this.hpText.setText(`${myPlayer.hp}/100`);
         this.hpBar.width = Math.max(0, myPlayer.hp);
         this.hpBar.fillColor = myPlayer.hp > 40 ? 0x2ecc71 : 0xe74c3c;
         this.cashText.setText(`CASH: $${myPlayer.cash}`);
-        const ammo = myPlayer.inventory.items['small_charge'] ?? 0;
-        this.ammoText.setText(`💣 Small Charge: ${ammo}`);
+        this.updateHotbar(myPlayer.inventory, state.slot);
       }
 
       // Render Bots
@@ -815,6 +1026,23 @@ export class GameScene extends Phaser.Scene {
     } else {
       sprite.setAlpha(1.0);
       sprite.setAngle(0);
+
+      const prev = this.playerPrevPositions.get(id);
+      if (prev) {
+        const dx = px - prev.x;
+        const dy = py - prev.y;
+        if (Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            sprite.play(dx > 0 ? 'miner_right' : 'miner_left', true);
+          } else {
+            sprite.play(dy > 0 ? 'miner_down' : 'miner_up', true);
+          }
+        } else {
+          sprite.stop();
+        }
+      }
+      this.playerPrevPositions.set(id, { x: px, y: py });
+
       sprite.setPosition(px, py);
       label?.setPosition(px, py - 24);
     }

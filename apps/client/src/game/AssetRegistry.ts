@@ -26,6 +26,14 @@ export class AssetRegistry {
       frameWidth: 32,
       frameHeight: 32,
     });
+    scene.load.spritesheet('monsters', './assets/gfx/monsters.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+    scene.load.spritesheet('projectiles', './assets/gfx/projectiles.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
   }
 
   public static createAnimations(scene: Phaser.Scene): void {
@@ -65,6 +73,18 @@ export class AssetRegistry {
         frames: scene.anims.generateFrameNumbers('explosions', { start: 0, end: 4 }),
         frameRate: 15,
         repeat: 0,
+      });
+      scene.anims.create({
+        key: 'slime_idle',
+        frames: scene.anims.generateFrameNumbers('monsters', { start: 0, end: 1 }),
+        frameRate: 3,
+        repeat: -1,
+      });
+      scene.anims.create({
+        key: 'bat_fly',
+        frames: scene.anims.generateFrameNumbers('monsters', { start: 2, end: 3 }),
+        frameRate: 6,
+        repeat: -1,
       });
     }
   }

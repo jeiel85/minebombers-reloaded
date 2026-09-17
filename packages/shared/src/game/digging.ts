@@ -14,8 +14,11 @@ export interface DigResult {
 }
 
 export function getPickaxeMultiplier(player: SimPlayer): number {
+  if (player.inventory.upgrades['power_drill'] || player.inventory.items['power_drill']) {
+    return EQUIPMENT.power_drill.digMultiplier ?? 2.5;
+  }
   if (player.inventory.upgrades['pickaxe_2'] || player.inventory.items['pickaxe_2']) {
-    return EQUIPMENT.pickaxe_2.digMultiplier ?? 1.45;
+    return EQUIPMENT.pickaxe_2.digMultiplier ?? 1.5;
   }
   return EQUIPMENT.pickaxe_1.digMultiplier ?? 1.0;
 }
