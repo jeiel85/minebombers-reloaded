@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="/coi-serviceworker.js"></script>
+    <script>
+      if (window.location.search.includes('dos=1') || window.location.search.includes('pc=1')) {
+        window.location.replace('./dos.html');
+      }
+    </script>
     <title>MineBombers Web</title>
   </head>
   <body>

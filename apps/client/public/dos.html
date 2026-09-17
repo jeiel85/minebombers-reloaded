@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mine Bombers (1995) - Original PC DOS Version</title>
+  <script src="./coi-serviceworker.js"></script>
+  <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
+  <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      background-color: #0b0e14;
+      color: #ecf0f1;
+      font-family: monospace;
+      overflow: hidden;
+    }
+    #top-nav {
+      height: 48px;
+      background: #151922;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 2px solid #f39c12;
+      z-index: 100;
+    }
+    .brand {
+      font-size: 16px;
+      font-weight: bold;
+      color: #f39c12;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 11px;
+      background: #27ae60;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+    .btn {
+      background: #2c3e50;
+      color: #fff;
+      border: 1px solid #34495e;
+      padding: 6px 14px;
+      font-family: monospace;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .btn:hover {
+      background: #34495e;
+    }
+    .btn-remake {
+      background: #2980b9;
+      border-color: #3498db;
+    }
+    .btn-remake:hover {
+      background: #3498db;
+    }
+    #dos-container {
+      width: 100%;
+      height: calc(100% - 48px);
+      position: relative;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #dos {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="top-nav">
+    <div class="brand">
+      <span>💣 MINE BOMBERS 3.11</span>
+      <span class="badge">100% ORIGINAL DOS PC VERSION</span>
+    </div>
+    <div class="actions">
+      <a href="./" class="btn btn-remake">⚡ Switch to HTML5 Remake</a>
+      <button class="btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+  <div id="dos-container">
+    <div id="dos"></div>
+  </div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      try {
+        if (typeof Dos !== 'undefined') {
+          Dos(document.getElementById("dos"), {
+            url: "./minebomb.jsdos",
+            autoStart: true,
+            kiosk: false,
+          });
+        } else {
+          document.getElementById("dos").innerHTML = '<div style="padding: 40px; text-align: center; color: #e74c3c;">Failed to load js-dos emulator library from CDN. Please check your connection.</div>';
+        }
+      } catch (err) {
+        console.error("DOS init error:", err);
+      }
+    });
+
+    function toggleFullscreen() {
+      const elem = document.getElementById("dos-container");
+      if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  </script>
+</body>
+</html>

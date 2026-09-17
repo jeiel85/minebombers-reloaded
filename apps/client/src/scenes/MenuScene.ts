@@ -178,7 +178,15 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // Buttons
-    let currentY = 320;
+    let currentY = 300;
+
+    // 0. Play 100% Original DOS PC Version
+    this.createButton(width / 2, currentY, '🕹️ PLAY ORIGINAL PC DOS VERSION (1995)', 0xd35400, () => {
+      RetroAudio.playClick();
+      window.location.href = './dos.html';
+    });
+
+    currentY += 56;
 
     // 1. Play Solo / Practice (Instant Play vs Bots)
     this.createButton(width / 2, currentY, '⚔️ PLAY SOLO PRACTICE (VS BOTS)', 0x27ae60, () => {
