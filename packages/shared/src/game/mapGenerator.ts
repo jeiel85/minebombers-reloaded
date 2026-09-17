@@ -6,6 +6,7 @@ import {
   RARE_TREASURE_VALUE,
 } from './constants';
 import { mulberry32, shuffleInPlace } from './prng';
+import { getClassicMap, isValidClassicMap } from './classicMaps';
 
 export const MAP_GENERATOR_ID = 'classic-mine-v1';
 
@@ -55,9 +56,17 @@ function manhattan(a: GridPoint, b: GridPoint): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-export function generateClassicMine(seed: number, playerCount: number): GeneratedMap {
+export function generateClassicMine(seed: number, playerCount: number, mapPreset?: string): GeneratedMap {
   if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 8) {
     throw new Error('playerCount must be an integer from 2 to 8');
+  }
+
+  if (mapPreset && isValidClassicMap(mapPreset)) {
+    const classic = getClassicMap(mapPreset, playerCount);
+    if (classic) {
+      classic.seed = seed >>> 0;
+      return classic;
+    }
   }
 
   const random = mulberry32(seed >>> 0);

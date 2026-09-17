@@ -9,3 +9,4 @@ export * from './digging';
 export * from './explosions';
 export * from './economy';
 export * from './engine';
+export * from './classicMaps';

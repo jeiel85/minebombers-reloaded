@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { GameSocket } from '../net/GameSocket';
 import type { SimMatchStandingsEntry, SimRoundStandingsEntry, ServerMessage } from '@minebombers/shared';
 import { AssetRegistry } from '../game/AssetRegistry';
+import { RetroAudio } from '../audio/RetroAudio';
 
 export interface ResultSceneData {
   mode?: 'multiplayer' | 'solo';
@@ -35,6 +36,10 @@ export class ResultScene extends Phaser.Scene {
   create(): void {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
+
+    // Authentic Sound Blaster APPLAUSE & Scream Tracker 3 BGM
+    RetroAudio.playVictory();
+    RetroAudio.playBGM('huippe');
 
     const titleText = this.dataPayload.isMatchEnd ? '🏆 FINAL MATCH RESULTS 🏆' : `ROUND ${this.dataPayload.roundIndex} RESULTS`;
     this.add.text(width / 2, 50, titleText, {

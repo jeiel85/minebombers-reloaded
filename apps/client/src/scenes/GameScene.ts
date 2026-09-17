@@ -39,6 +39,7 @@ export interface GameSceneData {
   displayName: string;
   socket?: GameSocket;
   myPlayerId?: string;
+  selectedMap?: string;
   startData?: Extract<ServerMessage, { t: 's.start' }>;
   soloRoundIndex?: number;
   soloCash?: number;
@@ -134,6 +135,9 @@ export class GameScene extends Phaser.Scene {
     // Create HUD & Hotbar anchored to viewport
     this.createHUD(viewWidth);
     this.createHotbar(viewWidth, viewHeight);
+
+    // Stream authentic 1995 Scream Tracker 3 Cavern BGM (Oeku)
+    RetroAudio.playBGM('oeku');
 
     if (this.dataPayload.mode === 'solo') {
       this.initSoloGame();
@@ -345,7 +349,7 @@ export class GameScene extends Phaser.Scene {
   // --- SOLO PRACTICE MODE ---
   private initSoloGame(): void {
     const seed = Math.floor(Math.random() * 1000000);
-    const map = generateClassicMine(seed, 4);
+    const map = generateClassicMine(seed, 4, this.dataPayload.selectedMap);
 
     this.currentTiles = map.tiles.map((kind) => ({ kind, durability: kind === 'soil' ? 1000 : 0 }));
     this.renderInitialMap(map.tiles);
@@ -718,6 +722,7 @@ export class GameScene extends Phaser.Scene {
           mode: 'solo',
           displayName: this.dataPayload.displayName,
           myPlayerId: this.myPlayerId,
+          selectedMap: this.dataPayload.selectedMap,
           cash: myPlayer?.cash ?? 500,
           inventory: myPlayer?.inventory ?? createDefaultInventory(),
           onSoloShopComplete: (updatedCash: number, updatedInventory: ReturnType<typeof createDefaultInventory>) => {
@@ -725,6 +730,7 @@ export class GameScene extends Phaser.Scene {
               mode: 'solo',
               displayName: this.dataPayload.displayName,
               myPlayerId: this.myPlayerId,
+              selectedMap: this.dataPayload.selectedMap,
               soloRoundIndex: this.soloRoundIndex + 1,
               soloCash: updatedCash,
               soloInventory: updatedInventory,
@@ -740,7 +746,9 @@ export class GameScene extends Phaser.Scene {
     if (!this.socket || !this.dataPayload.startData) return;
 
     const startData = this.dataPayload.startData;
-    const map = generateClassicMine(startData.seed, 4);
+    const mapGen = startData.mapGenerator || '';
+    const preset = (mapGen.startsWith('classic:') ? mapGen.slice(8) : undefined) || (startData as unknown as { mapPreset?: string }).mapPreset;
+    const map = generateClassicMine(startData.seed, 4, preset);
     this.currentTiles = map.tiles.map((kind) => ({ kind, durability: kind === 'soil' ? 1000 : 0 }));
     this.renderInitialMap(map.tiles);
     this.roundEndsAt = startData.endsAt;
@@ -872,6 +880,7 @@ export class GameScene extends Phaser.Scene {
       let sprite = this.entitySprites.get(entity.id);
       if (!sprite) {
         if (entity.kind === 'explosive') {
+          RetroAudio.playBombDrop();
           sprite = this.add.sprite(px, py, 'bombs', 0);
           sprite.play('bomb_tick');
           if (entity.isRemote) {
@@ -913,6 +922,7 @@ export class GameScene extends Phaser.Scene {
           sprite = this.add.sprite(px, py, 'projectiles', 0).setDepth(210);
           sprite.setRotation(Math.atan2(entity.vy, entity.vx));
         } else if (entity.kind === 'monster') {
+          RetroAudio.playRoar();
           const frame = entity.monsterKind === 'slime' ? 0 : 2;
           sprite = this.add.sprite(px, py, 'monsters', frame).setDepth(205);
           sprite.play(entity.monsterKind === 'slime' ? 'slime_idle' : 'bat_fly');

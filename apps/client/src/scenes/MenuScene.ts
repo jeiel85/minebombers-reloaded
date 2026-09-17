@@ -1,17 +1,33 @@
 import Phaser from 'phaser';
 import { GameSocket } from '../net/GameSocket';
+import { CLASSIC_MAP_NAMES } from '@minebombers/shared';
+import { RetroAudio } from '../audio/RetroAudio';
 
 export class MenuScene extends Phaser.Scene {
   private displayName = 'Miner';
   private apiBase = (import.meta.env.VITE_API_BASE as string | undefined) || 'http://localhost:8787';
+  private mapOptions = ['RANDOM (Procedural)', ...CLASSIC_MAP_NAMES];
+  private selectedMapIndex = 0;
+  private mapText!: Phaser.GameObjects.Text;
+  private mapSubtitle!: Phaser.GameObjects.Text;
 
   constructor() {
     super('menu');
   }
 
+  private getSelectedMapPreset(): string | undefined {
+    if (this.selectedMapIndex === 0) return undefined;
+    return this.mapOptions[this.selectedMapIndex];
+  }
+
   create(): void {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
+
+    // First interaction starts retro BGM & Sound Blaster audio
+    this.input.on('pointerdown', () => {
+      RetroAudio.playBGM('huippe');
+    });
 
     // Load saved name
     try {
@@ -19,34 +35,69 @@ export class MenuScene extends Phaser.Scene {
       if (savedName) this.displayName = savedName;
     } catch { /* storage disabled */ }
 
-    // Title & Logo
-    this.add.text(width / 2, 70, 'MINE BOMBERS', {
+    // Audio Controls (Top Right)
+    const bgmToggle = this.add.text(width - 150, 24, `🎵 BGM: ${RetroAudio.isMusicEnabled() ? 'ON' : 'OFF'}`, {
       fontFamily: 'monospace',
-      fontSize: '48px',
+      fontSize: '13px',
+      color: RetroAudio.isMusicEnabled() ? '#2ecc71' : '#7f8c8d',
+      backgroundColor: '#1b2631',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    bgmToggle.on('pointerdown', () => {
+      RetroAudio.playClick();
+      const next = !RetroAudio.isMusicEnabled();
+      RetroAudio.setMusicEnabled(next);
+      bgmToggle.setText(`🎵 BGM: ${next ? 'ON' : 'OFF'}`);
+      bgmToggle.setColor(next ? '#2ecc71' : '#7f8c8d');
+      if (next) RetroAudio.playBGM('huippe');
+    });
+
+    const sfxToggle = this.add.text(width - 55, 24, `🔊 SFX: ${RetroAudio.isEnabled() ? 'ON' : 'OFF'}`, {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: RetroAudio.isEnabled() ? '#2ecc71' : '#7f8c8d',
+      backgroundColor: '#1b2631',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    sfxToggle.on('pointerdown', () => {
+      RetroAudio.playClick();
+      const next = !RetroAudio.isEnabled();
+      RetroAudio.setEnabled(next);
+      sfxToggle.setText(`🔊 SFX: ${next ? 'ON' : 'OFF'}`);
+      sfxToggle.setColor(next ? '#2ecc71' : '#7f8c8d');
+    });
+
+    // Title & Logo
+    this.add.text(width / 2, 55, 'MINE BOMBERS', {
+      fontFamily: 'monospace',
+      fontSize: '44px',
       fontStyle: 'bold',
       color: '#f39c12',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, 120, 'RETRO MULTIPLAYER MINING & DEMOLITION', {
+    this.add.text(width / 2, 95, 'RETRO MULTIPLAYER MINING & DEMOLITION', {
       fontFamily: 'monospace',
-      fontSize: '16px',
+      fontSize: '15px',
       color: '#bdc3c7',
     }).setOrigin(0.5);
 
     // Miner preview animation
-    const previewMiner = this.add.sprite(width / 2, 175, 'miner', 0).setScale(3);
+    const previewMiner = this.add.sprite(width / 2, 145, 'miner', 0).setScale(2.5);
     previewMiner.play('miner_down');
 
     // Player Name display & edit button
-    const nameText = this.add.text(width / 2, 240, `Name: ${this.displayName} [Edit]`, {
+    const nameText = this.add.text(width / 2, 195, `Name: ${this.displayName} [Edit]`, {
       fontFamily: 'monospace',
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#ecf0f1',
       backgroundColor: '#2c3e50',
-      padding: { x: 12, y: 6 },
+      padding: { x: 12, y: 5 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     nameText.on('pointerdown', () => {
+      RetroAudio.playClick();
       const input = prompt('Enter miner name (max 16 chars):', this.displayName);
       if (input) {
         this.displayName = input.trim().slice(0, 16) || 'Miner';
@@ -55,14 +106,88 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
+    // Map Selector UI (Classic 46 Maps vs Procedural)
+    const mapY = 245;
+    const prevMapBtn = this.add.text(width / 2 - 210, mapY, '◀', {
+      fontFamily: 'monospace',
+      fontSize: '22px',
+      fontStyle: 'bold',
+      color: '#f1c40f',
+      backgroundColor: '#1f242d',
+      padding: { x: 10, y: 4 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    this.mapText = this.add.text(width / 2, mapY, this.getMapLabel(), {
+      fontFamily: 'monospace',
+      fontSize: '17px',
+      fontStyle: 'bold',
+      color: '#00ffcc',
+      backgroundColor: '#1b2631',
+      padding: { x: 16, y: 6 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    const nextMapBtn = this.add.text(width / 2 + 210, mapY, '▶', {
+      fontFamily: 'monospace',
+      fontSize: '22px',
+      fontStyle: 'bold',
+      color: '#f1c40f',
+      backgroundColor: '#1f242d',
+      padding: { x: 10, y: 4 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    this.mapSubtitle = this.add.text(width / 2, mapY + 28, this.getMapSubLabel(), {
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      color: '#95a5a6',
+    }).setOrigin(0.5);
+
+    const updateMapUI = () => {
+      this.mapText.setText(this.getMapLabel());
+      this.mapSubtitle.setText(this.getMapSubLabel());
+    };
+
+    prevMapBtn.on('pointerdown', () => {
+      RetroAudio.playClick();
+      this.selectedMapIndex = (this.selectedMapIndex - 1 + this.mapOptions.length) % this.mapOptions.length;
+      updateMapUI();
+    });
+
+    nextMapBtn.on('pointerdown', () => {
+      RetroAudio.playClick();
+      this.selectedMapIndex = (this.selectedMapIndex + 1) % this.mapOptions.length;
+      updateMapUI();
+    });
+
+    this.mapText.on('pointerdown', () => {
+      RetroAudio.playClick();
+      const input = prompt(`Enter Map Name or Index (1..${CLASSIC_MAP_NAMES.length}):`, this.mapOptions[this.selectedMapIndex]);
+      if (input) {
+        const query = input.trim().toUpperCase();
+        const num = parseInt(query, 10);
+        if (!isNaN(num) && num >= 1 && num <= CLASSIC_MAP_NAMES.length) {
+          this.selectedMapIndex = num;
+          updateMapUI();
+        } else {
+          const idx = this.mapOptions.findIndex((m) => m.toUpperCase().includes(query));
+          if (idx >= 0) {
+            this.selectedMapIndex = idx;
+            updateMapUI();
+          }
+        }
+      }
+    });
+
     // Buttons
-    let currentY = 300;
+    let currentY = 320;
 
     // 1. Play Solo / Practice (Instant Play vs Bots)
     this.createButton(width / 2, currentY, '⚔️ PLAY SOLO PRACTICE (VS BOTS)', 0x27ae60, () => {
+      RetroAudio.playClick();
+      const selectedMap = this.getSelectedMapPreset();
       this.scene.start('shop', {
         mode: 'solo',
         displayName: this.displayName,
+        selectedMap,
         cash: 500,
         inventory: {
           selectedSlot: 0,
@@ -73,6 +198,7 @@ export class MenuScene extends Phaser.Scene {
           this.scene.start('game', {
             mode: 'solo',
             displayName: this.displayName,
+            selectedMap,
             soloRoundIndex: 1,
             soloCash: cash,
             soloInventory: inventory,
@@ -85,6 +211,7 @@ export class MenuScene extends Phaser.Scene {
 
     // 2. Create Multiplayer Room
     const createBtn = this.createButton(width / 2, currentY, '🌐 CREATE MULTIPLAYER ROOM', 0x2980b9, async () => {
+      RetroAudio.playClick();
       createBtn.setText('Creating room...');
       try {
         const res = await fetch(`${this.apiBase}/api/rooms`, {
@@ -104,13 +231,14 @@ export class MenuScene extends Phaser.Scene {
 
     // 3. Join Multiplayer Room
     this.createButton(width / 2, currentY, '🔑 JOIN ROOM BY CODE', 0x8e44ad, () => {
+      RetroAudio.playClick();
       const code = prompt('Enter 6-letter Room Code:');
       if (code) {
         this.joinMultiplayerRoom(code.trim().toUpperCase(), false);
       }
     });
 
-    currentY += 60;
+    currentY += 58;
 
     // Server Endpoint config button
     const serverConfig = this.add.text(width / 2, currentY, `Server: ${this.apiBase} [Change]`, {
@@ -120,6 +248,7 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     serverConfig.on('pointerdown', () => {
+      RetroAudio.playClick();
       const newUrl = prompt('Enter Cloudflare Worker Server Base URL:', this.apiBase);
       if (newUrl) {
         this.apiBase = newUrl.trim();
@@ -128,11 +257,26 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // Instructions footer
-    this.add.text(width / 2, height - 40, 'Controls: WASD/Arrows: Move & Dig | SPACE: Bomb | E: Med Kit | 1..4: Weapons | F3: Debug', {
+    this.add.text(width / 2, height - 35, 'Controls: WASD/Arrows: Move & Dig | SPACE: Bomb | E: Med Kit | 1..4: Weapons | F3: Debug', {
       fontFamily: 'monospace',
       fontSize: '13px',
       color: '#95a5a6',
     }).setOrigin(0.5);
+  }
+
+  private getMapLabel(): string {
+    if (this.selectedMapIndex === 0) {
+      return 'MAP: 🎲 RANDOM MINE';
+    }
+    const name = this.mapOptions[this.selectedMapIndex]!;
+    return `MAP: 📜 ${name} (${this.selectedMapIndex}/${CLASSIC_MAP_NAMES.length})`;
+  }
+
+  private getMapSubLabel(): string {
+    if (this.selectedMapIndex === 0) {
+      return 'Procedural Cavern Generator (Dynamic Spawns & Ores)';
+    }
+    return 'Official 1995 DOS Classic Arena (Skaven / Tuomas Ihme)';
   }
 
   private createButton(x: number, y: number, label: string, color: number, onClick: () => void): Phaser.GameObjects.Text {
