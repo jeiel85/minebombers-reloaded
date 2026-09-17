@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mine Bombers (1995) - Original PC DOS Version</title>
   <script src="./coi-serviceworker.js"></script>
-  <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
-  <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
+  <link rel="stylesheet" href="./js-dos/js-dos.css">
+  <script src="./js-dos/js-dos.js"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -111,11 +111,14 @@
         if (typeof Dos !== 'undefined') {
           Dos(document.getElementById("dos"), {
             url: "./minebomb.jsdos",
+            pathPrefix: "./js-dos/emulators/",
             autoStart: true,
             kiosk: false,
+            backend: "dosbox",
+            workerThread: false,
           });
         } else {
-          document.getElementById("dos").innerHTML = '<div style="padding: 40px; text-align: center; color: #e74c3c;">Failed to load js-dos emulator library from CDN. Please check your connection.</div>';
+          document.getElementById("dos").innerHTML = '<div style="padding: 40px; text-align: center; color: #e74c3c;">Failed to load js-dos emulator library. Please refresh the page.</div>';
         }
       } catch (err) {
         console.error("DOS init error:", err);

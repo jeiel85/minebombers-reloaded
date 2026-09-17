@@ -15,6 +15,10 @@ const MIME_TYPES = {
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
   '.ico': 'image/x-icon',
+  '.wasm': 'application/wasm',
+  '.woff': 'font/woff',
+  '.jsdos': 'application/octet-stream',
+  '.zip': 'application/zip',
 };
 
 const server = http.createServer((req, res) => {
