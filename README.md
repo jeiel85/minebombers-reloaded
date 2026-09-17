@@ -1,10 +1,21 @@
-# MineBombers-style Web Multiplayer — Implementation Design Bundle v2
+# ⛏️ Mine Bombers Web Multiplayer 💣
 
-> Goal: an original browser multiplayer mining/demolition game inspired by the **gameplay loop** of classic Mine Bombers, deployed as static client files on GitHub Pages with a serverless authoritative real-time backend.
+> A faithful web reproduction of the legendary 1995/1996 DOS arcade classic **Mine Bombers**, featuring the authentic 64x45 cavern dimensions, full classic 12-item arsenal, retro procedural audio, intelligent bot AI, underground monsters, and sudden-death mine collapse.
 
-**Design audit date:** 2026-09-16  
-**Primary deployment:** GitHub Pages + Cloudflare Worker + Durable Objects  
-**Target:** 2–8 players, desktop-first.
+🎮 **Play Live in Browser:** [https://jeiel85.github.io/minebombers-web-multiplayer/](https://jeiel85.github.io/minebombers-web-multiplayer/)
+
+---
+
+### 🕹️ Controls
+- **[W / A / S / D]** or **[Arrow Keys]**: Move & Dig soil
+- **[SPACE]**: Action (Pickaxe melee, plant bomb, fire mini-rocket / flamethrower)
+- **[1 .. 8]**: Select Hotbar weapon slot directly
+- **[Q / E]**: Cycle equipped weapon left / right
+- **[F / Shift / C / Right-Click]**: Utility / Secondary (Detonate remote bomb, emergency teleport, med kit heal)
+- **[Mouse Click]**: Click hotbar slots or pause menu
+- **[F3]**: Toggle real-time FPS & network debug overlay
+
+---
 
 ## 1. Architecture
 
