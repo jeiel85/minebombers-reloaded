@@ -12,6 +12,7 @@ export interface ShopSceneData {
   myPlayerId?: string;
   cash?: number;
   inventory?: InventoryState;
+  selectedMap?: string;
   shopData?: Extract<ServerMessage, { t: 's.shop' }>;
   onSoloShopComplete?: (cash: number, inventory: InventoryState) => void;
 }
@@ -87,6 +88,9 @@ export class ShopScene extends Phaser.Scene {
   create(): void {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
+
+    // Stream 1995 Scream Tracker 3 Huipentuja BGM in Shop
+    RetroAudio.playBGM('huippe');
 
     // Header Background
     this.add.rectangle(width / 2, 40, width, 80, 0x111620, 0.95);
@@ -308,7 +312,7 @@ export class ShopScene extends Phaser.Scene {
         this.inventory.items[equipmentId] = (this.inventory.items[equipmentId] ?? 0) + 1;
       }
 
-      RetroAudio.playPickup();
+      RetroAudio.playBuy();
       this.showFeedback(`Purchased 1x ${equipmentId}!`, '#2ecc71');
       this.updateDisplay();
     } else if (this.dataPayload.socket) {
@@ -331,7 +335,7 @@ export class ShopScene extends Phaser.Scene {
   private handleServerMessage(msg: ServerMessage): void {
     if (msg.t === 's.purchase_result') {
       if (msg.accepted) {
-        RetroAudio.playPickup();
+        RetroAudio.playBuy();
         this.cash = msg.cash;
         this.inventory = msg.inventory;
         this.showFeedback('Purchase successful!', '#2ecc71');

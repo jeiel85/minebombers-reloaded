@@ -11,7 +11,8 @@
     "build": "npm --workspaces run build --if-present",
     "deploy:server": "npm --workspace @minebombers/server run deploy",
     "typecheck": "npm --workspaces run typecheck --if-present",
-    "test": "vitest run"
+    "test": "vitest run",
+    "desktop": "node scripts/desktop_launcher.cjs"
   },
   "devDependencies": {
     "typescript": "^5.8.0",
