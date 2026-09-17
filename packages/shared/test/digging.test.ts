@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { stepDigging } from '../src/game/digging';
-import { BASE_SOIL_DURABILITY } from '../src/game/constants';
+import { BASE_SOIL_DURABILITY, MAP_HEIGHT, MAP_WIDTH } from '../src/game/constants';
 import type { SimPlayer, SimTileState, SimTreasureEntity } from '../src/game/types';
 
 describe('Digging progression and soil destruction', () => {
-  const width = 31;
-  const height = 23;
+  const width = MAP_WIDTH;
+  const height = MAP_HEIGHT;
 
   function createTestPlayer(pickaxe2 = false): SimPlayer {
     return {

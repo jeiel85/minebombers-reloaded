@@ -1,5 +1,5 @@
-export const MAP_WIDTH = 31;
-export const MAP_HEIGHT = 23;
+export const MAP_WIDTH = 64;
+export const MAP_HEIGHT = 45;
 export const TILE_SIZE_PX = 32;
 export const WORLD_UNITS_PER_TILE = 1024;
 export const PLAYER_HITBOX_UNITS = 576;

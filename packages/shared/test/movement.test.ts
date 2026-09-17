@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { movePlayerWithCollision } from '../src/game/movement';
-import { WORLD_UNITS_PER_TILE } from '../src/game/constants';
+import { MAP_HEIGHT, MAP_WIDTH, WORLD_UNITS_PER_TILE } from '../src/game/constants';
 import { HALF_HITBOX } from '../src/game/collision';
 import type { TileKind } from '../src/protocol';
 
 describe('Player movement & AABB collision', () => {
-  const width = 31;
-  const height = 23;
+  const width = MAP_WIDTH;
+  const height = MAP_HEIGHT;
   // Floor everywhere except borders
   const openTiles: TileKind[] = Array.from({ length: width * height }, (_, idx) => {
     const x = idx % width;

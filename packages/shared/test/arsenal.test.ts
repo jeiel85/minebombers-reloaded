@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WorldSimulation } from '../src/game/engine';
 import { generateClassicMine } from '../src/game/mapGenerator';
 import { createDefaultInventory } from '../src/game/economy';
-import { WORLD_UNITS_PER_TILE } from '../src/game/constants';
+import { MAP_WIDTH, WORLD_UNITS_PER_TILE } from '../src/game/constants';
 import { getPickaxeMultiplier } from '../src/game/digging';
 
 describe('Classic Mine Bombers Arsenal & Mechanics', () => {
@@ -45,10 +45,10 @@ describe('Classic Mine Bombers Arsenal & Mechanics', () => {
     p1.inventory.selectedSlot = 5;
 
     // Clear a corridor for flight
-    sim.tiles[5 * 31 + 5] = { kind: 'floor', durability: 0 };
-    sim.tiles[5 * 31 + 6] = { kind: 'floor', durability: 0 };
-    sim.tiles[5 * 31 + 7] = { kind: 'floor', durability: 0 };
-    sim.tiles[5 * 31 + 8] = { kind: 'rock', durability: 0 };
+    sim.tiles[5 * MAP_WIDTH + 5] = { kind: 'floor', durability: 0 };
+    sim.tiles[5 * MAP_WIDTH + 6] = { kind: 'floor', durability: 0 };
+    sim.tiles[5 * MAP_WIDTH + 7] = { kind: 'floor', durability: 0 };
+    sim.tiles[5 * MAP_WIDTH + 8] = { kind: 'rock', durability: 0 };
 
     sim.queueAction('p1', 'place_bomb', 5, 1);
     sim.step(50);

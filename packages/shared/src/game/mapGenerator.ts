@@ -28,16 +28,20 @@ export interface GeneratedMap {
   treasures: GeneratedTreasure[];
 }
 
-const SPAWN_CANDIDATES: readonly GridPoint[] = [
-  { x: 2, y: 2 },
-  { x: 28, y: 20 },
-  { x: 28, y: 2 },
-  { x: 2, y: 20 },
-  { x: 15, y: 2 },
-  { x: 15, y: 20 },
-  { x: 2, y: 11 },
-  { x: 28, y: 11 },
-];
+export function getSpawnCandidates(): GridPoint[] {
+  const w = MAP_WIDTH;
+  const h = MAP_HEIGHT;
+  return [
+    { x: 4, y: 4 },
+    { x: w - 5, y: h - 5 },
+    { x: w - 5, y: 4 },
+    { x: 4, y: h - 5 },
+    { x: Math.floor(w / 2), y: 4 },
+    { x: Math.floor(w / 2), y: h - 5 },
+    { x: 4, y: Math.floor(h / 2) },
+    { x: w - 5, y: Math.floor(h / 2) },
+  ];
+}
 
 function indexOf(x: number, y: number): number {
   return y * MAP_WIDTH + x;
@@ -58,7 +62,8 @@ export function generateClassicMine(seed: number, playerCount: number): Generate
 
   const random = mulberry32(seed >>> 0);
   const tiles: TileKind[] = Array.from({ length: MAP_WIDTH * MAP_HEIGHT }, () => 'soil');
-  const spawns = SPAWN_CANDIDATES.slice(0, playerCount).map((p) => ({ ...p }));
+  const spawnPoints = getSpawnCandidates();
+  const spawns = spawnPoints.slice(0, playerCount).map((p) => ({ ...p }));
 
   // Outer hard-rock border.
   for (let y = 0; y < MAP_HEIGHT; y++) {
@@ -90,9 +95,9 @@ export function generateClassicMine(seed: number, playerCount: number): Generate
     }
   }
 
-  // Central 3x3 contest area.
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
+  // Central 5x5 contest cavern area.
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
       tiles[indexOf(center.x + dx, center.y + dy)] = 'floor';
     }
   }
@@ -103,8 +108,8 @@ export function generateClassicMine(seed: number, playerCount: number): Generate
     for (let x = 1; x < MAP_WIDTH - 1; x++) {
       const p = { x, y };
       if (tiles[indexOf(x, y)] !== 'soil') continue;
-      if (spawns.some((s) => manhattan(s, p) < 4)) continue;
-      if (Math.abs(x - center.x) <= 2 && Math.abs(y - center.y) <= 2) continue;
+      if (spawns.some((s) => manhattan(s, p) < 5)) continue;
+      if (Math.abs(x - center.x) <= 3 && Math.abs(y - center.y) <= 3) continue;
       candidates.push(p);
     }
   }
@@ -130,14 +135,14 @@ export function generateClassicMine(seed: number, playerCount: number): Generate
   for (let y = 1; y < MAP_HEIGHT - 1; y++) {
     for (let x = 1; x < MAP_WIDTH - 1; x++) {
       if (tiles[indexOf(x, y)] !== 'soil') continue;
-      if (spawns.some((s) => manhattan(s, { x, y }) < 3)) continue;
+      if (spawns.some((s) => manhattan(s, { x, y }) < 4)) continue;
       treasureCandidates.push(indexOf(x, y));
     }
   }
   shuffleInPlace(treasureCandidates, random);
 
-  const rareCount = Math.max(2, playerCount);
-  const basicCount = 18 + 2 * playerCount;
+  const rareCount = Math.max(8, playerCount * 2);
+  const basicCount = 40 + 6 * playerCount;
   const treasures: GeneratedTreasure[] = [];
   let cursor = 0;
   for (let i = 0; i < rareCount && cursor < treasureCandidates.length; i++, cursor++) {

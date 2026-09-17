@@ -84,7 +84,16 @@ export class GameScene extends Phaser.Scene {
   private botAiTimer: ReturnType<typeof setInterval> | null = null;
   private soloRoundIndex = 1;
   private totalRounds = 5;
-  private botStates = new Map<string, { dx: -1 | 0 | 1; dy: -1 | 0 | 1; holdMs: number; retreatMs: number }>();
+  private botAiStates = new Map<string, {
+    dx: -1 | 0 | 1;
+    dy: -1 | 0 | 1;
+    holdMs: number;
+    retreatMs: number;
+    lastX: number;
+    lastY: number;
+    stuckTicks: number;
+    bombCooldownMs: number;
+  }>();
   private isPaused = false;
   private pauseContainer: Phaser.GameObjects.Container | null = null;
 
@@ -103,12 +112,17 @@ export class GameScene extends Phaser.Scene {
     this.myPlayerId = data.myPlayerId ?? 'player_1';
     this.soloRoundIndex = data.soloRoundIndex ?? 1;
     this.isPaused = false;
-    this.botStates.clear();
+    this.botAiStates.clear();
   }
 
   create(): void {
-    const arenaWidth = MAP_WIDTH * TILE_SIZE_PX; // 992
-    const arenaHeight = MAP_HEIGHT * TILE_SIZE_PX; // 736
+    const arenaWidth = MAP_WIDTH * TILE_SIZE_PX; // 2048
+    const arenaHeight = MAP_HEIGHT * TILE_SIZE_PX; // 1440
+    const viewWidth = this.cameras.main.width; // 992
+    const viewHeight = this.cameras.main.height; // 736
+
+    // Set camera bounds to the entire 64x45 world
+    this.cameras.main.setBounds(0, 0, arenaWidth, arenaHeight);
 
     // 1. Floor Background Layer
     this.floorLayer = this.add.tileSprite(0, 0, arenaWidth, arenaHeight, 'tiles_world', 0).setOrigin(0, 0);
@@ -117,9 +131,9 @@ export class GameScene extends Phaser.Scene {
     this.inputController = new InputController(this);
     this.debugOverlay = new DebugOverlay(this);
 
-    // Create HUD & Hotbar
-    this.createHUD(arenaWidth);
-    this.createHotbar(arenaWidth, arenaHeight);
+    // Create HUD & Hotbar anchored to viewport
+    this.createHUD(viewWidth);
+    this.createHotbar(viewWidth, viewHeight);
 
     if (this.dataPayload.mode === 'solo') {
       this.initSoloGame();
@@ -128,15 +142,15 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createHUD(arenaWidth: number): void {
+  private createHUD(viewWidth: number): void {
     const hudHeight = 44;
-    this.hudBg = this.add.rectangle(0, 0, arenaWidth, hudHeight, 0x111111, 0.85).setOrigin(0, 0);
+    this.hudBg = this.add.rectangle(0, 0, viewWidth, hudHeight, 0x111111, 0.85).setOrigin(0, 0).setScrollFactor(0);
     this.hudBg.setDepth(500);
 
     // HP Bar
-    this.add.text(16, 12, 'HP:', { fontFamily: 'monospace', fontSize: '15px', color: '#ffffff' }).setDepth(501);
-    this.hpBar = this.add.rectangle(50, 14, 100, 16, 0x2ecc71).setOrigin(0, 0).setDepth(501);
-    this.hpText = this.add.text(160, 12, '100/100', { fontFamily: 'monospace', fontSize: '14px', color: '#ffffff' }).setDepth(501);
+    this.add.text(16, 12, 'HP:', { fontFamily: 'monospace', fontSize: '15px', color: '#ffffff' }).setDepth(501).setScrollFactor(0);
+    this.hpBar = this.add.rectangle(50, 14, 100, 16, 0x2ecc71).setOrigin(0, 0).setDepth(501).setScrollFactor(0);
+    this.hpText = this.add.text(160, 12, '100/100', { fontFamily: 'monospace', fontSize: '14px', color: '#ffffff' }).setDepth(501).setScrollFactor(0);
 
     // Cash
     this.cashText = this.add.text(250, 12, 'CASH: $500', {
@@ -144,14 +158,14 @@ export class GameScene extends Phaser.Scene {
       fontSize: '16px',
       fontStyle: 'bold',
       color: '#2ecc71',
-    }).setDepth(501);
+    }).setDepth(501).setScrollFactor(0);
 
     // Ammo / Equipped
     this.ammoText = this.add.text(390, 12, '💣 Small Bomb: 2', {
       fontFamily: 'monospace',
       fontSize: '15px',
       color: '#f1c40f',
-    }).setDepth(501);
+    }).setDepth(501).setScrollFactor(0);
 
     // Timer
     this.timerText = this.add.text(640, 12, 'TIME: 05:00', {
@@ -159,61 +173,61 @@ export class GameScene extends Phaser.Scene {
       fontSize: '16px',
       fontStyle: 'bold',
       color: '#e74c3c',
-    }).setDepth(501);
+    }).setDepth(501).setScrollFactor(0);
 
     // Alive
     this.aliveText = this.add.text(780, 12, 'MINERS: 4/4', {
       fontFamily: 'monospace',
       fontSize: '15px',
       color: '#3498db',
-    }).setDepth(501);
+    }).setDepth(501).setScrollFactor(0);
 
     // Pause / Menu button
-    const menuBtn = this.add.text(arenaWidth - 12, 10, '⚙️ MENU', {
+    const menuBtn = this.add.text(viewWidth - 12, 10, '⚙️ MENU', {
       fontFamily: 'monospace',
       fontSize: '14px',
       fontStyle: 'bold',
       color: '#ffffff',
       backgroundColor: '#34495e',
       padding: { x: 8, y: 4 },
-    }).setOrigin(1, 0).setDepth(501).setInteractive({ useHandCursor: true });
+    }).setOrigin(1, 0).setDepth(501).setScrollFactor(0).setInteractive({ useHandCursor: true });
 
     menuBtn.on('pointerdown', () => this.togglePauseMenu());
   }
 
-  private createHotbar(arenaWidth: number, arenaHeight: number): void {
+  private createHotbar(viewWidth: number, viewHeight: number): void {
     const slotCount = HOTBAR_ITEMS.length; // 8
     const slotSize = 42;
     const gap = 6;
     const totalWidth = slotCount * slotSize + (slotCount - 1) * gap;
-    const startX = (arenaWidth - totalWidth) / 2 + slotSize / 2;
-    const posY = arenaHeight - 26;
+    const startX = (viewWidth - totalWidth) / 2 + slotSize / 2;
+    const posY = viewHeight - 26;
 
     // Panel background
-    const bgPanel = this.add.rectangle(arenaWidth / 2, posY, totalWidth + 20, 48, 0x0e1117, 0.9).setDepth(500);
+    const bgPanel = this.add.rectangle(viewWidth / 2, posY, totalWidth + 20, 48, 0x0e1117, 0.9).setDepth(500).setScrollFactor(0);
     bgPanel.setStrokeStyle(1, 0x2c3e50);
 
     for (let i = 0; i < slotCount; i++) {
       const item = HOTBAR_ITEMS[i]!;
       const sx = startX + i * (slotSize + gap);
 
-      const slotBg = this.add.rectangle(sx, posY, slotSize, slotSize, 0x1a202c, 0.95).setDepth(501);
-      const border = this.add.rectangle(sx, posY, slotSize, slotSize).setStrokeStyle(1, 0x34495e).setDepth(502);
-      this.add.sprite(sx, posY, 'ui_icons', item.icon).setScale(0.9).setDepth(503);
+      const slotBg = this.add.rectangle(sx, posY, slotSize, slotSize, 0x1a202c, 0.95).setDepth(501).setScrollFactor(0);
+      const border = this.add.rectangle(sx, posY, slotSize, slotSize).setStrokeStyle(1, 0x34495e).setDepth(502).setScrollFactor(0);
+      this.add.sprite(sx, posY, 'ui_icons', item.icon).setScale(0.9).setDepth(503).setScrollFactor(0);
 
       this.add.text(sx - 17, posY - 18, `${i + 1}`, {
         fontFamily: 'monospace',
         fontSize: '11px',
         fontStyle: 'bold',
         color: '#f39c12',
-      }).setDepth(504);
+      }).setDepth(504).setScrollFactor(0);
 
       const count = this.add.text(sx + 18, posY + 6, '0', {
         fontFamily: 'monospace',
         fontSize: '11px',
         fontStyle: 'bold',
         color: '#7f8c8d',
-      }).setOrigin(1, 0).setDepth(504);
+      }).setOrigin(1, 0).setDepth(504).setScrollFactor(0);
 
       slotBg.setInteractive({ useHandCursor: true });
       slotBg.on('pointerdown', () => {
@@ -325,7 +339,7 @@ export class GameScene extends Phaser.Scene {
       this.scene.start('menu');
     });
 
-    this.pauseContainer = this.add.container(0, 0, [bg, panel, title, resumeBtn, skipBtn, quitBtn]).setDepth(1000);
+    this.pauseContainer = this.add.container(0, 0, [bg, panel, title, resumeBtn, skipBtn, quitBtn]).setDepth(1000).setScrollFactor(0);
   }
 
   // --- SOLO PRACTICE MODE ---
@@ -382,119 +396,287 @@ export class GameScene extends Phaser.Scene {
       const bot = this.soloSim.players[i]!;
       if (!bot.alive) continue;
 
-      let state = this.botStates.get(bot.id);
+      let state = this.botAiStates.get(bot.id);
       if (!state) {
-        state = { dx: 0, dy: 1, holdMs: 1500, retreatMs: 0 };
-        this.botStates.set(bot.id, state);
+        state = {
+          dx: 0,
+          dy: 1,
+          holdMs: 0,
+          retreatMs: 0,
+          lastX: bot.x,
+          lastY: bot.y,
+          stuckTicks: 0,
+          bombCooldownMs: 0,
+        };
+        this.botAiStates.set(bot.id, state);
       }
+
+      if (state.bombCooldownMs > 0) state.bombCooldownMs -= stepMs;
+      if (state.retreatMs > 0) state.retreatMs -= stepMs;
+      if (state.holdMs > 0) state.holdMs -= stepMs;
 
       const botTileX = Math.floor(bot.x / WORLD_UNITS_PER_TILE);
       const botTileY = Math.floor(bot.y / WORLD_UNITS_PER_TILE);
 
-      // 1. Retreat from nearby bombs if any
-      if (state.retreatMs > 0) {
-        state.retreatMs -= stepMs;
+      // Stuck detection: check distance moved since last tick
+      const distMoved = Math.hypot(bot.x - state.lastX, bot.y - state.lastY);
+      if (distMoved < 8 && (state.dx !== 0 || state.dy !== 0)) {
+        state.stuckTicks++;
       } else {
-        const nearBomb = this.soloSim.explosives.find(
-          (e) => Math.abs(e.tileX - botTileX) + Math.abs(e.tileY - botTileY) <= 2,
-        );
-        if (nearBomb) {
-          const fdx: -1 | 0 | 1 = botTileX < nearBomb.tileX ? -1 : botTileX > nearBomb.tileX ? 1 : 0;
-          const fdy: -1 | 0 | 1 = botTileY < nearBomb.tileY ? -1 : botTileY > nearBomb.tileY ? 1 : 0;
-          state.dx = fdx !== 0 ? fdx : (Math.random() < 0.5 ? -1 : 1);
-          state.dy = fdy !== 0 && fdx === 0 ? fdy : 0;
-          state.retreatMs = 1800;
-          state.holdMs = 1800;
-        }
+        state.stuckTicks = 0;
       }
+      state.lastX = bot.x;
+      state.lastY = bot.y;
 
-      // 2. Opponent proximity check (Melee / Bomb)
       let primaryAction = false;
       let secondaryAction = false;
-      let nearOpponent = false;
+      let selectedSlot = bot.inventory.selectedSlot ?? 0;
 
-      for (const opp of this.soloSim.players) {
-        if (opp.id === bot.id || !opp.alive) continue;
-        const dist = Math.hypot(opp.x - bot.x, opp.y - bot.y);
-        if (dist <= 1200) {
-          nearOpponent = true;
-          const ammoCount = bot.inventory.items['small_charge'] ?? 0;
-          if (ammoCount > 0 && Math.random() < 0.25) {
-            primaryAction = true;
-            // Retreat after planting bomb
-            state.dx = bot.x < opp.x ? -1 : 1;
-            state.dy = 0;
-            state.retreatMs = 2000;
-            state.holdMs = 2000;
-          } else {
-            // Out of ammo or close quarters -> melee pickaxe swing!
-            primaryAction = true;
-            const diffX = opp.x - bot.x;
-            const diffY = opp.y - bot.y;
-            if (Math.abs(diffX) > Math.abs(diffY)) {
-              state.dx = diffX > 0 ? 1 : -1;
-              state.dy = 0;
-            } else {
-              state.dx = 0;
-              state.dy = diffY > 0 ? 1 : -1;
-            }
-          }
-          break;
-        }
-      }
-
-      // 3. Digging and Path Navigation
-      if (state.retreatMs <= 0 && !nearOpponent) {
-        state.holdMs -= stepMs;
-        if (state.holdMs <= 0) {
-          // Check for nearest uncollected treasure or pickup within 8 tiles
-          let target: { tileX: number; tileY: number } | null = null;
-          let minD = 999;
-
-          for (const t of this.soloSim.treasures) {
-            if (t.collected) continue;
-            const d = Math.abs(t.tileX - botTileX) + Math.abs(t.tileY - botTileY);
-            if (d < minD && d <= 8) {
-              minD = d;
-              target = t;
-            }
-          }
-
-          if (!target) {
-            for (const p of this.soloSim.pickups) {
-              if (p.collected) continue;
-              const d = Math.abs(p.tileX - botTileX) + Math.abs(p.tileY - botTileY);
-              if (d < minD && d <= 8) {
-                minD = d;
-                target = p;
-              }
-            }
-          }
-
-          if (target) {
-            const diffX = target.tileX - botTileX;
-            const diffY = target.tileY - botTileY;
-            if (Math.abs(diffX) > Math.abs(diffY) && diffX !== 0) {
-              state.dx = diffX > 0 ? 1 : -1;
-              state.dy = 0;
-            } else if (diffY !== 0) {
-              state.dx = 0;
-              state.dy = diffY > 0 ? 1 : -1;
-            }
-          } else {
-            // Pick a random cardinal direction
-            const dir = directions[Math.floor(Math.random() * directions.length)]!;
-            state.dx = dir[0];
-            state.dy = dir[1];
-          }
-
-          state.holdMs = 1500; // Hold for 1.5s to ensure soil digging completes
-        }
-      }
-
-      // 4. Med Kit use if hurt
+      // 1. Health recovery: use med kit if HP <= 50
       if (bot.hp <= 50 && (bot.inventory.items['med_kit'] ?? 0) > 0) {
         secondaryAction = true;
+      }
+
+      // 2. Bomb / Danger Avoidance (Top priority!)
+      const dangerousExplosive = this.soloSim.explosives.find((e) => {
+        const d = Math.abs(e.tileX - botTileX) + Math.abs(e.tileY - botTileY);
+        return d <= (e.radius || 2) + 1;
+      }) ?? this.soloSim.mines.find((m) => {
+        const d = Math.abs(m.tileX - botTileX) + Math.abs(m.tileY - botTileY);
+        return d <= 2 && this.soloSim!.simTime >= m.armedAt;
+      });
+
+      if (dangerousExplosive) {
+        // Flee away from danger into open non-rock space
+        const safeDirs = directions.filter(([ddx, ddy]) => {
+          const nx = botTileX + ddx;
+          const ny = botTileY + ddy;
+          if (nx <= 0 || nx >= MAP_WIDTH - 1 || ny <= 0 || ny >= MAP_HEIGHT - 1) return false;
+          const kind = this.soloSim!.tiles[ny * MAP_WIDTH + nx]?.kind;
+          if (kind === 'rock') return false; // Never run into rock!
+          const newDist = Math.abs(dangerousExplosive.tileX - nx) + Math.abs(dangerousExplosive.tileY - ny);
+          const currDist = Math.abs(dangerousExplosive.tileX - botTileX) + Math.abs(dangerousExplosive.tileY - botTileY);
+          return newDist > currDist; // Must move away
+        });
+
+        if (safeDirs.length > 0) {
+          // Prefer floor over soil when escaping
+          safeDirs.sort((a, b) => {
+            const kindA = this.soloSim!.tiles[(botTileY + a[1]) * MAP_WIDTH + (botTileX + a[0])]?.kind;
+            const kindB = this.soloSim!.tiles[(botTileY + b[1]) * MAP_WIDTH + (botTileX + b[0])]?.kind;
+            if (kindA === 'floor' && kindB !== 'floor') return -1;
+            if (kindB === 'floor' && kindA !== 'floor') return 1;
+            return 0;
+          });
+          state.dx = safeDirs[0]![0];
+          state.dy = safeDirs[0]![1];
+          state.retreatMs = 1200;
+          state.holdMs = 500;
+        }
+      }
+
+      // 3. Combat: Ranged attack (Mini-Rocket)
+      if (state.retreatMs <= 0 && (bot.inventory.items['rocket'] ?? 0) > 0) {
+        for (const opp of this.soloSim.players) {
+          if (opp.id === bot.id || !opp.alive) continue;
+          const oppTileX = Math.floor(opp.x / WORLD_UNITS_PER_TILE);
+          const oppTileY = Math.floor(opp.y / WORLD_UNITS_PER_TILE);
+
+          // Horizontal alignment
+          if (oppTileY === botTileY && Math.abs(oppTileX - botTileX) <= 12 && oppTileX !== botTileX) {
+            const stepX = Math.sign(oppTileX - botTileX);
+            let clear = true;
+            for (let checkX = botTileX + stepX; checkX !== oppTileX; checkX += stepX) {
+              if (this.soloSim.tiles[botTileY * MAP_WIDTH + checkX]?.kind !== 'floor') {
+                clear = false;
+                break;
+              }
+            }
+            if (clear) {
+              selectedSlot = 5; // Mini-Rocket
+              state.dx = stepX as -1 | 1;
+              state.dy = 0;
+              primaryAction = true;
+              break;
+            }
+          }
+          // Vertical alignment
+          if (oppTileX === botTileX && Math.abs(oppTileY - botTileY) <= 12 && oppTileY !== botTileY) {
+            const stepY = Math.sign(oppTileY - botTileY);
+            let clear = true;
+            for (let checkY = botTileY + stepY; checkY !== oppTileY; checkY += stepY) {
+              if (this.soloSim.tiles[checkY * MAP_WIDTH + botTileX]?.kind !== 'floor') {
+                clear = false;
+                break;
+              }
+            }
+            if (clear) {
+              selectedSlot = 5; // Mini-Rocket
+              state.dx = 0;
+              state.dy = stepY as -1 | 1;
+              primaryAction = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // 4. Combat: Close Quarters (Melee / Bomb plant)
+      if (state.retreatMs <= 0 && !primaryAction) {
+        for (const opp of this.soloSim.players) {
+          if (opp.id === bot.id || !opp.alive) continue;
+          const dist = Math.hypot(opp.x - bot.x, opp.y - bot.y);
+          if (dist <= 1200) {
+            const hasBomb = (bot.inventory.items['small_charge'] ?? 0) > 0 || (bot.inventory.items['dynamite'] ?? 0) > 0;
+            if (hasBomb && state.bombCooldownMs <= 0) {
+              selectedSlot = (bot.inventory.items['small_charge'] ?? 0) > 0 ? 0 : 1;
+              primaryAction = true;
+              state.bombCooldownMs = 3000;
+              const fdx = bot.x < opp.x ? -1 : 1;
+              state.dx = fdx;
+              state.dy = 0;
+              state.retreatMs = 1800;
+              state.holdMs = 1800;
+            } else {
+              // Melee pickaxe strike!
+              primaryAction = true;
+              const diffX = opp.x - bot.x;
+              const diffY = opp.y - bot.y;
+              if (Math.abs(diffX) > Math.abs(diffY)) {
+                state.dx = diffX > 0 ? 1 : -1;
+                state.dy = 0;
+              } else {
+                state.dx = 0;
+                state.dy = diffY > 0 ? 1 : -1;
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // 5. Stuck Handling: Bomb clearance or turn around
+      if (state.stuckTicks >= 3 && state.retreatMs <= 0) {
+        state.stuckTicks = 0;
+        const hasSmall = (bot.inventory.items['small_charge'] ?? 0) > 0;
+        const hasDyna = (bot.inventory.items['dynamite'] ?? 0) > 0;
+        const nextTileX = botTileX + state.dx;
+        const nextTileY = botTileY + state.dy;
+        const nextKind = this.soloSim.tiles[nextTileY * MAP_WIDTH + nextTileX]?.kind;
+
+        if ((hasSmall || hasDyna) && nextKind === 'soil' && state.bombCooldownMs <= 0) {
+          selectedSlot = hasSmall ? 0 : 1;
+          primaryAction = true;
+          state.bombCooldownMs = 3000;
+          state.dx = -state.dx as -1 | 0 | 1;
+          state.dy = -state.dy as -1 | 0 | 1;
+          state.retreatMs = 2000;
+          state.holdMs = 2000;
+        } else {
+          // Switch to an alternative non-rock direction
+          const nonRockDirs = directions.filter(([ddx, ddy]) => {
+            const nx = botTileX + ddx;
+            const ny = botTileY + ddy;
+            if (nx <= 0 || nx >= MAP_WIDTH - 1 || ny <= 0 || ny >= MAP_HEIGHT - 1) return false;
+            return this.soloSim!.tiles[ny * MAP_WIDTH + nx]?.kind !== 'rock';
+          });
+          if (nonRockDirs.length > 0) {
+            const picked = nonRockDirs[Math.floor(Math.random() * nonRockDirs.length)]!;
+            state.dx = picked[0];
+            state.dy = picked[1];
+            state.holdMs = 1200;
+          }
+        }
+      }
+
+      // 6. Navigation & Mining: Path towards treasure, pickup, or enemy
+      if (state.retreatMs <= 0 && state.holdMs <= 0 && !primaryAction) {
+        let targetX = -1;
+        let targetY = -1;
+        let bestScore = 99999;
+
+        // 6a. Uncollected treasures
+        for (const t of this.soloSim.treasures) {
+          if (t.collected) continue;
+          const dist = Math.abs(t.tileX - botTileX) + Math.abs(t.tileY - botTileY);
+          const score = dist - (t.rarity === 'rare' ? 6 : 0);
+          if (score < bestScore) {
+            bestScore = score;
+            targetX = t.tileX;
+            targetY = t.tileY;
+          }
+        }
+
+        // 6b. Pickups (crates, med kits, rockets)
+        if (bestScore > 12) {
+          for (const p of this.soloSim.pickups) {
+            if (p.collected) continue;
+            const dist = Math.abs(p.tileX - botTileX) + Math.abs(p.tileY - botTileY);
+            if (dist < bestScore) {
+              bestScore = dist;
+              targetX = p.tileX;
+              targetY = p.tileY;
+            }
+          }
+        }
+
+        // 6c. Opponent hunting if no treasures/pickups
+        if (targetX < 0) {
+          for (const opp of this.soloSim.players) {
+            if (opp.id === bot.id || !opp.alive) continue;
+            const ox = Math.floor(opp.x / WORLD_UNITS_PER_TILE);
+            const oy = Math.floor(opp.y / WORLD_UNITS_PER_TILE);
+            const dist = Math.abs(ox - botTileX) + Math.abs(oy - botTileY);
+            if (dist < bestScore) {
+              bestScore = dist;
+              targetX = ox;
+              targetY = oy;
+            }
+          }
+        }
+
+        if (targetX >= 0 && targetY >= 0) {
+          // Score neighbor directions towards target (never choosing rock)
+          let bestDir = directions[0]!;
+          let minDirCost = 999999;
+
+          for (const [ddx, ddy] of directions) {
+            const nx = botTileX + ddx;
+            const ny = botTileY + ddy;
+            if (nx <= 0 || nx >= MAP_WIDTH - 1 || ny <= 0 || ny >= MAP_HEIGHT - 1) continue;
+
+            const tileKind = this.soloSim.tiles[ny * MAP_WIDTH + nx]?.kind;
+            if (tileKind === 'rock') continue; // Indestructible: skip completely!
+
+            const distToTarget = Math.abs(targetX - nx) + Math.abs(targetY - ny);
+            const terrainCost = tileKind === 'floor' ? 0 : 3;
+            const cost = distToTarget * 10 + terrainCost;
+
+            if (cost < minDirCost) {
+              minDirCost = cost;
+              bestDir = [ddx, ddy];
+            }
+          }
+
+          state.dx = bestDir[0];
+          state.dy = bestDir[1];
+          const nextKind = this.soloSim.tiles[(botTileY + state.dy) * MAP_WIDTH + (botTileX + state.dx)]?.kind;
+          state.holdMs = nextKind === 'soil' ? 1200 : 350;
+        } else {
+          // Random wandering among non-rock tiles
+          const valid = directions.filter(([ddx, ddy]) => {
+            const nx = botTileX + ddx;
+            const ny = botTileY + ddy;
+            if (nx <= 0 || nx >= MAP_WIDTH - 1 || ny <= 0 || ny >= MAP_HEIGHT - 1) return false;
+            return this.soloSim!.tiles[ny * MAP_WIDTH + nx]?.kind !== 'rock';
+          });
+          if (valid.length > 0) {
+            const p = valid[Math.floor(Math.random() * valid.length)]!;
+            state.dx = p[0];
+            state.dy = p[1];
+            state.holdMs = 800;
+          }
+        }
       }
 
       this.soloSim.setPlayerInput(
@@ -506,6 +688,7 @@ export class GameScene extends Phaser.Scene {
         this.soloSim.simTime,
         primaryAction,
         secondaryAction,
+        selectedSlot,
       );
     }
   }
@@ -878,7 +1061,7 @@ export class GameScene extends Phaser.Scene {
           color: '#ff3838',
           backgroundColor: '#000000cc',
           padding: { x: 16, y: 6 },
-        }).setOrigin(0.5).setDepth(600);
+        }).setOrigin(0.5).setDepth(600).setScrollFactor(0);
         this.tweens.add({
           targets: banner,
           alpha: 0,
@@ -1008,6 +1191,10 @@ export class GameScene extends Phaser.Scene {
       sprite.setDepth(200);
       sprite.setTint(AssetRegistry.getPlayerColor(colorIdx));
       this.playerSprites.set(id, sprite);
+
+      if (id === this.myPlayerId) {
+        this.cameras.main.startFollow(sprite, true, 0.12, 0.12);
+      }
 
       label = this.add.text(px, py - 24, name, {
         fontFamily: 'monospace',

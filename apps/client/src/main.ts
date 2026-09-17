@@ -17,7 +17,7 @@ appDiv.innerHTML = `
       <div id="game" style="width:100%;height:100%;"></div>
     </div>
     <footer style="margin-top:8px;font-size:12px;color:#95a5a6;text-align:center;">
-      <span>[WASD / Arrows] Move & Dig • [SPACE] Drop Bomb • [E] Med Kit • [1..4] Weapons • [F3] Debug</span>
+      <span>[WASD / Arrows] Move & Dig • [SPACE] Action • [1..8] Hotbar • [Q/E] Cycle Weapon • [F / Right-Click] Detonate / Utility • [F3] Debug</span>
     </footer>
   </div>
 `;

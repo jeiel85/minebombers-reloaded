@@ -26,6 +26,7 @@ export class DebugOverlay {
 
     this.container = scene.add.container(0, 0, [this.bg, this.text]);
     this.container.setDepth(1000);
+    this.container.setScrollFactor(0);
     this.container.setVisible(this.visible);
 
     // Toggle on F3

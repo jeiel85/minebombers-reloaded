@@ -145,20 +145,24 @@ export class WorldSimulation {
       };
     });
 
-    // Spawn cavern monsters in open mine areas
+    // Spawn cavern monsters in open mine areas (outside player bases)
     const openFloorIndices: number[] = [];
     for (let i = 0; i < this.tiles.length; i++) {
       if (this.tiles[i]?.kind === 'floor') {
         const tx = i % MAP_WIDTH;
         const ty = Math.floor(i / MAP_WIDTH);
-        if (tx > 4 && tx < MAP_WIDTH - 5 && ty > 4 && ty < MAP_HEIGHT - 5) {
+        const nearPlayer = this.players.some(
+          (p) => Math.hypot(p.x - (tx + 0.5) * WORLD_UNITS_PER_TILE, p.y - (ty + 0.5) * WORLD_UNITS_PER_TILE) < 4 * WORLD_UNITS_PER_TILE,
+        );
+        if (!nearPlayer && tx > 4 && tx < MAP_WIDTH - 5 && ty > 4 && ty < MAP_HEIGHT - 5) {
           openFloorIndices.push(i);
         }
       }
     }
-    const monsterCount = Math.min(3, openFloorIndices.length);
+    const pool = openFloorIndices.length > 0 ? openFloorIndices : this.tiles.map((t, idx) => (t.kind === 'floor' ? idx : -1)).filter((idx) => idx >= 0);
+    const monsterCount = Math.min(6, pool.length);
     for (let m = 0; m < monsterCount; m++) {
-      const idx = openFloorIndices[(m * 7 + seed) % openFloorIndices.length]!;
+      const idx = pool[(m * 7 + seed) % pool.length]!;
       const mx = idx % MAP_WIDTH;
       const my = Math.floor(idx / MAP_WIDTH);
       this.monsters.push({

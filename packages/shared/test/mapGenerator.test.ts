@@ -64,12 +64,12 @@ describe('classic-mine-v1 map generator', () => {
 
   it('generates correct treasure counts based on player count', () => {
     const map4 = generateClassicMine(777, 4);
-    // basic: 18 + 2*4 = 26; rare: max(2, 4) = 4; total = 30
+    // basic: 40 + 6*4 = 64; rare: max(8, 4*2) = 8; total = 72
     const basicCount = map4.treasures.filter((t) => t.rarity === 'basic').length;
     const rareCount = map4.treasures.filter((t) => t.rarity === 'rare').length;
-    expect(basicCount).toBe(26);
-    expect(rareCount).toBe(4);
-    expect(map4.treasures.length).toBe(30);
+    expect(basicCount).toBe(64);
+    expect(rareCount).toBe(8);
+    expect(map4.treasures.length).toBe(72);
 
     // Ensure all treasures are placed in soil
     for (const t of map4.treasures) {
