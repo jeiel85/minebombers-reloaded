@@ -25,6 +25,11 @@ pub struct ApplicationContext<'canvas, 'textures> {
   pub config: crate::config::AppConfig,
   pub is_fullscreen: bool,
   pub gamepad: crate::gamepad::GamepadManager,
+  pub crt_texture: Texture<'textures>,
+  pub light_mask: Texture<'textures>,
+  pub lantern_light: Texture<'textures>,
+  pub explosion_light: Texture<'textures>,
+  pub lighting_active: bool,
 }
 
 pub enum Animation {
@@ -103,6 +108,17 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     let buffer =
       texture_creator.create_texture_target(PixelFormatEnum::RGB24, SCREEN_WIDTH, SCREEN_HEIGHT)?;
 
+    // Create static CRT scanline and vignette overlay texture
+    let crt_texture = create_crt_texture(&texture_creator)?;
+
+    // Create dynamic lighting mask and light textures
+    let mut light_mask =
+      texture_creator.create_texture_target(PixelFormatEnum::RGBA32, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+    light_mask.set_blend_mode(BlendMode::Mod);
+
+    let lantern_light = create_radial_light(&texture_creator, 128, (230, 205, 140))?;
+    let explosion_light = create_radial_light(&texture_creator, 256, (255, 190, 90))?;
+
     // Initialize audio
     sdl2::mixer::open_audio(44100, AUDIO_S16LSB, 2, 1024).map_err(SdlError)?;
 
@@ -119,6 +135,11 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       config: app_cfg,
       is_fullscreen,
       gamepad,
+      crt_texture,
+      light_mask,
+      lantern_light,
+      explosion_light,
+      lighting_active: false,
     };
     cb(ctx)?;
     Ok(())
@@ -241,6 +262,19 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       target.set_y(offset_y - (top as i32));
     }
     self.canvas.copy(&self.buffer, None, Some(target)).map_err(SdlError)?;
+
+    // Apply dynamic cave lighting if enabled and active
+    if self.config.graphics.dynamic_lighting && self.lighting_active {
+      let _ = self.light_mask.set_blend_mode(BlendMode::Mod);
+      self.canvas.copy(&self.light_mask, None, Some(target)).map_err(SdlError)?;
+      self.lighting_active = false;
+    }
+
+    // Apply retro CRT scanline & vignette filter if enabled
+    if self.config.graphics.crt_shader {
+      self.canvas.copy(&self.crt_texture, None, Some(target)).map_err(SdlError)?;
+    }
+
     self.canvas.present();
     Ok(())
   }
@@ -290,6 +324,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
   }
 
   pub fn present_flash(&mut self) -> Result<(), anyhow::Error> {
+    self.lighting_active = false;
     self.canvas.set_draw_color(Color::WHITE);
     self.canvas.clear();
     self.canvas.present();
@@ -376,4 +411,142 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
   pub fn texture_creator(&self) -> &'textures TextureCreator<WindowContext> {
     self.texture_creator
   }
+
+  pub fn toggle_crt(&mut self) -> bool {
+    self.config.graphics.crt_shader = !self.config.graphics.crt_shader;
+    println!(
+      "[GRAPHICS] CRT Scanline & Vignette Filter: {}",
+      if self.config.graphics.crt_shader { "ENABLED" } else { "DISABLED" }
+    );
+    let _ = self.config.save(&self.game_dir);
+    self.config.graphics.crt_shader
+  }
+
+  pub fn toggle_dynamic_lighting(&mut self) -> bool {
+    self.config.graphics.dynamic_lighting = !self.config.graphics.dynamic_lighting;
+    println!(
+      "[GRAPHICS] Dynamic Cave Lighting & Lanterns: {}",
+      if self.config.graphics.dynamic_lighting { "ENABLED" } else { "DISABLED" }
+    );
+    let _ = self.config.save(&self.game_dir);
+    self.config.graphics.dynamic_lighting
+  }
+
+  pub fn apply_dynamic_lighting(
+    &mut self,
+    lanterns: &[(u16, u16)],
+    explosions: &[(u16, u16, f32)],
+  ) -> Result<(), anyhow::Error> {
+    if !self.config.graphics.dynamic_lighting {
+      return Ok(());
+    }
+
+    self.lighting_active = true;
+    let lantern = &self.lantern_light;
+    let explosion = &self.explosion_light;
+
+    self.canvas.with_texture_canvas(&mut self.light_mask, |canvas| {
+      // Subterranean darkness: dim bluish-gray ambient light
+      canvas.set_draw_color(Color::RGB(55, 55, 70));
+      canvas.clear();
+
+      // Top HUD (scores, lives) and bottom HUD (round timer) are always 100% visible
+      canvas.set_draw_color(Color::RGB(255, 255, 255));
+      let _ = canvas.fill_rect(Rect::new(0, 0, SCREEN_WIDTH, 38));
+      let _ = canvas.fill_rect(Rect::new(0, 470, SCREEN_WIDTH, 10));
+
+      // Draw warm lantern light for each miner
+      for &(lx, ly) in lanterns {
+        let x = lx as i32 - 64;
+        let y = ly as i32 - 64;
+        let _ = canvas.copy(lantern, None, Some(Rect::new(x, y, 128, 128)));
+      }
+
+      // Draw explosion blast radiance
+      for &(ex, ey, intensity) in explosions {
+        let size = (256.0 * intensity.clamp(0.4, 1.5)) as u32;
+        let half = (size / 2) as i32;
+        let x = ex as i32 - half;
+        let y = ey as i32 - half;
+        let _ = canvas.copy(explosion, None, Some(Rect::new(x, y, size, size)));
+      }
+    })?;
+
+    Ok(())
+  }
+}
+
+fn create_crt_texture<'textures>(
+  texture_creator: &'textures TextureCreator<WindowContext>,
+) -> Result<Texture<'textures>, anyhow::Error> {
+  let mut tex = texture_creator
+    .create_texture_static(PixelFormatEnum::RGBA32, SCREEN_WIDTH, SCREEN_HEIGHT)
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
+  tex.set_blend_mode(BlendMode::Blend);
+
+  let mut pixels = vec![0u8; (SCREEN_WIDTH * SCREEN_HEIGHT * 4) as usize];
+  let center_x = SCREEN_WIDTH as f32 / 2.0;
+  let center_y = SCREEN_HEIGHT as f32 / 2.0;
+  let max_dist = (center_x * center_x + center_y * center_y).sqrt();
+
+  for y in 0..SCREEN_HEIGHT {
+    let scanline = if y % 2 == 1 { 0.40 } else { 0.0 };
+
+    for x in 0..SCREEN_WIDTH {
+      let dx = x as f32 - center_x;
+      let dy = y as f32 - center_y;
+      let dist = (dx * dx + dy * dy).sqrt() / max_dist;
+
+      let vignette = (dist * dist * 0.55).min(0.75);
+      let alpha = ((scanline + vignette).min(0.85) * 255.0) as u8;
+
+      let idx = ((y * SCREEN_WIDTH + x) * 4) as usize;
+      pixels[idx] = 0;
+      pixels[idx + 1] = 0;
+      pixels[idx + 2] = 0;
+      pixels[idx + 3] = alpha;
+    }
+  }
+
+  tex.update(None, &pixels, (SCREEN_WIDTH * 4) as usize).map_err(|e| anyhow::anyhow!("{}", e))?;
+  Ok(tex)
+}
+
+fn create_radial_light<'textures>(
+  texture_creator: &'textures TextureCreator<WindowContext>,
+  size: u32,
+  base_color: (u8, u8, u8),
+) -> Result<Texture<'textures>, anyhow::Error> {
+  let mut tex = texture_creator
+    .create_texture_static(PixelFormatEnum::RGBA32, size, size)
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
+  tex.set_blend_mode(BlendMode::Add);
+
+  let mut pixels = vec![0u8; (size * size * 4) as usize];
+  let center = size as f32 / 2.0;
+  let radius = center;
+
+  for y in 0..size {
+    for x in 0..size {
+      let dx = x as f32 - center;
+      let dy = y as f32 - center;
+      let dist = (dx * dx + dy * dy).sqrt();
+
+      if dist < radius {
+        let factor = (1.0 - (dist / radius)).powi(2);
+        let r = (base_color.0 as f32 * factor) as u8;
+        let g = (base_color.1 as f32 * factor) as u8;
+        let b = (base_color.2 as f32 * factor) as u8;
+
+        let idx = ((y * size + x) * 4) as usize;
+        pixels[idx] = r;
+        pixels[idx + 1] = g;
+        pixels[idx + 2] = b;
+        pixels[idx + 3] = 255;
+      }
+    }
+  }
+
+  tex.update(None, &pixels, (size * 4) as usize).map_err(|e| anyhow::anyhow!("{}", e))?;
+  Ok(tex)
 }

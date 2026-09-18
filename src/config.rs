@@ -98,6 +98,29 @@ impl Default for GameplayConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphicsConfig {
+  /// Enable retro CRT scanline and vignette overlay (Toggle with F6)
+  #[serde(default = "default_false")]
+  pub crt_shader: bool,
+  /// Enable dynamic cave lighting and lantern view (Toggle with F7)
+  #[serde(default = "default_false")]
+  pub dynamic_lighting: bool,
+}
+
+fn default_false() -> bool {
+  false
+}
+
+impl Default for GraphicsConfig {
+  fn default() -> Self {
+    Self {
+      crt_shader: false,
+      dynamic_lighting: false,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerKeysConfig {
   pub left: String,
   pub right: String,
@@ -218,6 +241,8 @@ pub struct AppConfig {
   pub display: DisplayConfig,
   #[serde(default)]
   pub gameplay: GameplayConfig,
+  #[serde(default)]
+  pub graphics: GraphicsConfig,
   #[serde(default)]
   pub keys: KeysSection,
 }
