@@ -1,7 +1,7 @@
 use mb_core::glyphs::{AnimationPhase, Glyph};
 use mb_core::images::{decode_font, decode_spy, Color, DecodedImage};
 use mb_core::keys::Key;
-use mb_core::options::Options;
+use mb_core::options::{Options, WinCondition};
 use mb_core::sound::SoundEffect;
 use mb_core::world::bot::BotDifficulty;
 use mb_core::world::equipment::Equipment;
@@ -10,6 +10,7 @@ use mb_core::world::player::PlayerComponent;
 use mb_core::world::position::Cursor;
 use mb_core::world::{Update, World};
 use std::convert::{TryFrom, TryInto};
+use std::time::Duration;
 
 const SCREEN_WIDTH: usize = 640;
 const SCREEN_HEIGHT: usize = 480;
@@ -19,6 +20,8 @@ static FONTTI_FON_BYTES: &[u8] = include_bytes!("../../../res/minebomb/FONTTI.FO
 static TITLEBE_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/TITLEBE.SPY");
 static MAIN3_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/MAIN3.SPY");
 static SHOPPIC_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/SHOPPIC.SPY");
+static OPTIONS5_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/OPTIONS5.SPY");
+static INFO1_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/INFO1.SPY");
 
 static mut FRAMEBUFFER: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4] = [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4];
 
@@ -27,8 +30,8 @@ pub const KEY_UP: u32 = 1;
 pub const KEY_DOWN: u32 = 2;
 pub const KEY_LEFT: u32 = 3;
 pub const KEY_RIGHT: u32 = 4;
-pub const KEY_BOMB: u32 = 5;    // Space / Enter (Confirm, Buy in shop)
-pub const KEY_CHOOSE: u32 = 6;  // C / Shift (Sell in shop)
+pub const KEY_BOMB: u32 = 5;    // Space / Enter (Select, Buy)
+pub const KEY_CHOOSE: u32 = 6;  // C / Shift (Sell / refund)
 pub const KEY_REMOTE: u32 = 7;  // X / Ctrl
 pub const KEY_TAB: u32 = 8;     // Tab / Q / E (Page toggle in shop)
 pub const KEY_ESC: u32 = 9;     // Escape
@@ -39,9 +42,61 @@ pub const KEY_ANY: u32 = 10;
 pub enum AppState {
   Title = 0,
   MainMenu = 1,
-  Shop = 2,
-  Battle = 3,
-  RoundEnd = 4,
+  Options = 2,
+  Info = 3,
+  Shop = 4,
+  Battle = 5,
+  RoundEnd = 6,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+pub enum GameOption {
+  Cash = 0,
+  Treasures = 1,
+  Rounds = 2,
+  Time = 3,
+  Players = 4,
+  Speed = 5,
+  BombDamage = 6,
+  Darkness = 7,
+  FreeMarket = 8,
+  Selling = 9,
+  Winner = 10,
+  RedefineKeys = 11,
+  LoadLevels = 12,
+  MainMenu = 13,
+}
+
+impl GameOption {
+  pub fn from_usize(idx: usize) -> Self {
+    match idx {
+      0 => GameOption::Cash,
+      1 => GameOption::Treasures,
+      2 => GameOption::Rounds,
+      3 => GameOption::Time,
+      4 => GameOption::Players,
+      5 => GameOption::Speed,
+      6 => GameOption::BombDamage,
+      7 => GameOption::Darkness,
+      8 => GameOption::FreeMarket,
+      9 => GameOption::Selling,
+      10 => GameOption::Winner,
+      11 => GameOption::RedefineKeys,
+      12 => GameOption::LoadLevels,
+      _ => GameOption::MainMenu,
+    }
+  }
+
+  pub fn next(self) -> Self {
+    let idx = (self as usize + 1) % 14;
+    Self::from_usize(idx)
+  }
+
+  pub fn prev(self) -> Self {
+    let idx = if self as usize == 0 { 13 } else { self as usize - 1 };
+    Self::from_usize(idx)
+  }
 }
 
 #[derive(Clone, Copy)]
@@ -221,7 +276,9 @@ fn preview_pixel(value: MapValue) -> usize {
 
 pub struct WebGame {
   pub state: AppState,
-  pub selected_menu: usize, // 0: New Game, 1: Quick Play, 2: Bot Diff, 3: Title
+  pub selected_menu: usize, // 0: New Game, 1: Options, 2: Info, 3: Quit
+  pub selected_option: GameOption,
+  pub options: Options,
   pub round: u16,
   pub total_rounds: u16,
   pub prices: Prices,
@@ -237,6 +294,8 @@ pub struct WebGame {
   pub title_img: DecodedImage,
   pub main_menu_img: DecodedImage,
   pub shop_img: DecodedImage,
+  pub options_img: DecodedImage,
+  pub info_img: DecodedImage,
 
   pub audio_queue: Vec<AudioEvent>,
   pub rumble_queue: Vec<RumbleEvent>,
@@ -407,21 +466,78 @@ impl WebGame {
 
         let shovel_y = 136 + 48 * (self.selected_menu as i32);
         self.blit_glyph(222, shovel_y, Glyph::ShovelPointer);
+      }
+      AppState::Options => {
+        Self::copy_rgb_to_fb(&self.options_img.image);
+        let p = &self.options_img.palette;
 
-        // Show mode info below
-        let mode_desc = match self.selected_menu {
-          0 => "STANDARD GAME - VISIT SHOP BEFORE ARENA",
-          1 => "QUICK PLAY - INSTANT STARTER LOADOUT",
-          2 => match self.players[1].bot_difficulty {
-            BotDifficulty::Easy => "BOT DIFFICULTY: EASY (PRESS ENTER TO CHANGE)",
-            BotDifficulty::Medium => "BOT DIFFICULTY: MEDIUM (PRESS ENTER TO CHANGE)",
-            BotDifficulty::Hard => "BOT DIFFICULTY: HARD (PRESS ENTER TO CHANGE)",
-          },
-          3 => "BACK TO RETRO TITLE SCREEN",
-          _ => "",
-        };
-        self.fill_rect(100, 340, 440, 16, 0, 0, 0);
-        self.draw_text(mode_desc, 120, 344, p[1].r, p[1].g, p[1].b);
+        const MENU_ITEM_X: i32 = 192;
+        const MENU_ITEM_Y: i32 = 96;
+        const ITEM_HEIGHT: i32 = 24;
+
+        // Draw cursor arrow pointer
+        let cursor_y = (self.selected_option as i32) * ITEM_HEIGHT + MENU_ITEM_Y + 6;
+        self.blit_glyph(MENU_ITEM_X + 25, cursor_y, Glyph::ArrowPointer);
+
+        // Render option values
+        for i in 0..14 {
+          let opt = GameOption::from_usize(i);
+          let opt_y = (i as i32) * ITEM_HEIGHT;
+
+          if i <= 6 {
+            // Value bar
+            self.fill_rect(MENU_ITEM_X + 142, MENU_ITEM_Y + 5 + opt_y, 166, 13, 0, 0, 0);
+            let bar_w = match opt {
+              GameOption::Cash => (u64::from(self.options.cash) * 165 / 2650) as u32,
+              GameOption::Treasures => (u64::from(self.options.treasures) * 165 / 75) as u32,
+              GameOption::Rounds => (u64::from(self.options.rounds) * 165 / 55) as u32,
+              GameOption::Time => (self.options.round_time.as_secs() * 165 / 1359) as u32,
+              GameOption::Players => (u64::from(self.options.players.saturating_sub(1)) * 55) as u32,
+              GameOption::Speed => {
+                let spd = 100 - 3 * u64::from(self.options.speed);
+                (spd * 165 / 100) as u32
+              }
+              GameOption::BombDamage => (u64::from(self.options.bomb_damage) * 165 / 100) as u32,
+              _ => 0,
+            };
+            self.fill_rect(MENU_ITEM_X + 142, MENU_ITEM_Y + 5 + opt_y, (bar_w + 1).min(166), 13, p[1].r, p[1].g, p[1].b);
+
+            let txt = match opt {
+              GameOption::Cash => Some(format!("{}", self.options.cash)),
+              GameOption::Treasures => Some(format!("{}", self.options.treasures)),
+              GameOption::Rounds => Some(format!("{}", self.options.rounds)),
+              GameOption::Time => {
+                let s = self.options.round_time.as_secs();
+                Some(format!("{}:{:02} min", s / 60, s % 60))
+              }
+              GameOption::Players => Some(format!(" {}", self.options.players)),
+              GameOption::Speed => Some(format!(" {}%", 100 - 3 * self.options.speed)),
+              GameOption::BombDamage => Some(format!(" {}%", self.options.bomb_damage)),
+              _ => None,
+            };
+            if let Some(t) = txt {
+              self.draw_text(&t, MENU_ITEM_X + 208, MENU_ITEM_Y + 7 + opt_y, p[8].r, p[8].g, p[8].b);
+            }
+          } else if i >= 7 && i <= 10 {
+            // Radio buttons
+            let enabled = match opt {
+              GameOption::Darkness => self.options.darkness,
+              GameOption::FreeMarket => self.options.free_market,
+              GameOption::Selling => self.options.selling,
+              GameOption::Winner => self.options.win == WinCondition::ByMoney,
+              _ => false,
+            };
+            self.blit_glyph(MENU_ITEM_X + 185, MENU_ITEM_Y + 5 + opt_y, Glyph::RadioButton(enabled));
+            self.blit_glyph(MENU_ITEM_X + 251, MENU_ITEM_Y + 5 + opt_y, Glyph::RadioButton(!enabled));
+          }
+        }
+
+        self.draw_text("ARROWS: ADJUST   ENTER: SELECT   ESC: MAIN MENU", 140, 455, p[8].r, p[8].g, p[8].b);
+      }
+      AppState::Info => {
+        Self::copy_rgb_to_fb(&self.info_img.image);
+        let p = &self.info_img.palette;
+        self.draw_text("PRESS ANY KEY OR ESCAPE TO RETURN", 180, 455, p[1].r, p[1].g, p[1].b);
       }
       AppState::Shop => {
         Self::copy_rgb_to_fb(&self.shop_img.image);
@@ -530,7 +646,6 @@ impl WebGame {
         self.render_full();
       }
       AppState::RoundEnd => {
-        // Overlay banner on top of current view
         self.fill_rect(140, 200, 360, 80, 20, 20, 30);
         let cash = self.players[0].cash;
         self.draw_text("ROUND FINISHED!", 240, 215, 255, 220, 50);
@@ -614,15 +729,15 @@ impl WebGame {
         }
         KEY_BOMB => match self.selected_menu {
           0 => {
-            // NEW GAME: Start match, open authentic DOS Shop
+            // NEW GAME: Start match using current configured options, open authentic DOS Shop
             self.round = 1;
-            self.total_rounds = 10;
+            self.total_rounds = self.options.rounds;
             self.level = LevelMap::random_map(10);
             self.world = None;
             for eq in Equipment::all_equipment() {
               self.players[0].inventory[eq] = 0;
             }
-            self.players[0].cash = 750;
+            self.players[0].cash = self.options.cash as u32;
             self.players[0].selection = Equipment::SmallBomb;
             for p in self.players[1..].iter_mut() {
               auto_buy_for_bot(p, &self.prices);
@@ -635,35 +750,20 @@ impl WebGame {
             self.render_current_state();
           }
           1 => {
-            // QUICK PLAY: Starter pack and direct battle
-            self.round = 1;
-            self.total_rounds = 10;
-            let level = LevelMap::random_map(10);
-            self.level = level.clone();
-            equip_starter_pack(&mut self.players[0]);
-            for p in self.players[1..].iter_mut() {
-              auto_buy_for_bot(p, &self.prices);
-            }
-            self.start_round(level);
-            self.state = AppState::Battle;
-            self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
-            self.render_full();
+            // OPTIONS: Open authentic Options menu screen
+            self.selected_option = GameOption::MainMenu;
+            self.state = AppState::Options;
+            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
           }
           2 => {
-            // Cycle bot difficulty
-            let next_diff = match self.players[1].bot_difficulty {
-              BotDifficulty::Easy => BotDifficulty::Medium,
-              BotDifficulty::Medium => BotDifficulty::Hard,
-              BotDifficulty::Hard => BotDifficulty::Easy,
-            };
-            for p in self.players[1..].iter_mut() {
-              p.bot_difficulty = next_diff;
-            }
+            // INFO: Open authentic Info screen
+            self.state = AppState::Info;
             self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
             self.render_current_state();
           }
           3 => {
-            // Return to Title
+            // QUIT: Return to Title Screen
             self.state = AppState::Title;
             self.render_current_state();
           }
@@ -671,6 +771,133 @@ impl WebGame {
         },
         _ => {}
       },
+      AppState::Options => match key {
+        KEY_UP => {
+          self.selected_option = self.selected_option.prev();
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+        }
+        KEY_DOWN => {
+          self.selected_option = self.selected_option.next();
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+        }
+        KEY_LEFT => {
+          match self.selected_option {
+            GameOption::Cash => {
+              self.options.cash = if self.options.cash >= 100 { self.options.cash - 100 } else { 0 };
+            }
+            GameOption::Treasures => {
+              if self.options.treasures > 0 { self.options.treasures -= 1; }
+            }
+            GameOption::Rounds => {
+              if self.options.rounds > 1 { self.options.rounds -= 1; }
+            }
+            GameOption::Time => {
+              let s = self.options.round_time.as_secs().saturating_sub(15);
+              self.options.round_time = Duration::from_secs(s);
+            }
+            GameOption::Players => {
+              if self.options.players > 1 { self.options.players -= 1; }
+            }
+            GameOption::Speed => {
+              if self.options.speed < 33 { self.options.speed += 1; }
+            }
+            GameOption::BombDamage => {
+              if self.options.bomb_damage >= 5 { self.options.bomb_damage -= 5; }
+            }
+            GameOption::Darkness => { self.options.darkness = !self.options.darkness; }
+            GameOption::FreeMarket => { self.options.free_market = !self.options.free_market; }
+            GameOption::Selling => { self.options.selling = !self.options.selling; }
+            GameOption::Winner => {
+              self.options.win = match self.options.win {
+                WinCondition::ByMoney => WinCondition::ByWins,
+                WinCondition::ByWins => WinCondition::ByMoney,
+              };
+            }
+            _ => {}
+          }
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+        }
+        KEY_RIGHT => {
+          match self.selected_option {
+            GameOption::Cash => {
+              if self.options.cash <= 2550 { self.options.cash += 100; }
+            }
+            GameOption::Treasures => {
+              if self.options.treasures < 75 { self.options.treasures += 1; }
+            }
+            GameOption::Rounds => {
+              if self.options.rounds < 55 { self.options.rounds += 1; }
+            }
+            GameOption::Time => {
+              let s = (self.options.round_time.as_secs() + 15).min(1359);
+              self.options.round_time = Duration::from_secs(s);
+            }
+            GameOption::Players => {
+              if self.options.players < 4 { self.options.players += 1; }
+            }
+            GameOption::Speed => {
+              if self.options.speed > 0 { self.options.speed -= 1; }
+            }
+            GameOption::BombDamage => {
+              if self.options.bomb_damage <= 95 { self.options.bomb_damage += 5; }
+            }
+            GameOption::Darkness => { self.options.darkness = !self.options.darkness; }
+            GameOption::FreeMarket => { self.options.free_market = !self.options.free_market; }
+            GameOption::Selling => { self.options.selling = !self.options.selling; }
+            GameOption::Winner => {
+              self.options.win = match self.options.win {
+                WinCondition::ByMoney => WinCondition::ByWins,
+                WinCondition::ByWins => WinCondition::ByMoney,
+              };
+            }
+            _ => {}
+          }
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+        }
+        KEY_BOMB => match self.selected_option {
+          GameOption::MainMenu => {
+            self.state = AppState::MainMenu;
+            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
+          }
+          GameOption::Darkness => {
+            self.options.darkness = !self.options.darkness;
+            self.render_current_state();
+          }
+          GameOption::FreeMarket => {
+            self.options.free_market = !self.options.free_market;
+            self.render_current_state();
+          }
+          GameOption::Selling => {
+            self.options.selling = !self.options.selling;
+            self.render_current_state();
+          }
+          GameOption::Winner => {
+            self.options.win = match self.options.win {
+              WinCondition::ByMoney => WinCondition::ByWins,
+              WinCondition::ByWins => WinCondition::ByMoney,
+            };
+            self.render_current_state();
+          }
+          _ => {}
+        },
+        KEY_ESC => {
+          self.state = AppState::MainMenu;
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+        }
+        _ => {}
+      },
+      AppState::Info => {
+        // Any key or escape returns to MainMenu
+        self.state = AppState::MainMenu;
+        self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+        self.render_current_state();
+      }
       AppState::Shop => {
         if key == KEY_ESC {
           self.state = AppState::MainMenu;
@@ -831,7 +1058,7 @@ impl WebGame {
       std::mem::transmute(&mut self.players[..])
     };
 
-    let world = World::create(level, players_ref, false, 100, false);
+    let world = World::create(level, players_ref, self.options.darkness, self.options.bomb_damage, false);
     self.level = world.maps.level.clone();
     self.world = Some(world);
 
@@ -968,6 +1195,14 @@ pub extern "C" fn mb_init(
     Ok(img) => img,
     Err(_) => return 0,
   };
+  let options_img = match decode_spy(640, 480, OPTIONS5_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
+  let info_img = match decode_spy(640, 480, INFO1_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
 
   let level = LevelMap::random_map(10);
 
@@ -1003,6 +1238,8 @@ pub extern "C" fn mb_init(
   let mut game = WebGame {
     state: AppState::Title,
     selected_menu: 0,
+    selected_option: GameOption::MainMenu,
+    options: opts,
     round: 1,
     total_rounds: 10,
     prices,
@@ -1016,6 +1253,8 @@ pub extern "C" fn mb_init(
     title_img,
     main_menu_img,
     shop_img,
+    options_img,
+    info_img,
     audio_queue: Vec::with_capacity(32),
     rumble_queue: Vec::with_capacity(16),
     round_start_tick: 0,
