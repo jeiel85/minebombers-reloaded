@@ -4,10 +4,12 @@ use mb_core::keys::Key;
 use mb_core::options::Options;
 use mb_core::sound::SoundEffect;
 use mb_core::world::bot::BotDifficulty;
+use mb_core::world::equipment::Equipment;
 use mb_core::world::map::{LevelMap, MapValue, MAP_COLS};
 use mb_core::world::player::PlayerComponent;
 use mb_core::world::position::Cursor;
 use mb_core::world::{Update, World};
+use std::convert::TryInto;
 
 const SCREEN_WIDTH: usize = 640;
 const SCREEN_HEIGHT: usize = 480;
@@ -66,6 +68,51 @@ struct WebGame {
 
 static mut GAME: Option<WebGame> = None;
 
+fn equip_bot(player: &mut PlayerComponent, diff: BotDifficulty) {
+  match diff {
+    BotDifficulty::Easy => {
+      player.inventory[Equipment::SmallBomb] = 15;
+      player.inventory[Equipment::BigBomb] = 5;
+      player.inventory[Equipment::Dynamite] = 3;
+      player.inventory[Equipment::SmallPickaxe] = 1;
+      player.selection = Equipment::SmallBomb;
+      player.cash = 300;
+    }
+    BotDifficulty::Medium => {
+      player.inventory[Equipment::SmallBomb] = 20;
+      player.inventory[Equipment::BigBomb] = 8;
+      player.inventory[Equipment::Dynamite] = 6;
+      player.inventory[Equipment::Mine] = 2;
+      player.inventory[Equipment::SmallPickaxe] = 1;
+      player.inventory[Equipment::FreezeBomb] = 1;
+      player.selection = Equipment::SmallBomb;
+      player.cash = 150;
+    }
+    BotDifficulty::Hard => {
+      player.inventory[Equipment::SmallBomb] = 25;
+      player.inventory[Equipment::BigBomb] = 10;
+      player.inventory[Equipment::Dynamite] = 8;
+      player.inventory[Equipment::Mine] = 4;
+      player.inventory[Equipment::SmallPickaxe] = 1;
+      player.inventory[Equipment::DrillDrone] = 1;
+      player.inventory[Equipment::Armor] = 1;
+      player.selection = Equipment::SmallBomb;
+      player.cash = 50;
+    }
+  }
+}
+
+fn equip_starter_pack(player: &mut PlayerComponent) {
+  player.inventory[Equipment::SmallBomb] = 15;
+  player.inventory[Equipment::BigBomb] = 5;
+  player.inventory[Equipment::Dynamite] = 5;
+  player.inventory[Equipment::SmallRadio] = 2;
+  player.inventory[Equipment::SmallPickaxe] = 1;
+  player.inventory[Equipment::FreezeBomb] = 1;
+  player.selection = Equipment::SmallBomb;
+  player.cash = 90;
+}
+
 #[no_mangle]
 pub extern "C" fn mb_init(
   _level_idx: u32,
@@ -98,12 +145,20 @@ pub extern "C" fn mb_init(
   let (is_bot4, bot_diff4) = parse_diff(diff4);
 
   let opts = Options::default();
-  let players = [
+  let mut players = [
     PlayerComponent::new("PLAYER 1".to_string(), Default::default(), &opts, is_bot1, bot_diff1),
     PlayerComponent::new("PLAYER 2".to_string(), Default::default(), &opts, is_bot2, bot_diff2),
     PlayerComponent::new("PLAYER 3".to_string(), Default::default(), &opts, is_bot3, bot_diff3),
     PlayerComponent::new("PLAYER 4".to_string(), Default::default(), &opts, is_bot4, bot_diff4),
   ];
+
+  for p in players.iter_mut() {
+    if p.is_bot {
+      equip_bot(p, p.bot_difficulty);
+    } else {
+      equip_starter_pack(p);
+    }
+  }
 
   unsafe {
     FRAMEBUFFER.fill(0);
@@ -299,6 +354,30 @@ impl WebGame {
       let label = format!("{}: ${}", tag, p.cash);
       self.draw_text(&label, col_x + 6, 4, cr, cg, cb);
 
+      let w_tag = match p.selection {
+        Equipment::SmallBomb => "BOMB",
+        Equipment::BigBomb => "BBOM",
+        Equipment::Dynamite => "DYN",
+        Equipment::AtomicBomb => "NUKE",
+        Equipment::Mine => "MINE",
+        Equipment::Grenade => "GREN",
+        Equipment::Flamethrower => "FLAM",
+        Equipment::Napalm => "NAPM",
+        Equipment::BlackHole => "HOLE",
+        Equipment::FreezeBomb => "FRZ",
+        Equipment::DrillDrone => "DRON",
+        Equipment::SmallRadio | Equipment::LargeRadio => "REM",
+        Equipment::Plastic | Equipment::ExplosivePlastic => "C4",
+        _ => "ITEM",
+      };
+      let w_cnt = p.inventory[p.selection];
+      let w_label = if w_cnt > 0 {
+        format!("{}:{}", w_tag, w_cnt)
+      } else {
+        "[-]".to_string()
+      };
+      self.draw_text(&w_label, col_x + 84, 4, 210, 210, 210);
+
       if let Some(ref world) = self.world {
         if idx < world.actors.len() {
           let actor = &world.actors[idx];
@@ -488,6 +567,13 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
     }
 
     if is_end_round {
+      if let Some(ref world) = game.world {
+        for idx in 0..game.players.len() {
+          if idx < world.actors.len() {
+            game.players[idx].cash += world.actors[idx].accumulated_cash;
+          }
+        }
+      }
       return 2;
     }
 
@@ -532,6 +618,78 @@ pub extern "C" fn mb_get_rumble_event(out_ptr: *mut f32) -> i32 {
       1
     } else {
       0
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_set_player_item(player_idx: u32, item_idx: u32, count: u32) {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      let p_idx = (player_idx as usize).min(3);
+      if let Ok(equipment) = (item_idx as u8).try_into() {
+        game.players[p_idx].inventory[equipment] = count as u16;
+        if count > 0 && game.players[p_idx].inventory[game.players[p_idx].selection] == 0 {
+          game.players[p_idx].selection = equipment;
+        }
+      }
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_get_player_item(player_idx: u32, item_idx: u32) -> u32 {
+  unsafe {
+    if let Some(ref game) = GAME {
+      let p_idx = (player_idx as usize).min(3);
+      if let Ok(equipment) = (item_idx as u8).try_into() {
+        return game.players[p_idx].inventory[equipment] as u32;
+      }
+    }
+    0
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_set_player_cash(player_idx: u32, cash: u32) {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      let p_idx = (player_idx as usize).min(3);
+      game.players[p_idx].cash = cash;
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_get_player_cash(player_idx: u32) -> u32 {
+  unsafe {
+    if let Some(ref game) = GAME {
+      let p_idx = (player_idx as usize).min(3);
+      return game.players[p_idx].cash;
+    }
+    0
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_clear_player_items(player_idx: u32) {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      let p_idx = (player_idx as usize).min(3);
+      for eq in Equipment::all_equipment() {
+        game.players[p_idx].inventory[eq] = 0;
+      }
+      game.players[p_idx].selection = Equipment::SmallBomb;
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_equip_starter_pack(player_idx: u32) {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      let p_idx = (player_idx as usize).min(3);
+      equip_starter_pack(&mut game.players[p_idx]);
     }
   }
 }
