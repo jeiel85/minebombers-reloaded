@@ -38,6 +38,15 @@ auto_bots = true
 # 캐릭터 선택 화면에서 [Tab] 또는 [B] 키로 각 슬롯마다 개별 변경도 가능합니다.
 bot_difficulty = "Medium"
 
+[graphics]
+# 레트로 CRT 브라운관 스캔라인 및 비네팅 필터 활성화 여부
+# 인게임 단축키: F6
+crt_shader = false
+
+# 어두운 동굴 동적 라이팅 및 랜턴 시야 효과 활성화 여부
+# 인게임 단축키: F7
+dynamic_lighting = false
+
 # ===================================================================
 # 플레이어 키 설정 (Key Bindings)
 # 키 이름: "Left", "Right", "Up", "Down", "Space", "Return"(Enter),

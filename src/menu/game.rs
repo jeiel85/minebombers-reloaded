@@ -318,6 +318,8 @@ impl Application<'_> {
     let speed_pct = (100.0 - 3.0 * (settings.options.speed as f32)).max(10.0);
     let base_tick_ms = 20.0 * 100.0 / speed_pct;
 
+    let mut active_explosions: Vec<(u16, u16, u8)> = Vec::new();
+
     let exit_reason = 'round: loop {
       world.tick();
 
@@ -330,6 +332,8 @@ impl Application<'_> {
         let mut display_toggle_fullscreen = false;
         let mut display_set_scale: Option<u32> = None;
         let mut display_toggle_aspect = false;
+        let mut toggle_crt = false;
+        let mut toggle_dynamic_lighting = false;
 
         for event in ctx.poll_events() {
           match event {
@@ -381,6 +385,12 @@ impl Application<'_> {
                 }
                 Scancode::F4 => {
                   display_toggle_aspect = true;
+                }
+                Scancode::F6 => {
+                  toggle_crt = true;
+                }
+                Scancode::F7 => {
+                  toggle_dynamic_lighting = true;
                 }
                 Scancode::Return
                   if keymod.intersects(sdl2::keyboard::Mod::LALTMOD | sdl2::keyboard::Mod::RALTMOD) =>
@@ -436,6 +446,12 @@ impl Application<'_> {
         }
         if display_toggle_aspect {
           let _ = ctx.toggle_aspect_ratio();
+        }
+        if toggle_crt {
+          let _ = ctx.toggle_crt();
+        }
+        if toggle_dynamic_lighting {
+          let _ = ctx.toggle_dynamic_lighting();
         }
         if paused {
           // If we were paused, add to a
@@ -505,6 +521,40 @@ impl Application<'_> {
           break RoundEnd::Failed;
         }
         break RoundEnd::Round;
+      }
+
+      // Register any new explosions from effects queue for dynamic lighting
+      for request in &world.effects.queue {
+        match request.effect {
+          SoundEffect::Explos1 | SoundEffect::Explos2 | SoundEffect::Explos4 | SoundEffect::Explos5 => {
+            let pos = request.location.position();
+            active_explosions.push((pos.x, pos.y, 10));
+          }
+          SoundEffect::Explos3 => {
+            let pos = request.location.position();
+            active_explosions.push((pos.x, pos.y, 20));
+          }
+          _ => {}
+        }
+      }
+
+      // Collect active dynamic light sources
+      let mut expl_lights = Vec::new();
+      active_explosions.retain_mut(|(x, y, frames)| {
+        let intensity = *frames as f32 / 10.0;
+        expl_lights.push((*x, *y, intensity));
+        *frames = frames.saturating_sub(1);
+        *frames > 0
+      });
+
+      if ctx.config.graphics.dynamic_lighting {
+        let mut lanterns = Vec::with_capacity(world.actors.len());
+        for actor in &world.actors {
+          if !actor.is_dead && actor.health > 0 {
+            lanterns.push((actor.pos.x, actor.pos.y));
+          }
+        }
+        let _ = ctx.apply_dynamic_lighting(&lanterns, &expl_lights);
       }
 
       if world.flash {
