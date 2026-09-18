@@ -3,7 +3,7 @@ use crate::bitmap::MapValueSet;
 use crate::effects::SoundEffect;
 use crate::world::map::{MapValue, MAP_ROWS};
 use crate::world::position::{Cursor, Direction};
-use crate::world::{grenade_direction, SplatterKind, World};
+use crate::world::{drone_direction, grenade_direction, SplatterKind, World};
 use rand::prelude::*;
 
 impl World<'_> {
@@ -38,6 +38,23 @@ impl World<'_> {
       | MapValue::GrenadeFlyingLeft
       | MapValue::GrenadeFlyingDown
       | MapValue::GrenadeFlyingUp => self.grenade_fly(cursor, total),
+
+      MapValue::FreezeBomb => {
+        self.explode_freeze_bomb(cursor, total);
+      }
+      MapValue::BlackHoleBomb => {
+        self.maps.level[cursor] = MapValue::BlackHoleActive;
+        self.maps.timer[cursor] = 60;
+        self.update.update_cell(cursor);
+        self.effects.play(SoundEffect::Picaxe, 7000, cursor);
+      }
+      MapValue::BlackHoleActive => {
+        self.explode_black_hole(cursor, total);
+      }
+      MapValue::DrillDroneRight
+      | MapValue::DrillDroneLeft
+      | MapValue::DrillDroneUp
+      | MapValue::DrillDroneDown => self.drill_drone_fly(cursor, total),
 
       MapValue::Atomic1 | MapValue::Atomic2 | MapValue::Atomic3 => {
         self.maps.level[cursor] = MapValue::Passage;
@@ -322,10 +339,126 @@ impl World<'_> {
     }
   }
 
+  pub(super) fn explode_freeze_bomb(&mut self, cursor: Cursor, _total: u32) {
+    self.maps.level[cursor] = MapValue::Passage;
+    self.update.update_cell(cursor);
+    self.effects.play(SoundEffect::Picaxe, 22000, cursor);
+    self.effects.play(SoundEffect::Urethan, 15000, cursor);
+
+    // Freeze all living actors in radius 5
+    for actor in &mut self.actors {
+      if actor.is_dead {
+        continue;
+      }
+      let actor_cur = actor.pos.cursor();
+      let (dr, dc) = cursor.distance(actor_cur);
+      let dist = ((dr * dr + dc * dc) as f32).sqrt();
+      if dist <= 5.0 {
+        actor.frozen_ticks = 180; // ~3 seconds freeze
+        actor.moving = false;
+      }
+    }
+
+    self.effects.play(SoundEffect::Explos1, 14000, cursor);
+  }
+
+  pub(super) fn explode_black_hole(&mut self, cursor: Cursor, total: u32) {
+    self.maps.level[cursor] = MapValue::Passage;
+    self.update.update_cell(cursor);
+    // Final collapse explosion!
+    self.explode_cell(cursor, 255, true, total);
+    for dir in Direction::all() {
+      let c = cursor.to(dir);
+      self.explode_cell(c, 200, true, total);
+    }
+    self.effects.play(SoundEffect::Explos3, 10000, cursor);
+    self.shake = 15;
+  }
+
+  pub(super) fn tick_black_hole(&mut self, cursor: Cursor) {
+    self.shake = 5;
+    let target_pos = cursor.position();
+
+    // Pull actors toward singularity
+    for actor in &mut self.actors {
+      if actor.is_dead {
+        continue;
+      }
+      let dx = target_pos.x as i32 - actor.pos.x as i32;
+      let dy = target_pos.y as i32 - actor.pos.y as i32;
+      let dist_sq = dx * dx + dy * dy;
+      if dist_sq < (90 * 90) && dist_sq > 16 {
+        let step_x = dx.signum() * 2;
+        let step_y = dy.signum() * 2;
+        actor.pos.x = (actor.pos.x as i32 + step_x).clamp(5, 635) as u16;
+        actor.pos.y = (actor.pos.y as i32 + step_y).clamp(35, 475) as u16;
+      }
+      // Crushing damage if sucked into the epicenter
+      if dist_sq <= 16 * 16 {
+        actor.health = actor.health.saturating_sub(4);
+        if actor.health == 0 {
+          actor.is_dead = true;
+        }
+      }
+    }
+
+    // Occasionally destroy surrounding blocks
+    let mut rng = rand::thread_rng();
+    if rng.gen_ratio(1, 3) {
+      let delta_row = rng.gen_range(-2..=2);
+      let delta_col = rng.gen_range(-2..=2);
+      if let Some(target) = cursor.offset(delta_row, delta_col) {
+        let val = self.maps.level[target];
+        if val != MapValue::MetalWall && val != MapValue::BlackHoleActive && !val.is_passable() {
+          self.maps.level[target] = MapValue::Passage;
+          self.update.update_cell(target);
+          self.effects.play(SoundEffect::Picaxe, 7000, target);
+        }
+      }
+    }
+  }
+
+  pub(super) fn drill_drone_fly(&mut self, cursor: Cursor, total: u32) {
+    let value = self.maps.level[cursor];
+    let dir = drone_direction(value);
+    let next = cursor.to(dir);
+
+    // If hits metal wall or reached map edge
+    if self.maps.level[next] == MapValue::MetalWall || next == cursor {
+      self.maps.level[cursor] = MapValue::Passage;
+      self.update.update_cell(cursor);
+      self.explode_cell(cursor, 140, true, total);
+      return;
+    }
+
+    // Check direct hit on living actor
+    let direct_hit = self.actors.iter().any(|a| !a.is_dead && a.pos.cursor() == next);
+    if direct_hit {
+      self.maps.level[cursor] = MapValue::Passage;
+      self.update.update_cell(cursor);
+      self.maps.level[next] = MapValue::Explosion;
+      self.explode_cell(next, 180, true, total);
+      self.effects.play(SoundEffect::Explos2, 11000, next);
+      return;
+    }
+
+    // Drill through whatever is in front
+    let next_val = self.maps.level[next];
+    if !next_val.is_passable() {
+      self.effects.play(SoundEffect::Picaxe, 14000, next);
+    }
+    self.maps.level[cursor] = MapValue::Passage;
+    self.update.update_cell(cursor);
+
+    self.maps.level[next] = value;
+    self.update.update_cell(next);
+    self.maps.timer[next] = 2;
+  }
+
   /// Explode cell via an external damage
   fn explode_cell(&mut self, cursor: Cursor, damage: u16, heavy_explosion: bool, total: u32) {
     let value = self.maps.level[cursor];
-    if EXPLODABLE_ENTITY[value] {
+    if EXPLODABLE_ENTITY[value] || value.is_custom_explodable() {
       self.explode_entity(cursor, total);
     } else if value.is_stone() || value.is_stone_corner() || value == MapValue::Boulder {
       if heavy_explosion {

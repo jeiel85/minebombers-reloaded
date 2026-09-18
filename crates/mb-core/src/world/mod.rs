@@ -134,8 +134,8 @@ impl<'p> World<'p> {
   }
 
   pub fn player_action(&mut self, player: usize, key: Key) {
-    if self.actors[player].is_dead {
-      // Dead players cannot do any actions
+    if self.actors[player].is_dead || self.actors[player].frozen_ticks > 0 {
+      // Dead or frozen players cannot do any actions
       return;
     }
     let mut direction = None;
@@ -364,6 +364,9 @@ impl<'p> World<'p> {
         clock => {
           // Countdown and update animation if needed
           self.maps.timer[cursor] = clock - 1;
+          if self.maps.level[cursor] == MapValue::BlackHoleActive {
+            self.tick_black_hole(cursor);
+          }
           let replacement = match self.maps.level[cursor] {
             MapValue::SmallBomb1 if clock <= 60 => MapValue::SmallBomb2,
             MapValue::SmallBomb2 if clock <= 30 => MapValue::SmallBomb3,
@@ -565,7 +568,12 @@ impl<'p> World<'p> {
         }
       } else {
         self.maps.hits[cursor] = 0;
-        self.maps.level[cursor] = MapValue::Passage;
+        let mut rng = rand::thread_rng();
+        if rng.gen_ratio(1, 50) {
+          self.maps.level[cursor] = MapValue::WeaponsCrate;
+        } else {
+          self.maps.level[cursor] = MapValue::Passage;
+        }
         self.update.update_cell(cursor);
         self.update.update_cell_border(cursor);
       }
@@ -652,6 +660,7 @@ impl<'p> World<'p> {
             Equipment::Grenade,
             Equipment::Flamethrower,
             Equipment::Clone,
+            Equipment::BlackHole,
           ]
           .choose(&mut rng)
           .unwrap();
@@ -669,6 +678,8 @@ impl<'p> World<'p> {
             Equipment::Extinguisher,
             Equipment::JumpingBomb,
             Equipment::SuperDrill,
+            Equipment::FreezeBomb,
+            Equipment::DrillDrone,
           ]
           .choose(&mut rng)
           .unwrap();
@@ -871,6 +882,12 @@ impl<'p> World<'p> {
   /// Animate actor under a given index. Updates coordinates, animation phase.
   fn animate_actor(&mut self, entity: EntityIndex) {
     let actor = &mut self.actors[entity];
+    if actor.frozen_ticks > 0 {
+      actor.frozen_ticks -= 1;
+      actor.moving = false;
+      self.update.update_actor(entity, Digging::Hands);
+      return;
+    }
     if !actor.moving {
       self.update.update_actor(entity, Digging::Hands);
       return;
@@ -1015,6 +1032,7 @@ impl<'p> World<'p> {
       is_active: true,
       accumulated_cash: 0,
       super_drill_count: 0,
+      frozen_ticks: 0,
     };
 
     // Don't inherit super drill
@@ -1060,6 +1078,9 @@ fn item_placement_level(item: Equipment, direction: Direction, player: usize) ->
     Equipment::Teleport => MapValue::Teleport,
     Equipment::Biomass => MapValue::Biomass,
     Equipment::JumpingBomb => MapValue::JumpingBomb,
+    Equipment::FreezeBomb => MapValue::FreezeBomb,
+    Equipment::BlackHole => MapValue::BlackHoleBomb,
+    Equipment::DrillDrone => drone_value(direction),
     Equipment::SmallPickaxe
     | Equipment::LargePickaxe
     | Equipment::Drill
@@ -1091,6 +1112,9 @@ fn item_placement_timer(item: Equipment) -> u16 {
     Equipment::MetalWall => 1,
     Equipment::ExplosivePlastic => 90,
     Equipment::Dynamite => 80,
+    Equipment::BlackHole => 80,
+    Equipment::FreezeBomb => 90,
+    Equipment::DrillDrone => 1,
     Equipment::JumpingBomb => {
       let mut rng = rand::thread_rng();
       rng.gen_range(80..160)
@@ -1108,7 +1132,7 @@ fn item_placement_hits(item: Equipment) -> i32 {
   match item {
     Equipment::JumpingBomb => rand::thread_rng().gen_range(7..27),
     Equipment::Biomass => 400,
-    Equipment::Grenade => 0,
+    Equipment::Grenade | Equipment::DrillDrone => 0,
     // Note that this is also "push" difficulty and in `interact_map` we actually set it to 24
     // for pushed items (so it's easier to push for the first time). This seems to be the behavior
     // of the original game.
@@ -1337,3 +1361,63 @@ fn grenade_value(direction: Direction) -> MapValue {
     Direction::Down => MapValue::GrenadeFlyingDown,
   }
 }
+
+/// Get drill drone flying direction based on value
+pub(crate) fn drone_direction(value: MapValue) -> Direction {
+  match value {
+    MapValue::DrillDroneRight => Direction::Right,
+    MapValue::DrillDroneLeft => Direction::Left,
+    MapValue::DrillDroneDown => Direction::Down,
+    MapValue::DrillDroneUp => Direction::Up,
+    _ => unreachable!(),
+  }
+}
+
+/// Get drill drone value based on the direction of launch
+pub(crate) fn drone_value(direction: Direction) -> MapValue {
+  match direction {
+    Direction::Left => MapValue::DrillDroneLeft,
+    Direction::Right => MapValue::DrillDroneRight,
+    Direction::Up => MapValue::DrillDroneUp,
+    Direction::Down => MapValue::DrillDroneDown,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_drone_direction_roundtrip() {
+    for dir in &[Direction::Left, Direction::Right, Direction::Up, Direction::Down] {
+      let val = drone_value(*dir);
+      let parsed = drone_direction(val);
+      assert_eq!(parsed, *dir);
+    }
+  }
+
+  #[test]
+  fn test_custom_explodable() {
+    assert!(MapValue::FreezeBomb.is_custom_explodable());
+    assert!(MapValue::BlackHoleBomb.is_custom_explodable());
+    assert!(MapValue::BlackHoleActive.is_custom_explodable());
+    assert!(MapValue::DrillDroneLeft.is_custom_explodable());
+    assert!(MapValue::DrillDroneRight.is_custom_explodable());
+    assert!(MapValue::DrillDroneUp.is_custom_explodable());
+    assert!(MapValue::DrillDroneDown.is_custom_explodable());
+    assert!(!MapValue::Passage.is_custom_explodable());
+  }
+
+  #[test]
+  fn test_item_placement_helpers() {
+    assert_eq!(item_placement_level(Equipment::FreezeBomb, Direction::Right, 0), MapValue::FreezeBomb);
+    assert_eq!(item_placement_level(Equipment::BlackHole, Direction::Right, 0), MapValue::BlackHoleBomb);
+    assert_eq!(item_placement_level(Equipment::DrillDrone, Direction::Up, 0), MapValue::DrillDroneUp);
+
+    assert_eq!(item_placement_timer(Equipment::BlackHole), 80);
+    assert_eq!(item_placement_timer(Equipment::FreezeBomb), 90);
+    assert_eq!(item_placement_timer(Equipment::DrillDrone), 1);
+  }
+}
+
+
