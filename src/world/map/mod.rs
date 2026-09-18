@@ -9,7 +9,7 @@ pub use bitmaps::{
   CANNOT_PLACE_BOMB, CAN_EXTINGUISH, DIRT_BORDER_BITMAP, DOOR_EXPLODES_ENTITY, EXTINGUISHER_PASSABLE, PUSHABLE_BITMAP,
   SEE_THROUGH,
 };
-pub use level::{InvalidMap, LevelInfo, LevelMap, MapValue};
+pub use level::{CaveBiome, InvalidMap, LevelInfo, LevelMap, MapValue};
 use rand::prelude::*;
 use ref_cast::RefCast;
 
