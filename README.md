@@ -33,7 +33,7 @@
 
 ### 1. 웹 브라우저에서 바로 플레이 (WebAssembly Edition) 🌐
 설치 없이 크롬, 엣지, 사파리, 파이어폭스 브라우저에서 링크 클릭만으로 즉시 플레이할 수 있습니다:
-- **온라인 데모 (GitHub Pages)**: `https://jeiel85.github.io/minebombers-web-multiplayer/`
+- **온라인 데모 (GitHub Pages)**: `https://jeiel85.github.io/minebombers-reloaded/`
 - **로컬 실행**:
   ```bash
   # 빌드 (WASM 아티팩트 생성)
