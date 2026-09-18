@@ -1,5 +1,6 @@
 import { AudioManager } from './audio.js';
 import { GamepadManager } from './gamepad.js';
+import { NetplayManager } from './network.js';
 
 // WASM Key Constants
 const KEY_UP = 1;
@@ -19,6 +20,7 @@ class MineBombersWeb {
     this.ctx = this.canvas.getContext('2d', { alpha: false });
     this.audio = new AudioManager();
     this.gamepad = new GamepadManager();
+    this.netplay = new NetplayManager();
 
     this.wasm = null;
     this.memory = null;
@@ -44,6 +46,7 @@ class MineBombersWeb {
 
     this.setupKeyboard();
     this.setupUI();
+    this.setupNetplay();
   }
 
   async init() {
@@ -323,6 +326,230 @@ class MineBombersWeb {
     }
   }
 
+  setupNetplay() {
+    const modal = document.getElementById('netplay-modal');
+    const btnNetplay = document.getElementById('btn-netplay');
+    const btnClose = document.getElementById('netplay-close');
+    const tabHost = document.getElementById('tab-host');
+    const tabJoin = document.getElementById('tab-join');
+    const tabLan = document.getElementById('tab-lan');
+    const panelHost = document.getElementById('panel-host');
+    const panelJoin = document.getElementById('panel-join');
+    const panelLan = document.getElementById('panel-lan');
+    const hostCodeInput = document.getElementById('host-code-input');
+    const btnCopyCode = document.getElementById('btn-copy-code');
+    const hostPlayerList = document.getElementById('host-player-list');
+    const btnStartMatch = document.getElementById('btn-start-net-match');
+    const joinCodeInput = document.getElementById('join-code-input');
+    const btnConnectCode = document.getElementById('btn-connect-code');
+    const joinStatus = document.getElementById('join-status');
+    const btnRefreshLan = document.getElementById('btn-refresh-lan');
+    const statusText = document.getElementById('netplay-status-text');
+    const pingDisplay = document.getElementById('netplay-ping');
+
+    const switchTab = (activeTab, activePanel) => {
+      [tabHost, tabJoin, tabLan].forEach(t => t && t.classList.remove('active'));
+      [panelHost, panelJoin, panelLan].forEach(p => p && (p.style.display = 'none'));
+      if (activeTab) activeTab.classList.add('active');
+      if (activePanel) activePanel.style.display = 'block';
+    };
+
+    if (btnNetplay) {
+      btnNetplay.addEventListener('click', () => {
+        if (modal) {
+          modal.style.display = 'flex';
+          if (this.netplay.state === 'DISCONNECTED') {
+            const mode = document.getElementById('net-game-mode')?.value || 'Survival Horde';
+            this.netplay.hostRoom(mode).then(code => {
+              if (hostCodeInput) hostCodeInput.value = code;
+            }).catch(() => {});
+          }
+        }
+      });
+    }
+
+    if (btnClose) {
+      btnClose.addEventListener('click', () => {
+        if (modal) modal.style.display = 'none';
+      });
+    }
+
+    if (tabHost) tabHost.addEventListener('click', () => switchTab(tabHost, panelHost));
+    if (tabJoin) tabJoin.addEventListener('click', () => switchTab(tabJoin, panelJoin));
+    if (tabLan) tabLan.addEventListener('click', () => switchTab(tabLan, panelLan));
+
+    if (btnCopyCode) {
+      btnCopyCode.addEventListener('click', () => {
+        if (this.netplay.roomCode) {
+          navigator.clipboard.writeText(this.netplay.roomCode).then(() => {
+            btnCopyCode.textContent = '✓ Copied!';
+            setTimeout(() => { btnCopyCode.textContent = '📋 Copy'; }, 2000);
+          });
+        }
+      });
+    }
+
+    if (btnStartMatch) {
+      btnStartMatch.addEventListener('click', () => {
+        if (!this.netplay.isHost) return;
+        const mode = document.getElementById('net-game-mode')?.value || 'Survival Horde';
+        const seed = Math.floor(Math.random() * 1000000);
+        const biome = Math.floor(Math.random() * 4);
+        this.netplay.startMatch(seed, mode, biome);
+      });
+    }
+
+    if (btnConnectCode) {
+      btnConnectCode.addEventListener('click', () => {
+        const code = joinCodeInput?.value.trim().toUpperCase();
+        if (!code || code.length < 4) {
+          if (joinStatus) joinStatus.textContent = 'Please enter a valid room code (e.g. 7X4K29).';
+          return;
+        }
+        if (joinStatus) joinStatus.textContent = `Connecting to [${code}]...`;
+        this.netplay.joinRoom(code).then(() => {
+          if (joinStatus) joinStatus.textContent = 'Connected! Waiting for host to start match...';
+        }).catch(err => {
+          if (joinStatus) joinStatus.textContent = `Failed: ${err.message || err}`;
+        });
+      });
+    }
+
+    if (btnRefreshLan) {
+      btnRefreshLan.addEventListener('click', () => {
+        this.renderLanRooms(Array.from(this.netplay.lanRooms.values()));
+      });
+    }
+
+    // Netplay Callbacks
+    this.netplay.onStatusChange = (msg, state) => {
+      if (statusText) statusText.textContent = msg;
+      if (btnNetplay) {
+        if (state === 'CONNECTED' || state === 'IN_GAME') {
+          btnNetplay.style.background = '#27ae60';
+          btnNetplay.style.color = '#fff';
+          btnNetplay.textContent = `🌐 Room: ${this.netplay.roomCode}`;
+        } else if (state === 'HOSTING') {
+          btnNetplay.style.background = '#d35400';
+          btnNetplay.style.color = '#fff';
+          btnNetplay.textContent = `🌐 Hosting: ${this.netplay.roomCode}`;
+        } else {
+          btnNetplay.style.background = '#1b4d3e';
+          btnNetplay.style.color = '#2ecc71';
+          btnNetplay.textContent = '🌐 Netplay (P2P)';
+        }
+      }
+    };
+
+    this.netplay.onPlayerUpdate = (slots, mySlot) => {
+      if (hostPlayerList) {
+        hostPlayerList.innerHTML = '';
+        slots.forEach((s, idx) => {
+          const div = document.createElement('div');
+          if (s !== null) {
+            const isMe = idx === mySlot;
+            div.style.color = '#2ecc71';
+            div.textContent = `● Slot ${idx + 1}: ${isMe ? 'You' : 'Connected Player'}${idx === 0 ? ' (Host)' : ''}`;
+          } else {
+            div.style.color = '#7f8c8d';
+            div.textContent = `○ Slot ${idx + 1}: Waiting / CPU...`;
+          }
+          hostPlayerList.appendChild(div);
+        });
+      }
+    };
+
+    this.netplay.onGameStart = (data) => {
+      if (modal) modal.style.display = 'none';
+      if (!this.exports) return;
+
+      // Seed deterministic generator
+      this.exports.mb_seed(data.seed);
+
+      // Configure players vs bots
+      data.slots.forEach((slot, idx) => {
+        if (slot !== null) {
+          this.exports.mb_set_bot_difficulty(idx, 0); // Human
+        } else {
+          this.exports.mb_set_bot_difficulty(idx, 2); // CPU Medium
+        }
+      });
+
+      // Start match in WASM: simulate Enter on New Game & Shop
+      this.exports.mb_handle_key(KEY_BOMB); // Enter shop
+      this.exports.mb_handle_key(KEY_BOMB); // Start arena
+      this.audio.startBgm();
+      this.renderFramebuffer();
+    };
+
+    this.netplay.onFrameSync = (frame, inputs) => {
+      if (!this.netplay.isHost && this.exports) {
+        this.exports.mb_step(inputs[0], inputs[1], inputs[2], inputs[3]);
+        this.renderFramebuffer();
+        this.renderNetplayHud();
+      }
+    };
+
+    this.netplay.onLanRoomsUpdate = (rooms) => {
+      this.renderLanRooms(rooms);
+    };
+
+    setInterval(() => {
+      if (pingDisplay) {
+        pingDisplay.textContent = this.netplay.pingMs > 0 ? `Ping: ${this.netplay.pingMs} ms` : 'Ping: -- ms';
+      }
+    }, 1000);
+  }
+
+  renderLanRooms(rooms) {
+    const list = document.getElementById('lan-room-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (rooms.length === 0) {
+      list.innerHTML = '<div style="font-size:12px;color:#7f8c8d;text-align:center;padding:20px 0;">No active rooms found on LAN. Host a room or invite friends!</div>';
+      return;
+    }
+    rooms.forEach(r => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;background:#1e2433;border:1px solid #3c435c;border-radius:4px;padding:6px 10px;';
+      row.innerHTML = `
+        <div>
+          <span style="color:#f1c40f;font-weight:bold;font-family:monospace;letter-spacing:1px;">[${r.roomCode}]</span>
+          <span style="color:#fff;font-size:12px;margin-left:6px;">${r.hostName}</span>
+          <span style="color:#95a5a6;font-size:11px;margin-left:6px;">(${r.mode})</span>
+        </div>
+        <button style="padding:4px 10px;background:#27ae60;border:none;font-weight:bold;color:#fff;border-radius:3px;cursor:pointer;">JOIN (${r.players}/4)</button>
+      `;
+      row.querySelector('button').addEventListener('click', () => {
+        this.netplay.joinRoom(r.roomCode);
+        const joinCodeInput = document.getElementById('join-code-input');
+        if (joinCodeInput) joinCodeInput.value = r.roomCode;
+        const tabJoin = document.getElementById('tab-join');
+        const panelJoin = document.getElementById('panel-join');
+        [document.getElementById('tab-host'), tabJoin, document.getElementById('tab-lan')].forEach(t => t?.classList.remove('active'));
+        [document.getElementById('panel-host'), panelJoin, document.getElementById('panel-lan')].forEach(p => p && (p.style.display = 'none'));
+        if (tabJoin) tabJoin.classList.add('active');
+        if (panelJoin) panelJoin.style.display = 'block';
+      });
+      list.appendChild(row);
+    });
+  }
+
+  renderNetplayHud() {
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    this.ctx.fillRect(470, 4, 166, 18);
+    this.ctx.strokeStyle = '#2ecc71';
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(470, 4, 166, 18);
+
+    this.ctx.font = 'bold 10px monospace';
+    this.ctx.fillStyle = '#2ecc71';
+    const slot = this.netplay.mySlot + 1;
+    const ping = this.netplay.pingMs;
+    const text = `🌐 P${slot} [${this.netplay.roomCode || 'LOCAL'}] ${ping}ms`;
+    this.ctx.fillText(text, 476, 16);
+  }
+
   loop(timestamp) {
     if (!this.running) return;
 
@@ -338,13 +565,29 @@ class MineBombersWeb {
         if (state === 5) {
           // Battle simulation frame
           const padInputs = this.gamepad.getPlayerInputs();
-          const p1 = this.keyState.p1 | padInputs[0];
-          const p2 = this.keyState.p2 | padInputs[1];
-          const p3 = padInputs[2];
-          const p4 = padInputs[3];
+          const localInput = (this.keyState.p1 | padInputs[0]) || 0;
 
-          this.exports.mb_step(p1, p2, p3, p4);
-          this.renderFramebuffer();
+          if (this.netplay.state === 'IN_GAME') {
+            const frame = this.netplay.currentFrame++;
+            this.netplay.sendLocalInput(frame, localInput);
+
+            if (this.netplay.isHost) {
+              const inputs = this.netplay.remoteInputs.get(frame) || [0, 0, 0, 0];
+              inputs[0] = localInput;
+              this.netplay.broadcastFrameInputs(frame, inputs);
+              this.exports.mb_step(inputs[0], inputs[1], inputs[2], inputs[3]);
+              this.renderFramebuffer();
+              this.renderNetplayHud();
+            }
+          } else {
+            const p1 = localInput;
+            const p2 = this.keyState.p2 | padInputs[1];
+            const p3 = padInputs[2];
+            const p4 = padInputs[3];
+
+            this.exports.mb_step(p1, p2, p3, p4);
+            this.renderFramebuffer();
+          }
         } else {
           // Non-battle menus: check gamepad
           this.handleGamepadMenuInput();

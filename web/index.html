@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mine Bombers (1995) • Authentic DOS WebAssembly Edition</title>
   <link rel="icon" href="./favicon.ico" type="image/x-icon">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -203,6 +204,7 @@
   <div class="top-toolbar">
     <div class="btn-group">
       <button id="btn-restart" title="Back to Main Menu">🕹️ Menu / Restart</button>
+      <button id="btn-netplay" style="background:#1b4d3e;border-color:#2ecc71;font-weight:bold;color:#2ecc71;">🌐 Netplay (P2P)</button>
       <button id="btn-crt" class="active">📺 CRT Scanlines</button>
       <button id="btn-mute">🔊 Sound</button>
       <button id="btn-fullscreen">⛶ Fullscreen</button>
@@ -251,6 +253,80 @@
       <div class="control-row"><span>Confirm / Bomb</span> <span class="control-key">A Button</span></div>
       <div class="control-row"><span>Cancel / Weapon</span> <span class="control-key">B Button</span></div>
       <div class="control-row"><span>Shop Page Toggle</span> <span class="control-key">LB / RB</span></div>
+    </div>
+  </div>
+
+  <!-- Netplay P2P Lobby Modal -->
+  <div id="netplay-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:#141721;border:2px solid #f39c12;border-radius:8px;padding:18px;max-width:480px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,0.9);font-family:inherit;color:#ecf0f1;">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #282e3f;padding-bottom:10px;margin-bottom:14px;">
+        <h2 style="font-size:16px;color:#f1c40f;letter-spacing:1px;display:flex;align-items:center;gap:6px;">🌐 P2P MULTIPLAYER LOBBY</h2>
+        <button id="netplay-close" style="background:#c0392b;border:none;color:#fff;border-radius:4px;padding:2px 8px;font-size:13px;cursor:pointer;">✕</button>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button id="tab-host" class="net-tab active" style="flex:1;">Host Game</button>
+        <button id="tab-join" class="net-tab" style="flex:1;">Join Code</button>
+        <button id="tab-lan" class="net-tab" style="flex:1;">LAN / Local</button>
+      </div>
+
+      <!-- Host Panel -->
+      <div id="panel-host" class="net-panel">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">ROOM CODE (SHARE WITH FRIENDS):</label>
+          <div style="display:flex;gap:6px;">
+            <input id="host-code-input" readonly value="------" style="flex:1;background:#232736;border:1px solid #3c435c;border-radius:4px;padding:8px 12px;font-family:monospace;font-size:18px;color:#f1c40f;text-align:center;letter-spacing:4px;font-weight:bold;" />
+            <button id="btn-copy-code" style="padding:8px 12px;">📋 Copy</button>
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">GAME MODE:</label>
+          <select id="net-game-mode" style="width:100%;background:#232736;border:1px solid #3c435c;border-radius:4px;padding:6px;color:#fff;">
+            <option value="Survival Horde">🧟 Survival Horde (Co-op PVE)</option>
+            <option value="Gold Rush">💰 Gold Rush ($5K Mining Race)</option>
+            <option value="Most Wins">💣 Classic Versus (Most Wins)</option>
+            <option value="Most Cash">💵 Classic Versus (Most Cash)</option>
+          </select>
+        </div>
+        <div style="margin-bottom:14px;background:#0b0c10;border:1px solid #282e3f;border-radius:4px;padding:8px;">
+          <div style="font-size:11px;color:#888;margin-bottom:6px;">PLAYERS IN ROOM (1~4):</div>
+          <div id="host-player-list" style="font-size:12px;display:flex;flex-direction:column;gap:4px;">
+            <div style="color:#2ecc71;">● Slot 1: You (Host)</div>
+            <div style="color:#7f8c8d;">○ Slot 2: Waiting...</div>
+            <div style="color:#7f8c8d;">○ Slot 3: Waiting...</div>
+            <div style="color:#7f8c8d;">○ Slot 4: Waiting...</div>
+          </div>
+        </div>
+        <button id="btn-start-net-match" style="width:100%;padding:10px;background:#27ae60;border-color:#2ecc71;font-weight:bold;font-size:14px;">🚀 START MATCH</button>
+      </div>
+
+      <!-- Join Panel -->
+      <div id="panel-join" class="net-panel" style="display:none;">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">ENTER 6-LETTER ROOM CODE:</label>
+          <input id="join-code-input" placeholder="e.g. 7X4K29" maxlength="6" style="width:100%;background:#232736;border:1px solid #3c435c;border-radius:4px;padding:8px 12px;font-family:monospace;font-size:18px;color:#fff;text-align:center;letter-spacing:4px;text-transform:uppercase;" />
+        </div>
+        <button id="btn-connect-code" style="width:100%;padding:10px;background:#2980b9;border-color:#3498db;font-weight:bold;font-size:14px;margin-bottom:12px;">🔗 CONNECT TO ROOM</button>
+        <div id="join-status" style="font-size:12px;color:#95a5a6;text-align:center;">Enter host room code and click Connect.</div>
+      </div>
+
+      <!-- LAN Panel -->
+      <div id="panel-lan" class="net-panel" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <label style="font-size:11px;color:#888;">AUTO-DISCOVERED ROOMS (LAN / TABS):</label>
+          <button id="btn-refresh-lan" style="font-size:11px;padding:2px 6px;">🔄 Refresh</button>
+        </div>
+        <div id="lan-room-list" style="background:#0b0c10;border:1px solid #282e3f;border-radius:4px;padding:8px;min-height:120px;max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
+          <div style="font-size:12px;color:#7f8c8d;text-align:center;padding:20px 0;">Searching for active rooms...</div>
+        </div>
+      </div>
+
+      <!-- Status Bar -->
+      <div style="margin-top:14px;border-top:1px solid #282e3f;padding-top:8px;display:flex;justify-content:space-between;font-size:11px;color:#7f8c8d;">
+        <span id="netplay-status-text">Ready to host or join.</span>
+        <span id="netplay-ping">Ping: -- ms</span>
+      </div>
     </div>
   </div>
 
