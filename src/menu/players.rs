@@ -87,6 +87,65 @@ impl State {
     }
   }
 
+  /// Cycle bot difficulty forward (YOU -> EASY -> NORM -> HARD -> YOU)
+  fn cycle_difficulty(&mut self) {
+    let target_slot = if self.active_player < self.players {
+      Some(usize::from(self.active_player))
+    } else if self.players == 1 {
+      Some(0)
+    } else {
+      None
+    };
+
+    if let Some(slot) = target_slot {
+      self.bot_difficulty[slot] = match self.bot_difficulty[slot] {
+        None => Some(BotDifficulty::Easy),
+        Some(BotDifficulty::Easy) => Some(BotDifficulty::Medium),
+        Some(BotDifficulty::Medium) => Some(BotDifficulty::Hard),
+        Some(BotDifficulty::Hard) => None,
+      };
+    } else {
+      // Shovel is on PLAY in multiplayer: cycle all bot slots (1..players)
+      let next = match self.bot_difficulty[1] {
+        None | Some(BotDifficulty::Hard) => Some(BotDifficulty::Easy),
+        Some(BotDifficulty::Easy) => Some(BotDifficulty::Medium),
+        Some(BotDifficulty::Medium) => Some(BotDifficulty::Hard),
+      };
+      for slot in 1..usize::from(self.players) {
+        self.bot_difficulty[slot] = next;
+      }
+    }
+  }
+
+  /// Cycle bot difficulty backward
+  fn cycle_difficulty_prev(&mut self) {
+    let target_slot = if self.active_player < self.players {
+      Some(usize::from(self.active_player))
+    } else if self.players == 1 {
+      Some(0)
+    } else {
+      None
+    };
+
+    if let Some(slot) = target_slot {
+      self.bot_difficulty[slot] = match self.bot_difficulty[slot] {
+        None => Some(BotDifficulty::Hard),
+        Some(BotDifficulty::Hard) => Some(BotDifficulty::Medium),
+        Some(BotDifficulty::Medium) => Some(BotDifficulty::Easy),
+        Some(BotDifficulty::Easy) => None,
+      };
+    } else {
+      let next = match self.bot_difficulty[1] {
+        None | Some(BotDifficulty::Easy) => Some(BotDifficulty::Hard),
+        Some(BotDifficulty::Hard) => Some(BotDifficulty::Medium),
+        Some(BotDifficulty::Medium) => Some(BotDifficulty::Easy),
+      };
+      for slot in 1..usize::from(self.players) {
+        self.bot_difficulty[slot] = next;
+      }
+    }
+  }
+
   /// `true` if all players were selected
   fn all_selected(&self) -> bool {
     self
@@ -111,8 +170,8 @@ impl Application<'_> {
       players: total_players,
       roster: PlayersRoster::load(ctx.game_dir())?,
       identities: Identities::load(ctx.game_dir()),
-      // 4 is "Play button"
-      active_player: 4,
+      // 0 is "Player 1", 4 is "Play button"
+      active_player: 0,
       bot_difficulty: [
         None,
         if auto_bots { Some(default_diff) } else { None },
@@ -134,13 +193,16 @@ impl Application<'_> {
       let last_active_player = state.active_player;
 
       match ctx.wait_input_event() {
-        InputEvent::TextInput(text) if state.active_player != 4 => {
-          // Special case: when typing text over a player, immediately create a new player in the
-          // roster and start editing it.
-          let selection = self.players_name_select_menu(ctx, &mut state, Some(text))?;
-          state.select_player(selection);
+        InputEvent::TextInput(text) => {
+          if text.eq_ignore_ascii_case("b") || text.eq_ignore_ascii_case("d") || text == "\t" {
+            // Filter out text events for hotkeys so name editor is not opened and no duplicate cycle occurs
+            continue;
+          }
+          if state.active_player != 4 {
+            let selection = self.players_name_select_menu(ctx, &mut state, Some(text))?;
+            state.select_player(selection);
+          }
         }
-        InputEvent::TextInput(_) => continue,
         InputEvent::KeyPress(scancode, _keycode) => match scancode {
           Scancode::F11 => {
             let _ = ctx.toggle_fullscreen();
@@ -157,14 +219,11 @@ impl Application<'_> {
           Scancode::F4 => {
             let _ = ctx.toggle_aspect_ratio();
           }
-          Scancode::Tab | Scancode::B if state.active_player < 4 => {
-            let slot = usize::from(state.active_player);
-            state.bot_difficulty[slot] = match state.bot_difficulty[slot] {
-              None => Some(BotDifficulty::Easy),
-              Some(BotDifficulty::Easy) => Some(BotDifficulty::Medium),
-              Some(BotDifficulty::Medium) => Some(BotDifficulty::Hard),
-              Some(BotDifficulty::Hard) => None,
-            };
+          Scancode::Tab | Scancode::B | Scancode::D => {
+            state.cycle_difficulty();
+          }
+          Scancode::Left => {
+            state.cycle_difficulty_prev();
           }
           Scancode::Down | Scancode::Kp2 => state.next_player(),
           Scancode::Up | Scancode::Kp8 => state.previous_player(),
@@ -422,10 +481,10 @@ impl Application<'_> {
       if player < i32::from(state.players) {
         let diff_opt = state.bot_difficulty[player as usize];
         let (color, tag) = match diff_opt {
-          None => (self.select_players.palette[1], "[YOU]"),
-          Some(BotDifficulty::Easy) => (self.select_players.palette[10], "[EASY]"),
-          Some(BotDifficulty::Medium) => (self.select_players.palette[3], "[NORM]"),
-          Some(BotDifficulty::Hard) => (self.select_players.palette[12], "[HARD]"),
+          None => (self.select_players.palette[1], "(YOU)"),
+          Some(BotDifficulty::Easy) => (self.select_players.palette[10], "(EASY)"),
+          Some(BotDifficulty::Medium) => (self.select_players.palette[3], "(NORM)"),
+          Some(BotDifficulty::Hard) => (self.select_players.palette[12], "(HARD)"),
         };
         if let Some(stats) =
           state.identities.players[player as usize].and_then(|idx| state.roster.players[usize::from(idx)].as_ref())
@@ -437,7 +496,7 @@ impl Application<'_> {
     }
     // Render hint for CPU toggle
     let hint_color = self.select_players.palette[8];
-    self.font.render(canvas, 95, 232, hint_color, "[Tab/B] Bot Level: Easy/Norm/Hard")?;
+    self.font.render(canvas, 55, 232, hint_color, "Tab/B/Left: Bot (Easy/Norm/Hard)")?;
     Ok(())
   }
 
