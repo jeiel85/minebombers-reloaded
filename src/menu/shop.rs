@@ -153,8 +153,7 @@ impl Application<'_> {
     while state.left.as_ref().map_or(false, |state| !state.ready) || !state.right.ready {
       let scan = ctx.wait_key_pressed().0;
       match scan {
-        Scancode::Escape => break,
-        Scancode::F10 => {
+        Scancode::Escape | Scancode::F10 => {
           result = ShopResult::ExitGame;
           break;
         }

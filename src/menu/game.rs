@@ -30,10 +30,10 @@ const CAMPAIGN_ROUNDS: u16 = 15;
 pub enum RoundEnd {
   /// Round end (all gold collected in multiplayer, all opponents are dead, etc)
   Round,
-  /// Game end (exited game, died with no more lives left)
-  Game,
   /// Failed round: playing single player and died
   Failed,
+  /// Abort match directly back to main menu
+  AbortToMenu,
 }
 
 impl Application<'_> {
@@ -99,7 +99,10 @@ impl Application<'_> {
         break;
       }
       match result {
-        RoundEnd::Game => break,
+        RoundEnd::AbortToMenu => {
+          sdl2::mixer::Music::halt();
+          return Ok(());
+        }
         RoundEnd::Failed => {
           // Keep playing the same round!
         }
@@ -288,7 +291,7 @@ impl Application<'_> {
       )? == ShopResult::ExitGame
       {
         sdl2::mixer::Music::halt();
-        return Ok(RoundEnd::Game);
+        return Ok(RoundEnd::AbortToMenu);
       }
     }
 
@@ -329,81 +332,80 @@ impl Application<'_> {
         let mut display_toggle_aspect = false;
 
         for event in ctx.poll_iter() {
-          if let Event::KeyDown {
-            scancode: Some(scancode),
-            keymod,
-            ..
-          } = event
-          {
-            match scancode {
-              Scancode::Escape if world.campaign_mode => {
-                // Artificial death
-                world.players[0].lives -= 1;
-                break 'round RoundEnd::Failed;
-              }
-              Scancode::Escape => break 'round RoundEnd::Round,
-              Scancode::F10 => break 'round RoundEnd::Game,
-              // Speed control hotkeys
-              Scancode::LeftBracket | Scancode::Minus | Scancode::KpMinus => {
-                speed_multiplier = (speed_multiplier - 0.25).max(0.25);
-                println!("[MINEBOMBERS] Game speed: {:.2}x", speed_multiplier);
-              }
-              Scancode::RightBracket | Scancode::Equals | Scancode::KpPlus => {
-                speed_multiplier = (speed_multiplier + 0.25).min(3.0);
-                println!("[MINEBOMBERS] Game speed: {:.2}x", speed_multiplier);
-              }
-              Scancode::Backspace | Scancode::Num0 | Scancode::Kp0 => {
-                speed_multiplier = 1.0;
-                println!("[MINEBOMBERS] Game speed reset: 1.00x");
-              }
-              // Display mode hotkeys
-              Scancode::F11 => {
-                display_toggle_fullscreen = true;
-              }
-              Scancode::F1 => {
-                display_set_scale = Some(1);
-              }
-              Scancode::F2 => {
-                display_set_scale = Some(2);
-              }
-              Scancode::F3 => {
-                display_set_scale = Some(3);
-              }
-              Scancode::F4 => {
-                display_toggle_aspect = true;
-              }
-              Scancode::Return
-                if keymod.intersects(sdl2::keyboard::Mod::LALTMOD | sdl2::keyboard::Mod::RALTMOD) =>
-              {
-                display_toggle_fullscreen = true;
-              }
-              // FIXME: some better scancode?
-              Scancode::Pause => {
-                paused = true;
-              }
-              Scancode::F5 => {
-                if music_on {
-                  sdl2::mixer::Music::pause();
-                } else {
-                  sdl2::mixer::Music::resume();
-                }
-                music_on = !music_on;
-              }
-              _ => {}
+          match event {
+            Event::Quit { .. } => {
+              std::process::exit(0);
             }
+            Event::KeyDown {
+              scancode: Some(scancode),
+              keymod,
+              ..
+            } => {
+              match scancode {
+                Scancode::Escape | Scancode::F10 => break 'round RoundEnd::AbortToMenu,
+                // Speed control hotkeys
+                Scancode::LeftBracket | Scancode::Minus | Scancode::KpMinus => {
+                  speed_multiplier = (speed_multiplier - 0.25).max(0.25);
+                  println!("[MINEBOMBERS] Game speed: {:.2}x", speed_multiplier);
+                }
+                Scancode::RightBracket | Scancode::Equals | Scancode::KpPlus => {
+                  speed_multiplier = (speed_multiplier + 0.25).min(3.0);
+                  println!("[MINEBOMBERS] Game speed: {:.2}x", speed_multiplier);
+                }
+                Scancode::Backspace | Scancode::Num0 | Scancode::Kp0 => {
+                  speed_multiplier = 1.0;
+                  println!("[MINEBOMBERS] Game speed reset: 1.00x");
+                }
+                // Display mode hotkeys
+                Scancode::F11 => {
+                  display_toggle_fullscreen = true;
+                }
+                Scancode::F1 => {
+                  display_set_scale = Some(1);
+                }
+                Scancode::F2 => {
+                  display_set_scale = Some(2);
+                }
+                Scancode::F3 => {
+                  display_set_scale = Some(3);
+                }
+                Scancode::F4 => {
+                  display_toggle_aspect = true;
+                }
+                Scancode::Return
+                  if keymod.intersects(sdl2::keyboard::Mod::LALTMOD | sdl2::keyboard::Mod::RALTMOD) =>
+                {
+                  display_toggle_fullscreen = true;
+                }
+                // FIXME: some better scancode?
+                Scancode::Pause => {
+                  paused = true;
+                }
+                Scancode::F5 => {
+                  if music_on {
+                    sdl2::mixer::Music::pause();
+                  } else {
+                    sdl2::mixer::Music::resume();
+                  }
+                  music_on = !music_on;
+                }
+                _ => {}
+              }
 
-            for player in 0..world.players.len() {
-              // Bots are driven by AI, skip human keyboard mapping
-              if world.players[player].is_bot {
-                continue;
-              }
-              let keys = world.players[player].keys;
-              for key in Key::all_keys() {
-                if keys[key] == Some(scancode) {
-                  world.player_action(player, key);
+              for player in 0..world.players.len() {
+                // Bots are driven by AI, skip human keyboard mapping
+                if world.players[player].is_bot {
+                  continue;
+                }
+                let keys = world.players[player].keys;
+                for key in Key::all_keys() {
+                  if keys[key] == Some(scancode) {
+                    world.player_action(player, key);
+                  }
                 }
               }
             }
+            _ => {}
           }
         }
         if display_toggle_fullscreen {
