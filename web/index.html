@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mine Bombers (1995) • WebAssembly Edition</title>
+  <link rel="icon" href="../res/minebombers.ico" type="image/x-icon">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background-color: #0c0d10;
+      color: #ecf0f1;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding: 10px;
+    }
+    header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 22px;
+      color: #f1c40f;
+      letter-spacing: 2px;
+      text-shadow: 2px 2px #000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #95a5a6;
+      margin-top: 2px;
+    }
+
+    /* Controls Bar */
+    .top-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #1a1c23;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid #2c3e50;
+      margin-bottom: 8px;
+      max-width: 960px;
+      width: 100%;
+    }
+    .slot-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .slot-label {
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .slot-label.p1 { color: #f1c40f; }
+    .slot-label.p2 { color: #e74c3c; }
+    .slot-label.p3 { color: #3498db; }
+    .slot-label.p4 { color: #2ecc71; }
+
+    select {
+      background: #2b2e3b;
+      color: #fff;
+      border: 1px solid #45495d;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    select:focus {
+      outline: none;
+      border-color: #f1c40f;
+    }
+
+    .btn-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    button {
+      background: #2b2e3b;
+      color: #ecf0f1;
+      border: 1px solid #45495d;
+      border-radius: 4px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    button:hover {
+      background: #3e4254;
+      border-color: #7f8c8d;
+    }
+    button.active {
+      background: #f39c12;
+      color: #000;
+      font-weight: bold;
+      border-color: #f1c40f;
+    }
+
+    /* Screen Canvas Container */
+    #canvas-container {
+      position: relative;
+      width: 960px;
+      max-width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border: 3px solid #34495e;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+    }
+
+    /* CRT Scanlines Overlay */
+    #canvas-container.crt::before {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
+      background-size: 100% 4px;
+      z-index: 2;
+      pointer-events: none;
+    }
+    #canvas-container.crt::after {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 0; left: 0; bottom: 0; right: 0;
+      box-shadow: inset 0 0 60px rgba(0,0,0,0.85);
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    #loading {
+      position: absolute;
+      color: #f1c40f;
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      z-index: 10;
+    }
+
+    /* Bottom Info */
+    footer {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #7f8c8d;
+      text-align: center;
+      line-height: 1.6;
+    }
+    .key-hint {
+      display: inline-block;
+      background: #2c3e50;
+      color: #f1c40f;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 11px;
+      margin: 0 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>⛏️ MINE BOMBERS 💣 <span style="font-size: 14px; color: #e67e22;">WebAssembly Edition</span></h1>
+    <div class="subtitle">Pure Rust Simulation • Configurable Bot AI • Web Gamepad & Haptic Rumble</div>
+  </header>
+
+  <div class="top-toolbar">
+    <!-- Player Slots -->
+    <div class="slot-group">
+      <span class="slot-label p1">P1:</span>
+      <select id="slot-p1">
+        <option value="0" selected>[YOU] Human</option>
+        <option value="1">[EASY] Bot</option>
+        <option value="2">[NORM] Bot</option>
+        <option value="3">[HARD] Bot</option>
+      </select>
+    </div>
+
+    <div class="slot-group">
+      <span class="slot-label p2">P2:</span>
+      <select id="slot-p2">
+        <option value="0">[YOU] Human</option>
+        <option value="1">[EASY] Bot</option>
+        <option value="2" selected>[NORM] Bot</option>
+        <option value="3">[HARD] Bot</option>
+      </select>
+    </div>
+
+    <div class="slot-group">
+      <span class="slot-label p3">P3:</span>
+      <select id="slot-p3">
+        <option value="0">[YOU] Human</option>
+        <option value="1">[EASY] Bot</option>
+        <option value="2" selected>[NORM] Bot</option>
+        <option value="3">[HARD] Bot</option>
+      </select>
+    </div>
+
+    <div class="slot-group">
+      <span class="slot-label p4">P4:</span>
+      <select id="slot-p4">
+        <option value="0">[YOU] Human</option>
+        <option value="1">[EASY] Bot</option>
+        <option value="2">[NORM] Bot</option>
+        <option value="3" selected>[HARD] Bot</option>
+      </select>
+    </div>
+
+    <!-- Speed Controls -->
+    <div class="btn-group">
+      <button class="btn-speed" data-speed="0.5">0.5x</button>
+      <button class="btn-speed active" data-speed="1.0">1.0x</button>
+      <button class="btn-speed" data-speed="1.5">1.5x</button>
+      <button class="btn-speed" data-speed="2.0">2.0x</button>
+    </div>
+
+    <!-- Actions -->
+    <div class="btn-group">
+      <button id="btn-crt">📺 CRT</button>
+      <button id="btn-mute">🔊 Sound</button>
+      <button id="btn-restart">🔄 Restart</button>
+      <button id="btn-fullscreen">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+  <div id="canvas-container">
+    <div id="loading">⛏️ Loading Mine Bombers WebAssembly...</div>
+    <canvas id="screen" width="640" height="480"></canvas>
+  </div>
+
+  <footer>
+    <p>
+      <strong>Controls:</strong>
+      <span class="key-hint">Arrow Keys</span> Move •
+      <span class="key-hint">RCtrl / M</span> Plant Bomb •
+      <span class="key-hint">RShift / N</span> Detonate Remote •
+      <span class="key-hint">Slash / .</span> Weapon Select •
+      <span class="key-hint">Space</span> Stop
+    </p>
+    <p>
+      🎮 <strong>Gamepads:</strong> Xbox, PlayStation, Switch controllers with <strong>Dual-Rumble Haptic Vibration</strong> supported!
+    </p>
+    <p style="margin-top: 4px; font-size: 11px; color: #576574;">
+      Original game © 1995-1996 Sami Lehtinen & Skaven • Native Rust Port & WebAssembly Architecture
+    </p>
+  </footer>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

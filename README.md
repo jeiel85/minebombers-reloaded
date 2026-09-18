@@ -31,9 +31,23 @@
 
 ## 🚀 빠른 시작 (Quick Start)
 
-### 1. 다운로드 및 실행
-별도의 설치 프로그램이나 외부 에뮬레이터가 전혀 필요 없습니다.
+### 1. 웹 브라우저에서 바로 플레이 (WebAssembly Edition) 🌐
+설치 없이 크롬, 엣지, 사파리, 파이어폭스 브라우저에서 링크 클릭만으로 즉시 플레이할 수 있습니다:
+- **온라인 데모 (GitHub Pages)**: `https://jeiel85.github.io/minebombers-web-multiplayer/`
+- **로컬 실행**:
+  ```bash
+  # 빌드 (WASM 아티팩트 생성)
+  powershell .\scripts\build_web.ps1
 
+  # 로컬 웹서버 실행
+  npx serve web
+  # 또는
+  python -m http.server 8080 --directory web
+  ```
+  브라우저에서 `http://localhost:8080`으로 접속하여 즐기실 수 있습니다.
+- **특징**: 웹에서도 **Xbox/PS 패드 조작 및 폭발 시 햅틱 럼블 진동(`dual-rumble`)**이 동일하게 작동합니다!
+
+### 2. Windows 독립 실행 파일로 플레이 (Native Edition) 💻
 1. 본 저장소를 다운로드하거나 클론합니다.
 2. 루트 폴더의 **`MineBombers.exe`**를 더블클릭하면 즉시 게임이 시작됩니다!
    *(필요한 모든 라이브러리 `SDL2.dll`, `SDL2_mixer.dll` 및 오리지널 애셋 `res/minebomb`이 이미 포함되어 있습니다.)*

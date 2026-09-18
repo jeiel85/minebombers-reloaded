@@ -25,7 +25,9 @@ path = "src/bin/mb-reloaded.rs"
 [workspace]
 members = [
     ".",
-    "sdl2-effects"
+    "sdl2-effects",
+    "crates/mb-core",
+    "crates/mb-wasm"
 ]
 
 [profile.release]
