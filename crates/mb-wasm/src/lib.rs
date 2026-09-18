@@ -301,6 +301,7 @@ pub struct WebGame {
   pub rumble_queue: Vec<RumbleEvent>,
   pub round_start_tick: usize,
   pub max_round_ticks: usize,
+  pub choose_hold_ticks: [u32; 4],
 }
 
 static mut GAME: Option<WebGame> = None;
@@ -1053,6 +1054,7 @@ impl WebGame {
     self.audio_queue.clear();
     self.rumble_queue.clear();
     self.round_start_tick = 0;
+    self.choose_hold_ticks = [0; 4];
 
     let players_ref: &'static mut [PlayerComponent] = unsafe {
       std::mem::transmute(&mut self.players[..])
@@ -1259,6 +1261,7 @@ pub extern "C" fn mb_init(
     rumble_queue: Vec::with_capacity(16),
     round_start_tick: 0,
     max_round_ticks: 60 * 180,
+    choose_hold_ticks: [0; 4],
   };
 
   game.render_current_state();
@@ -1349,7 +1352,21 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         if (input_mask & 4) != 0 { world.player_action(idx, Key::Left); }
         if (input_mask & 8) != 0 { world.player_action(idx, Key::Right); }
         if (input_mask & 16) != 0 { world.player_action(idx, Key::Bomb); }
-        if (input_mask & 32) != 0 { world.player_action(idx, Key::Choose); }
+        if (input_mask & 32) != 0 {
+          let hold = &mut game.choose_hold_ticks[idx];
+          if *hold == 0 {
+            world.player_action(idx, Key::Choose);
+            *hold = 1;
+          } else {
+            *hold += 1;
+            // Delay 24 frames (~400ms), then repeat every 12 frames (~200ms)
+            if *hold >= 24 && (*hold - 24) % 12 == 0 {
+              world.player_action(idx, Key::Choose);
+            }
+          }
+        } else {
+          game.choose_hold_ticks[idx] = 0;
+        }
         if (input_mask & 64) != 0 { world.player_action(idx, Key::Remote); }
         if (input_mask & 128) != 0 { world.player_action(idx, Key::Stop); }
       }

@@ -144,10 +144,16 @@ class MineBombersWeb {
 
       if (state !== 5) {
         // Menu or Shop interaction
-        if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow')) {
+        if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow') || e.code.startsWith('Shift') || e.code === 'KeyC') {
           e.preventDefault();
         }
         const wasmKey = this.mapKeyCodeToWasm(e.code);
+
+        // Prevent rapid repeated keydown events from OS auto-repeat for discrete actions like Sell, Buy, Tab, Esc
+        if (e.repeat && (wasmKey === KEY_CHOOSE || wasmKey === KEY_BOMB || wasmKey === KEY_TAB || wasmKey === KEY_ESC)) {
+          return;
+        }
+
         const newState = this.exports.mb_handle_key(wasmKey);
 
         if (newState === 5) {
@@ -203,6 +209,11 @@ class MineBombersWeb {
       if (e.code === 'KeyF') this.keyState.p2 &= ~16;
       if (e.code === 'KeyG') this.keyState.p2 &= ~32;
       if (e.code === 'KeyH') this.keyState.p2 &= ~64;
+    });
+
+    window.addEventListener('blur', () => {
+      this.keyState.p1 = 0;
+      this.keyState.p2 = 0;
     });
   }
 
