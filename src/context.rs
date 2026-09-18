@@ -303,8 +303,9 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     loop {
       let event = self.events.wait_event();
       match event {
-        // FIXME: proper event
-        Event::Quit { .. } => return InputEvent::KeyPress(Scancode::Escape, Keycode::Escape),
+        Event::Quit { .. } => {
+          std::process::exit(0);
+        }
         Event::KeyDown {
           scancode: Some(code),
           keycode: Some(key),
