@@ -85,9 +85,9 @@ impl PlayerComponent {
   }
 
   pub fn initial_drilling_power(&self) -> u16 {
-    self.inventory[Equipment::SmallPickaxe]
-      + 3 * self.inventory[Equipment::LargePickaxe]
-      + 5 * self.inventory[Equipment::Drill]
+    self.inventory[Equipment::SmallPickaxe] * 3
+      + 8 * self.inventory[Equipment::LargePickaxe]
+      + 20 * self.inventory[Equipment::Drill]
   }
 
   pub fn initial_health(&self) -> u16 {

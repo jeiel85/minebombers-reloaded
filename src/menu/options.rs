@@ -92,11 +92,12 @@ impl GameOption {
       GameOption::Selling => {
         options.selling = !options.selling;
       }
-      GameOption::Winner if options.win == WinCondition::ByWins => {
-        options.win = WinCondition::ByMoney;
-      }
-      GameOption::Winner if options.win == WinCondition::ByMoney => {
-        options.win = WinCondition::ByWins;
+      GameOption::Winner => {
+        options.win = match options.win {
+          WinCondition::ByMoney => WinCondition::GoldRush,
+          WinCondition::ByWins => WinCondition::ByMoney,
+          WinCondition::GoldRush => WinCondition::ByWins,
+        };
       }
       _ => {}
     }
@@ -140,11 +141,12 @@ impl GameOption {
       GameOption::Selling => {
         options.selling = !options.selling;
       }
-      GameOption::Winner if options.win == WinCondition::ByWins => {
-        options.win = WinCondition::ByMoney;
-      }
-      GameOption::Winner if options.win == WinCondition::ByMoney => {
-        options.win = WinCondition::ByWins;
+      GameOption::Winner => {
+        options.win = match options.win {
+          WinCondition::ByMoney => WinCondition::ByWins,
+          WinCondition::ByWins => WinCondition::GoldRush,
+          WinCondition::GoldRush => WinCondition::ByMoney,
+        };
       }
       _ => {}
     }
