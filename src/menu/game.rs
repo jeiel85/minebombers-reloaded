@@ -985,7 +985,7 @@ pub enum PlayerWin {
 fn compute_score(players: &[PlayerComponent], player: usize, win: WinCondition) -> PlayerWin {
   let scorefn = |player: &PlayerComponent| match win {
     WinCondition::ByWins => player.rounds_win,
-    WinCondition::ByMoney => player.cash,
+    WinCondition::ByMoney | WinCondition::GoldRush => player.cash,
   };
   let score = scorefn(&players[player]);
   let bested_by = players.iter().filter(|player| scorefn(player) > score).count();

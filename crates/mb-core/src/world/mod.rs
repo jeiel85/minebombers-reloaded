@@ -56,6 +56,8 @@ pub struct World<'p> {
   pub sudden_death_ring: u16,
   /// Imminent collapse warning indicator
   pub sudden_death_warning: bool,
+  /// Gold rush mining competition mode active
+  pub gold_rush_mode: bool,
 }
 
 /// Request to play sound effect at a given frequency and location
@@ -126,7 +128,19 @@ impl<'p> World<'p> {
       sudden_death_active: false,
       sudden_death_ring: 0,
       sudden_death_warning: false,
+      gold_rush_mode: false,
     }
+  }
+
+  /// Enable or disable Gold Rush mode with mining tool bonuses
+  pub fn with_gold_rush_mode(mut self, enabled: bool) -> Self {
+    self.gold_rush_mode = enabled;
+    if enabled {
+      for actor in self.actors[0..self.players.len()].iter_mut() {
+        actor.drilling += 15;
+      }
+    }
+    self
   }
 
   /// Get player component if given entity is a player
@@ -324,6 +338,18 @@ impl<'p> World<'p> {
     if self.round_counter % 20 == 0 && !self.campaign_mode && self.gold_remaining() == 0 {
       self.end_round_counter += 20;
     }
+
+    if self.gold_rush_mode && self.round_counter % 10 == 0 {
+      for (idx, player) in self.players.iter().enumerate() {
+        if idx < self.actors.len() {
+          let total = player.cash + self.actors[idx].accumulated_cash;
+          if total >= 5000 {
+            self.end_round_counter += 105;
+            break;
+          }
+        }
+      }
+    }
     self.round_counter += 1;
   }
 
@@ -351,6 +377,23 @@ impl<'p> World<'p> {
 
   /// Distribute money in a multiplayer mode
   fn distribute_money(&mut self) {
+    if self.gold_rush_mode {
+      // In Gold Rush mode, every player keeps their mined cash
+      for (idx, player) in self.players.iter_mut().enumerate() {
+        let actor = &mut self.actors[idx];
+        player.cash += actor.accumulated_cash;
+      }
+      // Round winner is the player who accumulated the most gold this round
+      let best_miner = (0..self.players.len()).max_by_key(|&idx| self.actors[idx].accumulated_cash);
+      if let Some(winner_idx) = best_miner {
+        if self.actors[winner_idx].accumulated_cash > 0 {
+          self.players[winner_idx].rounds_win += 1;
+          self.players[winner_idx].stats.rounds_wins += 1;
+        }
+      }
+      return;
+    }
+
     let mut lost_money: u32 = self.actors[0..self.players.len()]
       .iter()
       .filter(|actor| actor.is_dead)
@@ -419,6 +462,51 @@ impl<'p> World<'p> {
         let cursor = actor.pos.cursor();
         self.maps.level[cursor] = MapValue::Blood;
         self.update.update_cell(cursor);
+
+        // Loot Drop: Drop 50% of carried gold around the death location
+        if actor.accumulated_cash > 0 {
+          let dropped_cash = actor.accumulated_cash / 2;
+          actor.accumulated_cash -= dropped_cash;
+          self.drop_loot_around(cursor, dropped_cash);
+        }
+      }
+    }
+  }
+
+  /// Scatter dropped gold and treasures around a location upon player death
+  pub fn drop_loot_around(&mut self, center: Cursor, mut cash: u32) {
+    let mut offsets = Vec::new();
+    for dr in -2..=2 {
+      for dc in -2..=2 {
+        offsets.push((dr, dc));
+      }
+    }
+    let mut rng = rand::thread_rng();
+    offsets.shuffle(&mut rng);
+
+    for (dr, dc) in offsets {
+      if cash < 10 {
+        break;
+      }
+      if let Some(target) = center.offset(dr, dc) {
+        let val = self.maps.level[target];
+        if (val.is_passable() || val.is_sand() || val == MapValue::LightGravel || val == MapValue::HeavyGravel)
+          && !val.is_treasure()
+        {
+          let (item, val_amount) = if cash >= 100 {
+            (MapValue::GoldCrown, 100)
+          } else if cash >= 65 {
+            (MapValue::GoldRubin, 65)
+          } else if cash >= 30 {
+            (MapValue::GoldBar, 30)
+          } else {
+            (MapValue::GoldPileCoins, 15)
+          };
+
+          self.maps.level[target] = item;
+          self.update.update_cell(target);
+          cash = cash.saturating_sub(val_amount);
+        }
       }
     }
   }
@@ -1552,6 +1640,40 @@ mod tests {
 
     // Health should be reduced by hazard damage
     assert!(world.actors[0].health < 100);
+  }
+
+  #[test]
+  fn test_loot_drop_on_death() {
+    let mut players = [PlayerComponent::default(), PlayerComponent::default()];
+    let level = LevelMap::empty();
+    let mut world = World::create(level, &mut players, false, 50, false);
+
+    // Give player 0 accumulated cash
+    world.actors[0].accumulated_cash = 300;
+    world.actors[0].health = 0;
+    world.check_dead_players();
+
+    assert!(world.actors[0].is_dead);
+    // 50% dropped, 50% retained
+    assert_eq!(world.actors[0].accumulated_cash, 150);
+
+    // Gold should be dropped around the player position
+    let dropped_gold: u32 = Cursor::all().map(|c| world.maps.level[c].gold_value()).sum();
+    assert!(dropped_gold >= 100, "Loot drop should place gold items around death position");
+  }
+
+  #[test]
+  fn test_gold_rush_mode_drilling_bonus() {
+    let mut players = [PlayerComponent::default(), PlayerComponent::default()];
+    let level = LevelMap::empty();
+    let world_normal = World::create(level.clone(), &mut players, false, 50, false);
+    let normal_drill = world_normal.actors[0].drilling;
+
+    let mut players2 = [PlayerComponent::default(), PlayerComponent::default()];
+    let world_gr = World::create(level, &mut players2, false, 50, false).with_gold_rush_mode(true);
+    let gr_drill = world_gr.actors[0].drilling;
+
+    assert!(gr_drill > normal_drill, "Gold Rush mode should grant bonus drilling power");
   }
 }
 

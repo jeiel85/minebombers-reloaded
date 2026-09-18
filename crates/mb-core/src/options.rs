@@ -7,6 +7,7 @@ use std::time::Duration;
 pub enum WinCondition {
   ByWins,
   ByMoney,
+  GoldRush,
 }
 
 #[derive(Debug)]
@@ -65,10 +66,10 @@ impl Options {
       darkness: it.read_u8().unwrap() != 0,
       free_market: it.read_u8().unwrap() != 0,
       selling: it.read_u8().unwrap() != 0,
-      win: if it.read_u8().unwrap() != 0 {
-        WinCondition::ByWins
-      } else {
-        WinCondition::ByMoney
+      win: match it.read_u8().unwrap() {
+        1 => WinCondition::ByWins,
+        2 => WinCondition::GoldRush,
+        _ => WinCondition::ByMoney,
       },
       bomb_damage: it.read_u8().unwrap(),
       campaign_mode: false,
@@ -125,10 +126,10 @@ impl Options {
     buf.write_u8(self.darkness as u8).unwrap();
     buf.write_u8(self.free_market as u8).unwrap();
     buf.write_u8(self.selling as u8).unwrap();
-    if self.win == WinCondition::ByWins {
-      buf.write_u8(1).unwrap();
-    } else {
-      buf.write_u8(0).unwrap();
+    match self.win {
+      WinCondition::ByWins => buf.write_u8(1).unwrap(),
+      WinCondition::GoldRush => buf.write_u8(2).unwrap(),
+      WinCondition::ByMoney => buf.write_u8(0).unwrap(),
     };
     buf.write_u8(self.bomb_damage).unwrap();
     assert_eq!(buf.len(), 17);

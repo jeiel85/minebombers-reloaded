@@ -521,17 +521,25 @@ impl WebGame {
             if let Some(t) = txt {
               self.draw_text(&t, MENU_ITEM_X + 208, MENU_ITEM_Y + 7 + opt_y, p[8].r, p[8].g, p[8].b);
             }
-          } else if i >= 7 && i <= 10 {
-            // Radio buttons
+          } else if i >= 7 && i <= 9 {
+            // Radio buttons for Darkness, FreeMarket, Selling
             let enabled = match opt {
               GameOption::Darkness => self.options.darkness,
               GameOption::FreeMarket => self.options.free_market,
               GameOption::Selling => self.options.selling,
-              GameOption::Winner => self.options.win == WinCondition::ByMoney,
               _ => false,
             };
             self.blit_glyph(MENU_ITEM_X + 185, MENU_ITEM_Y + 5 + opt_y, Glyph::RadioButton(enabled));
             self.blit_glyph(MENU_ITEM_X + 251, MENU_ITEM_Y + 5 + opt_y, Glyph::RadioButton(!enabled));
+          } else if i == 10 {
+            // Winner mode: WINS, CASH, GOLD RUSH
+            let text = match self.options.win {
+              WinCondition::ByWins => "MOST WINS",
+              WinCondition::ByMoney => "MOST CASH",
+              WinCondition::GoldRush => "GOLD RUSH",
+            };
+            self.fill_rect(MENU_ITEM_X + 175, MENU_ITEM_Y + 4 + opt_y, 110, 14, 0, 0, 0);
+            self.draw_text(text, MENU_ITEM_X + 175, MENU_ITEM_Y + 6 + opt_y, p[5].r, p[5].g, p[5].b);
           }
         }
 
@@ -823,8 +831,9 @@ impl WebGame {
             GameOption::Selling => { self.options.selling = !self.options.selling; }
             GameOption::Winner => {
               self.options.win = match self.options.win {
-                WinCondition::ByMoney => WinCondition::ByWins,
+                WinCondition::ByMoney => WinCondition::GoldRush,
                 WinCondition::ByWins => WinCondition::ByMoney,
+                WinCondition::GoldRush => WinCondition::ByWins,
               };
             }
             _ => {}
@@ -862,7 +871,8 @@ impl WebGame {
             GameOption::Winner => {
               self.options.win = match self.options.win {
                 WinCondition::ByMoney => WinCondition::ByWins,
-                WinCondition::ByWins => WinCondition::ByMoney,
+                WinCondition::ByWins => WinCondition::GoldRush,
+                WinCondition::GoldRush => WinCondition::ByMoney,
               };
             }
             _ => {}
@@ -891,7 +901,8 @@ impl WebGame {
           GameOption::Winner => {
             self.options.win = match self.options.win {
               WinCondition::ByMoney => WinCondition::ByWins,
-              WinCondition::ByWins => WinCondition::ByMoney,
+              WinCondition::ByWins => WinCondition::GoldRush,
+              WinCondition::GoldRush => WinCondition::ByMoney,
             };
             self.render_current_state();
           }
@@ -1071,7 +1082,17 @@ impl WebGame {
       std::mem::transmute(&mut self.players[..])
     };
 
-    let world = World::create(level, players_ref, self.options.darkness, self.options.bomb_damage, false);
+    let is_gold_rush = self.options.win == WinCondition::GoldRush;
+    if is_gold_rush {
+      for p in self.players.iter_mut() {
+        if p.inventory[Equipment::SmallPickaxe] == 0 {
+          p.inventory[Equipment::SmallPickaxe] = 1;
+        }
+      }
+    }
+
+    let world = World::create(level, players_ref, self.options.darkness, self.options.bomb_damage, false)
+      .with_gold_rush_mode(is_gold_rush);
     self.level = world.maps.level.clone();
     self.world = Some(world);
 
@@ -1130,7 +1151,21 @@ impl WebGame {
         }
       };
 
-      let label = format!("{}: ${}", tag, p.cash);
+      let active_cash = if let Some(ref world) = self.world {
+        if idx < world.actors.len() {
+          p.cash + world.actors[idx].accumulated_cash
+        } else {
+          p.cash
+        }
+      } else {
+        p.cash
+      };
+
+      let label = if self.options.win == WinCondition::GoldRush {
+        format!("{}:${}/5K", tag, active_cash)
+      } else {
+        format!("{}: ${}", tag, active_cash)
+      };
       self.draw_text(&label, col_x + 6, 4, cr, cg, cb);
 
       let w_tag = match p.selection {
@@ -1191,6 +1226,9 @@ impl WebGame {
         let warn_sec = (remaining / 60) + 1;
         let warn_str = format!("!! COLLAPSE IN {}S !!", warn_sec);
         self.draw_text(&warn_str, 224, 464, flash_color.0, flash_color.1, flash_color.2);
+      } else if self.options.win == WinCondition::GoldRush {
+        self.fill_rect(2, 473, 636 - bar_w, 5, 240, 200, 40);
+        self.draw_text("★ GOLD RUSH: FIRST TO $5,000 WINS ★", 185, 464, 255, 215, 0);
       } else {
         self.fill_rect(2, 473, 636 - bar_w, 5, 230, 180, 40);
       }
