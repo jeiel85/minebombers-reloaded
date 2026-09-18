@@ -140,9 +140,9 @@ class MineBombersWeb {
 
       this.audio.ensureContext();
 
-      const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Shop, 3: Battle, 4: RoundEnd
+      const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Options, 3: Info, 4: Shop, 5: Battle, 6: RoundEnd
 
-      if (state !== 3) {
+      if (state !== 5) {
         // Menu or Shop interaction
         if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow')) {
           e.preventDefault();
@@ -150,7 +150,7 @@ class MineBombersWeb {
         const wasmKey = this.mapKeyCodeToWasm(e.code);
         const newState = this.exports.mb_handle_key(wasmKey);
 
-        if (newState === 3) {
+        if (newState === 5) {
           this.audio.startBgm();
         }
 
@@ -263,7 +263,7 @@ class MineBombersWeb {
       this.audio.ensureContext();
       if (!this.exports) return;
       const state = this.exports.mb_get_state();
-      if (state !== 3) {
+      if (state !== 5) {
         this.exports.mb_handle_key(KEY_ANY);
         this.renderFramebuffer();
       }
@@ -301,7 +301,7 @@ class MineBombersWeb {
     if (pressed & 8) this.exports.mb_handle_key(KEY_RIGHT);
     if (pressed & 16) {
       const newState = this.exports.mb_handle_key(KEY_BOMB);
-      if (newState === 3) this.audio.startBgm();
+      if (newState === 5) this.audio.startBgm();
     }
     if (pressed & 32) this.exports.mb_handle_key(KEY_CHOOSE);
     if (pressed & 64) this.exports.mb_handle_key(KEY_TAB);
@@ -322,9 +322,9 @@ class MineBombersWeb {
       this.lastFrameTime = timestamp - (delta % requiredInterval);
 
       if (this.exports) {
-        const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Shop, 3: Battle, 4: RoundEnd
+        const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Options, 3: Info, 4: Shop, 5: Battle, 6: RoundEnd
 
-        if (state === 3) {
+        if (state === 5) {
           // Battle simulation frame
           const padInputs = this.gamepad.getPlayerInputs();
           const p1 = this.keyState.p1 | padInputs[0];
