@@ -1,41 +1,30 @@
 @echo off
-title Mine Bombers 3.11 (1995 Original PC Edition)
+title Mine Bombers (Native PC Engine)
 cd /d "%~dp0"
 
 echo ========================================================
-echo   MINE BOMBERS 3.11 (1995) - Original PC DOS Edition
+echo   MINE BOMBERS - Pure Native PC Windows Edition (Rust)
+echo   [ No DOSBox Emulation / 60 FPS Native Window ]
 echo ========================================================
 echo.
-echo   [ SPEED CONTROLS IN GAME ]
-echo   - Ctrl + F11   : Slow Down Speed (-2,000 cycles)
-echo   - Ctrl + F12   : Speed Up (+2,000 cycles)
-echo   - Alt  + F12   : Turbo Fast-Forward Mode
-echo   - Alt  + Enter : Fullscreen Toggle
+echo   [ CONTROLS ^& SHORTCUTS ]
+echo   - [ or -          : Slow Down Game Speed (-0.25x)
+echo   - ] or +          : Speed Up Game Speed (+0.25x)
+echo   - Backspace or 0  : Reset Game Speed to 1.00x Normal
+echo   - Tab or B        : Toggle Human / CPU Bot in Player Selection
+echo   - F5              : Toggle Music On / Off
+echo   - F10             : Quit Game / Menu Exit
 echo.
 echo ========================================================
 echo.
 
-if exist "tools\dosbox\dosbox.exe" (
-    echo Starting native Windows PC DOSBox emulator...
-    start "" "tools\dosbox\dosbox.exe" -conf "minebombers_pc.conf"
-    exit /b 0
+if exist "MineBombers.exe" (
+    echo Launching optimized native binary...
+    start "" "MineBombers.exe"
+) else if exist "target\release\MineBombers.exe" (
+    echo Launching optimized native binary...
+    start "" "target\release\MineBombers.exe"
+) else (
+    echo Compiling and running native engine...
+    cargo run --release
 )
-
-echo Native DOSBox not found in tools\dosbox.
-echo Attempting 1-click setup of portable DOSBox for Windows...
-
-if not exist "tools\dosbox" mkdir "tools\dosbox"
-echo Downloading portable DOSBox Staging (36MB)...
-curl -L -o "%TEMP%\dosbox.zip" https://github.com/dosbox-staging/dosbox-staging/releases/download/v0.83.0/dosbox-staging-windows-x64-v0.83.0.zip
-
-if exist "%TEMP%\dosbox.zip" (
-    echo Extracting portable DOSBox...
-    tar -xf "%TEMP%\dosbox.zip" --strip-components=1 -C "tools\dosbox"
-    del "%TEMP%\dosbox.zip"
-    echo Launching Mine Bombers...
-    start "" "tools\dosbox\dosbox.exe" -conf "minebombers_pc.conf"
-    exit /b 0
-)
-
-echo Falling back to desktop web runner...
-node scripts\desktop_launcher.cjs --dos

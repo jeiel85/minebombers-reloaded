@@ -1,157 +1,137 @@
-# ⛏️ Mine Bombers Web Multiplayer 💣
+# 💣 Mine Bombers: Reloaded (Native Windows Edition) ⛏️
 
-> A faithful web reproduction of the legendary 1995/1996 DOS arcade classic **Mine Bombers**, featuring the authentic 64x45 cavern dimensions, full classic 12-item arsenal, retro procedural audio, intelligent bot AI, underground monsters, and sudden-death mine collapse.
-
-🎮 **Play Live in Browser:** [https://jeiel85.github.io/minebombers-web-multiplayer/](https://jeiel85.github.io/minebombers-web-multiplayer/)
-
----
-
-### 🕹️ Controls
-- **[W / A / S / D]** or **[Arrow Keys]**: Move & Dig soil
-- **[SPACE]**: Action (Pickaxe melee, plant bomb, fire mini-rocket / flamethrower)
-- **[1 .. 8]**: Select Hotbar weapon slot directly
-- **[Q / E]**: Cycle equipped weapon left / right
-- **[F / Shift / C / Right-Click]**: Utility / Secondary (Detonate remote bomb, emergency teleport, med kit heal)
-- **[Mouse Click]**: Click hotbar slots or pause menu
-- **[F3]**: Toggle real-time FPS & network debug overlay
+> **1995년 고전 DOS 명작 아케이드 게임 *Mine Bombers (v3.11)*의 100% 순수 네이티브 Windows 리메이크 & 확장 엔진**  
+> DOSBox 에뮬레이터 없이 최신 64비트 Windows에서 60 FPS 하드웨어 가속으로 구동되며, 혼자서도 즐길 수 있는 **인공지능(AI) 봇 시스템**, **자유로운 해상도 배율 & 4:3 레터박스 종횡비 보정**, **완전한 키 커스터마이징(`config.toml`)**을 지원합니다.
 
 ---
 
-## 1. Architecture
+## ✨ 핵심 특징 (Key Features)
 
-```mermaid
-flowchart LR
-    A[Browser\nVite + TypeScript + Phaser 4] -->|static HTML/JS/assets| B[GitHub Pages]
-    A <-->|WSS protocol| C[Cloudflare Worker]
-    C <-->|room code routing| D[Durable Object\n1 object = 1 room]
-    D --> E[(SQLite-backed DO storage\nroom + player slots + checkpoint)]
-```
+- ⚡ **순수 네이티브 64비트 Windows 엔진 (No DOSBox)**:
+  - DOSBox 에뮬레이션 없이 Rust와 SDL2로 직접 구동되어 즉각적인 반응성과 60 FPS의 부드러운 화면을 제공합니다.
+  - Windows GUI 서브시스템으로 컴파일되어 실행 시 **검은색 cmd 콘솔 창이 전혀 뜨지 않습니다.**
+- 🤖 **자체 개발 AI 봇(Bot) 시스템**:
+  - 원작의 한계(무조건 2~4명의 사람이 한 키보드로 플레이해야 함)를 극복하여 **혼자서도 컴퓨터와 대전**할 수 있습니다.
+  - 폭탄 폭발 경로 회피(Danger Evasion), 자원 채굴(Mining), 근접 폭탄 매설/원거리 수류탄 투척(Combat), 상점 자동 구매(Auto-Shop) 탑재.
+  - 캐릭터 선택 창에서 언제든 `Tab` 또는 `B` 키로 `[YOU] ↔ [CPU]` 슬롯을 자유롭게 변경 가능.
+- 📺 **현대적인 디스플레이 & 화면비 설정**:
+  - **4:3 고전 레트로 화면비 완벽 유지**: 임의의 모니터나 창 크기에서도 화면이 옆으로 늘어나지 않고 좌우 블랙 바(Pillarbox)로 깔끔하게 렌더링.
+  - **1x / 2x / 3x 정수 배율 핫키**: 창 크기를 도트 깨짐 없이 선명하게 확대.
+  - **전체화면(Fullscreen) / 테두리 없는 창모드(Borderless) / 창모드(Windowed)** 자유 전환.
+  - **VSync 및 FPS 리미터** 지원.
+- ⌨️ **완벽한 키 바인딩 & `config.toml` 환경설정**:
+  - 1P부터 4P까지 모든 키를 메모장으로 쉽게 바꿀 수 있는 직관적인 `config.toml` 제공.
+  - 인게임 `Options` → `Redefine Keys` 메뉴에서도 직접 키를 눌러 손쉽게 재설정 가능.
+- ⏩ **실시간 인게임 게임 속도 조절**:
+  - 게임 플레이 도중 `[` 및 `]` 키로 슬로우 모션부터 초고속 플레이까지 자유롭게 배속 변경 가능.
+- 🎵 **1995년 오리지널 리소스 100% 보존 연동**:
+  - 원본 46개 클래식 맵(`.MNE`), 12종 무기/도구, 사운드 블라스터 효과음(`.VOC`), Scream Tracker 3 BGM(`.S3M`)이 완벽하게 재생됩니다.
 
-GitHub Pages hosts no authoritative game logic. The Durable Object owns room state, economy and game outcomes.
+---
 
-## 2. Important v2 correction
+## 🚀 빠른 시작 (Quick Start)
 
-The first bundle was a useful network/architecture scaffold, but not yet detailed enough to claim that implementation required no further design decisions.
+### 1. 다운로드 및 실행
+별도의 설치 프로그램이나 외부 에뮬레이터가 전혀 필요 없습니다.
 
-This revision explicitly fixes the missing areas:
+1. 본 저장소를 다운로드하거나 클론합니다.
+2. 루트 폴더의 **`MineBombers.exe`**를 더블클릭하면 즉시 게임이 시작됩니다!
+   *(필요한 모든 라이브러리 `SDL2.dll`, `SDL2_mixer.dll` 및 오리지널 애셋 `res/minebomb`이 이미 포함되어 있습니다.)*
 
-- server-owned active-round timing;
-- mining/treasure/shop/cash loop rather than generic Bomberman-only gameplay;
-- reconnect token/storage rules;
-- host grace and room-capacity semantics;
-- exact baseline movement/digging/economy/equipment values;
-- original graphics asset pipeline;
-- placeholder art included in the starter;
-- client scene flow;
-- file-by-file implementation map;
-- corrected lifecycle/cost model for hibernating rooms vs active rounds.
+---
 
-See `docs/12-readiness-audit.md` first.
+## 🕹️ 조작키 & 단축키 (Controls & Hotkeys)
 
-## 3. Serverless lifecycle
+### 인게임 디스플레이 및 편의 단축키
+| 단축키 | 기능 |
+|---|---|
+| **`F11`** 또는 **`Alt + Enter`** | 전체화면 (Fullscreen) ↔ 창 모드 전환 |
+| **`F1`** | 1x 배율 (640 × 480 픽셀) |
+| **`F2`** | 2x 고해상도 배율 (1280 × 960 픽셀, 기본 권장) |
+| **`F3`** | 3x 대형 배율 (1920 × 1440 픽셀) |
+| **`F4`** | 4:3 레트로 화면비 고정 / 화면 채우기 토글 |
+| **`[` 또는 `-`** | 게임 속도 감소 (0.75x, 0.50x ...) |
+| **`]` 또는 `+`** | 게임 속도 증가 (1.25x, 1.50x, 2.00x ...) |
+| **`Backspace` 또는 `0`** | 게임 속도 1.00x 정속으로 리셋 |
+| **`F5`** | BGM 배경 음악 On / Off |
+| **`F10`** | 라운드 강제 종료 / 게임 나가기 |
 
-### Lobby / shop / result
+### 캐릭터 선택 화면
+- **`Tab` 또는 `B`**: 선택된 플레이어 슬롯을 **`[YOU]`(인간) ↔ `[CPU]`(AI 봇)**으로 전환
 
-Use Cloudflare's Hibernation WebSocket API without a repeating timer so an idle room can sleep while sockets remain attached.
+### 기본 플레이어 조작키 (기본값)
+> 모든 키는 `config.toml` 파일이나 인게임 `Redefine Keys` 메뉴에서 원하는 키로 언제든 변경할 수 있습니다.
 
-### Playing
-
-A real-time round intentionally runs a server-owned 20 Hz logical simulation timer. This prevents hibernation during the active round, but guarantees that bombs, mines and round deadlines do not depend on clients continuing to transmit movement packets.
-
-```text
-Authoritative step:       50 ms / 20 Hz
-Snapshot max:             100 ms / 10 Hz
-Client render:            60 FPS
-Remote interpolation:     ~100–150 ms
-Reconnect grace:          20 sec
-Checkpoint:               ~2 sec baseline, tune to 3–5 sec after testing
-```
-
-## 4. Core v1 gameplay
-
-The primary Classic mode is:
-
-```text
-Lobby
- -> Shop
- -> Mine / collect treasure / fight
- -> Round result
- -> Shop
- -> ... 5 rounds
- -> Match result by cash
-```
-
-The server owns cash, inventory, digging completion, damage and match result. Exact baseline values live in `docs/14-classic-mode-exact-spec.md`.
-
-## 5. Graphics decision
-
-Do not reuse the original Mine Bombers graphics/audio just because the registered game was later distributed as freeware. Build original assets.
-
-This bundle includes **project-generated development placeholders**:
-
-```text
-assets/placeholders/
-starter/apps/client/public/assets/gfx/
-  tiles_world.png
-  miner.png
-  bombs.png
-  explosions.png
-  pickups.png
-```
-
-They use a fixed 32x32 contract and can be replaced later with final pixel art without changing gameplay code. See `docs/13-graphics-assets.md` and `assets/spec/asset-manifest.json`.
-
-## 6. Technology stack
-
-| Layer | Choice | Reason |
+| 동작 | Player 1 (화살표 키) | Player 2 (WASD 키) |
 |---|---|---|
-| Language | TypeScript | shared protocol/types |
-| Client | Phaser 4 + Vite | top-down 2D + static build |
-| Hosting | GitHub Pages | requested static deployment |
-| Real-time | Cloudflare Worker + Durable Objects | serverless room authority/WebSocket coordination |
-| Persistence | DO SQLite storage | compact room/player/checkpoint state |
-| CI | GitHub Actions | static Pages deployment |
-| Backend deploy | Wrangler | official Worker deployment tooling |
+| **이동 / 굴착** | 방향키 (`↑`, `↓`, `←`, `→`) | `W`, `S`, `A`, `D` |
+| **정지 (Stop)** | `Space` | `Q` |
+| **폭탄 설치 / 구매** | `Enter` (Return) | `E` |
+| **무기 선택 / 판매** | `Right Shift` | `Tab` |
+| **원격 폭탄 기폭** | `Right Control` | `Left Control` |
 
-Package versions were checked on the audit date: Phaser 4.2.1, Vite 8.3.0 and Wrangler 4.132.0. Cloudflare currently recommends generated Worker types via `wrangler types`; use that during implementation rather than depending long-term on a hand-pinned `@cloudflare/workers-types` package.
+---
 
-## 7. Read in this order
+## ⚙️ 설정 파일 (`config.toml`)
 
-1. `docs/12-readiness-audit.md`
-2. `docs/01-architecture.md`
-3. `docs/14-classic-mode-exact-spec.md`
-4. `docs/15-server-timing-cost.md`
-5. `docs/16-storage-reconnect-contract.md`
-6. `docs/19-map-generator-determinism.md`
-7. `docs/03-network-protocol.md`
-8. `docs/04-authoritative-simulation.md`
-9. `docs/13-graphics-assets.md`
-10. `docs/17-ui-scene-flow.md`
-11. `docs/18-file-by-file-implementation.md`
-12. `docs/06-security-cheat.md`
-13. `docs/08-testing.md`
-14. `docs/09-cost-capacity.md`
-15. `docs/10-implementation-plan.md`
-16. `docs/07-deployment.md`
-17. `docs/11-production-risks.md`
+프로젝트 루트의 `config.toml`을 메모장으로 열어 각종 그래픽, 게임플레이, 플레이어별 키를 취향에 맞게 설정할 수 있습니다:
 
-## 8. What the starter is
+```toml
+[display]
+window_mode = "Windowed"      # "Windowed", "Fullscreen", "Borderless"
+scale = 2                     # 1, 2, 3
+width = 1280
+height = 960
+vsync = true                  # 수직동기화 활성화
+target_fps = 60               # 목표 FPS (60, 120, 144 등)
+keep_aspect_ratio = true      # 4:3 고전 화면비 유지 (레터박스)
 
-`starter/` is still a **scaffold**, not a finished game. That distinction is deliberate.
+[gameplay]
+default_speed = 1.0           # 기본 게임 속도 (1.0 = 표준)
+auto_bots = true              # 멀티플레이 시작 시 빈 슬롯에 AI 봇 자동 배치
 
-The design is now intended to be specific enough that the next coding pass can implement the game without changing architecture. The starter provides repository shape, Worker/DO WebSocket skeleton, shared protocol starting point, GitHub Pages workflow and placeholder art.
+[keys.player1]
+left = "Left"
+right = "Right"
+up = "Up"
+down = "Down"
+stop = "Space"
+bomb = "Return"
+choose = "RightShift"
+remote = "RightControl"
+```
 
-The remaining TODOs in starter code are implementation tasks described by the documents, not undefined product decisions.
+---
 
-## 9. Official references verified for this revision
+## 🛠️ 소스코드 직접 빌드하기 (Building from Source)
 
-- Durable Objects: https://developers.cloudflare.com/durable-objects/
-- WebSocket hibernation: https://developers.cloudflare.com/durable-objects/best-practices/websockets/
-- Durable Object lifecycle: https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/
-- Durable Object pricing: https://developers.cloudflare.com/durable-objects/platform/pricing/
-- Durable Object limits: https://developers.cloudflare.com/durable-objects/platform/limits/
-- Phaser textures/spritesheets: https://docs.phaser.io/phaser/concepts/textures
-- Phaser tilesets: https://docs.phaser.io/api-documentation/class/tilemaps-tileset
-- GitHub Pages limits: https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits
+최신 64비트 Windows 환경에서 직접 빌드할 수 있습니다:
 
-Re-check plan limits and package versions before a public launch.
+### 사전 준비
+- **Rust Toolchain** (64-bit MSVC 타깃 권장): [rustup.rs](https://rustup.rs/)
+- MSVC C++ Build Tools (Visual Studio 빌드 도구)
+
+### 빌드 명령어
+```powershell
+# 개발 빌드 및 테스트
+cargo test
+
+# 최적화된 Release 바이너리 빌드
+cargo build --release
+
+# 생성된 실행 파일을 루트로 복사
+Copy-Item target\release\MineBombers.exe .\MineBombers.exe -Force
+```
+
+---
+
+## 📜 크레딧 & 라이선스 (Credits & Acknowledgements)
+
+- **Original Game**: *Mine Bombers* (1995–1996) created by **Sami Lehtinen & Antti Lehtinen (Skhar)**.
+- **Reverse Engineering Core**: DOS 바이너리 디코딩 및 타일 렌더링 프레임워크는 **Ivan Dubrov**의 오픈소스 프로젝트 `mb-reloaded`의 리버스 엔지니어링 분석을 기반으로 참고하였습니다.
+- **Enhanced Engine & Features**:
+  - 자체 AI 봇 시스템 (`src/world/bot.rs`)
+  - Windows MSVC 완벽 포팅 및 콘솔 창 제거 (Windows GUI Subsystem)
+  - `config.toml` 통합 환경설정 및 1~4P 키 매핑 시스템 (`src/config.rs`)
+  - 4:3 레터박스 종횡비 보정 및 인게임 단축키 (`F1`~`F4`, `F11`)
+  - 실시간 게임 배속 조절 시스템
