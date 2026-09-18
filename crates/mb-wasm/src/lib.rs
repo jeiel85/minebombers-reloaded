@@ -1165,7 +1165,27 @@ impl WebGame {
     let total = self.max_round_ticks;
     let bar_w = ((636 * elapsed) / total).min(636) as u32;
     self.fill_rect(2, 473, 636, 5, 40, 40, 45);
-    self.fill_rect(2, 473, 636 - bar_w, 5, 230, 180, 40);
+
+    let remaining = total.saturating_sub(elapsed);
+    if let Some(ref world) = self.world {
+      if world.sudden_death_active {
+        // Red sudden death bar!
+        self.fill_rect(2, 473, 636 - bar_w, 5, 240, 40, 30);
+        let ring_str = format!("SUDDEN DEATH! RING {}", world.sudden_death_ring);
+        self.draw_text(&ring_str, 224, 464, 255, 60, 50);
+      } else if world.sudden_death_warning {
+        // Flashing yellow/red warning bar
+        let flash_color = if (elapsed / 15) % 2 == 0 { (255, 40, 40) } else { (255, 210, 30) };
+        self.fill_rect(2, 473, 636 - bar_w, 5, flash_color.0, flash_color.1, flash_color.2);
+        let warn_sec = (remaining / 60) + 1;
+        let warn_str = format!("!! COLLAPSE IN {}S !!", warn_sec);
+        self.draw_text(&warn_str, 224, 464, flash_color.0, flash_color.1, flash_color.2);
+      } else {
+        self.fill_rect(2, 473, 636 - bar_w, 5, 230, 180, 40);
+      }
+    } else {
+      self.fill_rect(2, 473, 636 - bar_w, 5, 230, 180, 40);
+    }
   }
 }
 
@@ -1334,6 +1354,29 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
     }
 
     game.round_start_tick += 1;
+
+    let remaining_ticks = game.max_round_ticks.saturating_sub(game.round_start_tick);
+    if let Some(ref mut world) = game.world {
+      if remaining_ticks <= 60 * 60 {
+        world.sudden_death_warning = true;
+      }
+      if remaining_ticks <= 50 * 60 {
+        // Every 5 seconds (300 ticks), shrink another ring
+        if game.round_start_tick % 300 == 0 {
+          let ring = world.advance_sudden_death_shrink();
+          if ring > 0 {
+            game.rumble_queue.push(RumbleEvent {
+              player_idx: 0,
+              intensity: 1.0,
+              duration_ms: 600.0,
+            });
+          }
+        }
+      }
+      if remaining_ticks == 0 {
+        world.end_round_counter += 105;
+      }
+    }
 
     let (effects, updates, map_snapshots, is_flash, is_end_round, actors_data) = {
       let world = match game.world.as_mut() {

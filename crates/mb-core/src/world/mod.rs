@@ -50,6 +50,12 @@ pub struct World<'p> {
   pub bomb_damage: u8,
   /// If exit was triggered (single player mode)
   pub exited: bool,
+  /// Sudden death battle royale mode active
+  pub sudden_death_active: bool,
+  /// Depth of collapsed outer rings (0 = no collapse, 1 = first outer ring, etc.)
+  pub sudden_death_ring: u16,
+  /// Imminent collapse warning indicator
+  pub sudden_death_warning: bool,
 }
 
 /// Request to play sound effect at a given frequency and location
@@ -117,6 +123,9 @@ impl<'p> World<'p> {
       effects: Default::default(),
       bomb_damage,
       exited: false,
+      sudden_death_active: false,
+      sudden_death_ring: 0,
+      sudden_death_warning: false,
     }
   }
 
@@ -131,6 +140,62 @@ impl<'p> World<'p> {
       .iter()
       .filter(|actor| !actor.is_dead)
       .count()
+  }
+
+  /// Returns whether a coordinate is within the collapsed sudden death danger zone.
+  pub fn is_in_danger_zone(&self, cursor: Cursor) -> bool {
+    if self.sudden_death_ring == 0 {
+      return false;
+    }
+    let r = self.sudden_death_ring;
+    cursor.row <= r
+      || cursor.row >= crate::world::map::MAP_ROWS - 1 - r
+      || cursor.col <= r
+      || cursor.col >= crate::world::map::MAP_COLS - 1 - r
+  }
+
+  /// Collapses one more concentric ring of the mine from the outside inwards.
+  /// Converts reachable tiles into bubbling lava/napalm and triggers screen shake and explosions.
+  pub fn advance_sudden_death_shrink(&mut self) -> u16 {
+    self.sudden_death_active = true;
+    self.sudden_death_warning = true;
+    let next_ring = self.sudden_death_ring + 1;
+    // Don't shrink past the center safe sanctuary (leave at least 6x6 center open)
+    let max_ring = (crate::world::map::MAP_ROWS / 2).saturating_sub(3);
+    if next_ring > max_ring {
+      return self.sudden_death_ring;
+    }
+    self.sudden_death_ring = next_ring;
+    self.shake = 12;
+
+    let min_row = next_ring;
+    let max_row = crate::world::map::MAP_ROWS - 1 - next_ring;
+    let min_col = next_ring;
+    let max_col = crate::world::map::MAP_COLS - 1 - next_ring;
+
+    let mut play_sfx_count = 0;
+
+    for row in min_row..=max_row {
+      for col in min_col..=max_col {
+        if row == min_row || row == max_row || col == min_col || col == max_col {
+          let cursor = Cursor::new(row, col);
+          let current_val = self.maps.level[cursor];
+          if current_val != MapValue::MetalWall {
+            // Erupt into bubbling lava hazard
+            self.maps.level[cursor] = MapValue::Napalm1;
+            self.maps.timer[cursor] = 200;
+            self.update.update_cell(cursor);
+
+            if play_sfx_count < 3 {
+              self.effects.play(SoundEffect::Explos2, 11000, cursor);
+              play_sfx_count += 1;
+            }
+          }
+        }
+      }
+    }
+
+    self.sudden_death_ring
   }
 
   pub fn player_action(&mut self, player: usize, key: Key) {
@@ -218,6 +283,31 @@ impl<'p> World<'p> {
 
     // Animate players
     self.animate_players();
+
+    // Sudden death hazard zone damage check (every 15 ticks = ~4 times per second)
+    if self.sudden_death_active && self.sudden_death_ring > 0 && self.round_counter % 15 == 0 {
+      let ring = self.sudden_death_ring;
+      let num_players = self.players.len();
+      for idx in 0..num_players {
+        let cur = self.actors[idx].pos.cursor();
+        let in_danger = cur.row <= ring
+          || cur.row >= crate::world::map::MAP_ROWS - 1 - ring
+          || cur.col <= ring
+          || cur.col >= crate::world::map::MAP_COLS - 1 - ring;
+
+        let actor = &mut self.actors[idx];
+        if actor.is_dead {
+          continue;
+        }
+        if in_danger {
+          actor.health = actor.health.saturating_sub(6);
+          self.update.update_player_health(idx);
+          if actor.health > 0 {
+            self.effects.play(SoundEffect::Karjaisu, 11000, cur);
+          }
+        }
+      }
+    }
 
     if self.round_counter % 2 == 0 {
       self.check_dead_players();
@@ -1417,6 +1507,51 @@ mod tests {
     assert_eq!(item_placement_timer(Equipment::BlackHole), 80);
     assert_eq!(item_placement_timer(Equipment::FreezeBomb), 90);
     assert_eq!(item_placement_timer(Equipment::DrillDrone), 1);
+  }
+
+  #[test]
+  fn test_sudden_death_shrink_and_danger_zone() {
+    let mut players = [PlayerComponent::default(), PlayerComponent::default()];
+    let level = LevelMap::empty();
+    let mut world = World::create(level, &mut players, false, 50, false);
+
+    assert_eq!(world.sudden_death_ring, 0);
+    assert!(!world.is_in_danger_zone(Cursor::new(1, 1)));
+
+    let ring = world.advance_sudden_death_shrink();
+    assert_eq!(ring, 1);
+    assert_eq!(world.sudden_death_ring, 1);
+    assert!(world.sudden_death_active);
+    assert!(world.shake > 0);
+
+    // Ring 1 borders should now be in danger zone
+    assert!(world.is_in_danger_zone(Cursor::new(1, 1)));
+    assert!(world.is_in_danger_zone(Cursor::new(1, 10)));
+    assert!(!world.is_in_danger_zone(Cursor::new(20, 20)));
+
+    // Tile was converted to Napalm1
+    assert_eq!(world.maps.level[Cursor::new(1, 1)], MapValue::Napalm1);
+  }
+
+  #[test]
+  fn test_sudden_death_hazard_damage() {
+    let mut players = [PlayerComponent::default(), PlayerComponent::default()];
+    let level = LevelMap::empty();
+    let mut world = World::create(level, &mut players, false, 50, false);
+
+    // Place player at (1, 1)
+    world.actors[0].pos = Cursor::new(1, 1).position();
+    world.actors[0].health = 100;
+
+    world.advance_sudden_death_shrink();
+
+    // Run 15 ticks to trigger hazard damage interval
+    for _ in 0..15 {
+      world.tick();
+    }
+
+    // Health should be reduced by hazard damage
+    assert!(world.actors[0].health < 100);
   }
 }
 

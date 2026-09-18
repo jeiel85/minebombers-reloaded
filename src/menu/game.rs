@@ -462,6 +462,23 @@ impl Application<'_> {
       }
 
       let round_time = start.elapsed() - paused_time;
+      let total_time = settings.options.round_time;
+      let remaining = total_time.checked_sub(round_time).unwrap_or(Duration::ZERO);
+
+      // Sudden death management for desktop
+      if !world.campaign_mode {
+        if remaining <= Duration::from_secs(60) {
+          world.sudden_death_warning = true;
+        }
+        if remaining <= Duration::from_secs(50) {
+          let shrink_step = ((50 - remaining.as_secs()) / 5) as u16;
+          while world.sudden_death_ring < shrink_step {
+            world.advance_sudden_death_shrink();
+            ctx.gamepad.rumble_all(1.0, 500);
+          }
+        }
+      }
+
       // Apply all rendering updates
       ctx.with_render_context(|canvas| {
         if world.update.players_info {
@@ -502,7 +519,18 @@ impl Application<'_> {
         // Update end of round indicator
         if !world.campaign_mode {
           let width = ((635 * round_time.as_millis()) / settings.options.round_time.as_millis()).min(635) as i32;
-          canvas.set_draw_color(self.players.palette[0]);
+          if world.sudden_death_active {
+            canvas.set_draw_color(Color::RGB(240, 40, 30));
+          } else if world.sudden_death_warning {
+            let flash = (round_time.as_millis() / 250) % 2 == 0;
+            if flash {
+              canvas.set_draw_color(Color::RGB(255, 40, 40));
+            } else {
+              canvas.set_draw_color(Color::RGB(255, 210, 30));
+            }
+          } else {
+            canvas.set_draw_color(self.players.palette[0]);
+          }
           canvas
             .fill_rect(Rect::new(636 - width, 473, width as u32, 5))
             .map_err(SdlError)?;
