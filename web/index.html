@@ -166,6 +166,69 @@
       z-index: 10;
     }
 
+    /* Title Screen / Start Game Overlay */
+    #start-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      padding-bottom: 45px;
+      z-index: 10;
+      cursor: pointer;
+      transition: opacity 0.25s ease;
+    }
+    #start-overlay.hidden {
+      display: none;
+    }
+    .start-btn-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      background: rgba(16, 18, 26, 0.9);
+      padding: 14px 28px;
+      border-radius: 8px;
+      border: 2px solid #f1c40f;
+      box-shadow: 0 0 25px rgba(241, 196, 15, 0.45);
+      text-align: center;
+    }
+    .start-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #f39c12;
+      letter-spacing: 2px;
+      text-shadow: 1px 1px #000;
+    }
+    .start-btn {
+      font-size: 16px;
+      font-weight: bold;
+      background: #e67e22;
+      color: #fff;
+      padding: 10px 24px;
+      border-radius: 6px;
+      border: 2px solid #f39c12;
+      cursor: pointer;
+      letter-spacing: 1px;
+      animation: pulse 1.5s infinite;
+      box-shadow: 0 4px 15px rgba(230, 126, 34, 0.5);
+    }
+    .start-btn:hover {
+      background: #d35400;
+      border-color: #f1c40f;
+      transform: scale(1.04);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(241, 196, 15, 0.4); }
+      50% { transform: scale(1.05); box-shadow: 0 0 22px rgba(241, 196, 15, 0.8); }
+    }
+    .start-hint {
+      font-size: 12px;
+      color: #bdc3c7;
+    }
+
     /* Bottom Info */
     footer {
       margin-top: 10px;
@@ -254,6 +317,13 @@
 
   <div id="canvas-container">
     <div id="loading">⛏️ Loading Mine Bombers WebAssembly...</div>
+    <div id="start-overlay" class="hidden">
+      <div class="start-btn-box">
+        <div class="start-title">⛏️ MINE BOMBERS (1995) 💣</div>
+        <button id="btn-start-game" class="start-btn">▶ PRESS START / CLICK TO PLAY</button>
+        <div class="start-hint">Press <span class="key-hint">Enter</span> or Click to Start with Retro BGM</div>
+      </div>
+    </div>
     <canvas id="screen" width="640" height="480"></canvas>
   </div>
 

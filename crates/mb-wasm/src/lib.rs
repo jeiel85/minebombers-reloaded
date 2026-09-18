@@ -14,9 +14,31 @@ const SCREEN_HEIGHT: usize = 480;
 
 static SIKA_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/SIKA.SPY");
 static FONTTI_FON_BYTES: &[u8] = include_bytes!("../../../res/minebomb/FONTTI.FON");
-static LEVEL0_MNL_BYTES: &[u8] = include_bytes!("../../../res/minebomb/LEVEL0.MNL");
+static TITLEBE_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/TITLEBE.SPY");
 
 static mut FRAMEBUFFER: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4] = [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4];
+
+#[no_mangle]
+pub extern "C" fn mb_render_title() -> u32 {
+  let title_img = match decode_spy(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32, TITLEBE_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
+
+  unsafe {
+    for (i, chunk) in title_img.image.chunks_exact(3).enumerate() {
+      if i < SCREEN_WIDTH * SCREEN_HEIGHT {
+        let d_idx = i * 4;
+        FRAMEBUFFER[d_idx] = chunk[0];
+        FRAMEBUFFER[d_idx + 1] = chunk[1];
+        FRAMEBUFFER[d_idx + 2] = chunk[2];
+        FRAMEBUFFER[d_idx + 3] = 255;
+      }
+    }
+  }
+
+  1
+}
 
 struct AudioEvent {
   effect_id: i32,
@@ -61,10 +83,7 @@ pub extern "C" fn mb_init(
     Err(_) => return 0,
   };
 
-  let level = match LevelMap::from_file_map(LEVEL0_MNL_BYTES.to_vec()) {
-    Ok(m) => m,
-    Err(_) => LevelMap::empty(),
-  };
+  let level = LevelMap::random_map(10);
 
   let parse_diff = |d: u32| match d {
     1 => (true, BotDifficulty::Easy),
@@ -110,7 +129,6 @@ pub extern "C" fn mb_init(
 
 impl WebGame {
   fn start_round(&mut self, level: LevelMap) {
-    self.level = level.clone();
     self.audio_queue.clear();
     self.rumble_queue.clear();
     self.round_start_tick = 0;
@@ -120,6 +138,7 @@ impl WebGame {
     };
 
     let world = World::create(level, players_ref, false, 100, false);
+    self.level = world.maps.level.clone();
     self.world = Some(world);
 
     self.render_full();
@@ -313,7 +332,7 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
 
     game.round_start_tick += 1;
 
-    let (effects, updates, is_flash, is_end_round, actors_data) = {
+    let (effects, updates, map_snapshots, is_flash, is_end_round, actors_data) = {
       let world = match game.world.as_mut() {
         Some(w) => w,
         None => return 0,
@@ -342,12 +361,21 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
       let is_flash = world.flash;
       let is_end_round = world.is_end_of_round();
 
+      // Snapshot updated tile values directly from live world map
+      let map_snapshots: Vec<(Cursor, MapValue)> = updates
+        .iter()
+        .filter_map(|u| match u {
+          Update::Map(cur) => Some((*cur, world.maps.level[*cur])),
+          _ => None,
+        })
+        .collect();
+
       // Snapshot actors for rendering
       let actors: Vec<_> = world.actors.iter().map(|a| {
         (a.pos, a.kind, a.facing, a.moving, a.animation)
       }).collect();
 
-      (effects, updates, is_flash, is_end_round, actors)
+      (effects, updates, map_snapshots, is_flash, is_end_round, actors)
     };
 
     // Process sound effects and rumble
@@ -384,8 +412,8 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
             }
             let cur = actors_data[p_idx].0.cursor();
             let dist = ((expl_c - cur.col as f32).powi(2) + (expl_r - cur.row as f32).powi(2)).sqrt();
-            if dist < 20.0 {
-              let intensity = (1.0 - (dist / 20.0)).max(0.25);
+            if dist < 20.0f32 {
+              let intensity = (1.0f32 - (dist / 20.0f32)).max(0.25f32);
               game.rumble_queue.push(RumbleEvent {
                 player_idx: p_idx as i32,
                 intensity,
@@ -421,19 +449,21 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         }
       }
     } else {
-      let level = &game.level;
+      // First, update live map tiles in both game.level and framebuffer
+      for (cursor, val) in map_snapshots {
+        game.level[cursor] = val;
+        game.draw_map_tile(cursor, val);
+      }
+
       for update in updates {
         match update {
-          Update::Map(cursor) => {
-            let val = level[cursor];
-            game.draw_map_tile(cursor, val);
-          }
+          Update::Map(_) => {} // Already drawn above with live value
           Update::Actor(actor_idx, digging) => {
             if actor_idx < actors_data.len() {
               let (pos, kind, facing, moving, animation) = actors_data[actor_idx];
               let cur = pos.cursor();
 
-              let val = level[cur];
+              let val = game.level[cur];
               game.draw_map_tile(cur, val);
 
               let phase = match animation / 5 {

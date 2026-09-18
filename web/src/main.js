@@ -13,6 +13,7 @@ class MineBombersWeb {
     this.exports = null;
 
     this.running = false;
+    this.inTitleScreen = true;
     this.paused = false;
     this.speed = 1.0;
     this.lastFrameTime = 0;
@@ -47,39 +48,86 @@ class MineBombersWeb {
       this.exports = instance.exports;
       this.memory = instance.exports.memory;
 
-      // Initialize audio
+      // Preload audio
       await this.audio.preload();
 
-      // Read initial UI bot settings
-      const d1 = parseInt(document.getElementById('slot-p1').value, 10);
-      const d2 = parseInt(document.getElementById('slot-p2').value, 10);
-      const d3 = parseInt(document.getElementById('slot-p3').value, 10);
-      const d4 = parseInt(document.getElementById('slot-p4').value, 10);
-
-      const ok = this.exports.mb_init(0, d1, d2, d3, d4);
-      if (!ok) {
-        throw new Error("Game initialization failed in WebAssembly");
-      }
-
       // Allocate small scratch buffers in wasm memory for audio/rumble events
-      // (Using stack/static pointers via simple malloc or heap offset)
-      // Since wasm memory starts with data, we allocate at high offset or use heap
       this.audioPtr = 1024 * 1024 * 3; // 3MB offset safely beyond static data
       this.rumblePtr = this.audioPtr + 64;
 
-      this.running = true;
       document.getElementById('loading').style.display = 'none';
 
-      // Start loop
-      requestAnimationFrame((t) => this.loop(t));
+      // Display authentic title screen
+      this.showTitleScreen();
     } catch (err) {
       console.error("Initialization error:", err);
       document.getElementById('loading').textContent = "Error: " + err.message;
     }
   }
 
+  showTitleScreen() {
+    this.inTitleScreen = true;
+    this.running = false;
+    if (this.exports && this.exports.mb_render_title) {
+      this.exports.mb_render_title();
+      this.renderFramebuffer();
+    }
+    const overlay = document.getElementById('start-overlay');
+    if (overlay) {
+      overlay.classList.remove('hidden');
+    }
+  }
+
+  startMatch() {
+    if (!this.exports) return;
+
+    this.inTitleScreen = false;
+    const overlay = document.getElementById('start-overlay');
+    if (overlay) {
+      overlay.classList.add('hidden');
+    }
+
+    this.audio.ensureContext();
+    this.audio.startBgm();
+
+    // Read initial UI bot settings
+    const d1 = parseInt(document.getElementById('slot-p1').value, 10);
+    const d2 = parseInt(document.getElementById('slot-p2').value, 10);
+    const d3 = parseInt(document.getElementById('slot-p3').value, 10);
+    const d4 = parseInt(document.getElementById('slot-p4').value, 10);
+
+    const ok = this.exports.mb_init(0, d1, d2, d3, d4);
+    if (!ok) {
+      console.error("Game initialization failed in WebAssembly");
+      return;
+    }
+
+    this.renderFramebuffer();
+
+    if (!this.running) {
+      this.running = true;
+      requestAnimationFrame((t) => this.loop(t));
+    }
+  }
+
+  renderFramebuffer() {
+    if (!this.exports || !this.memory) return;
+    const fbPtr = this.exports.mb_get_framebuffer();
+    const pixels = new Uint8ClampedArray(this.memory.buffer, fbPtr, 640 * 480 * 4);
+    const imgData = new ImageData(pixels, 640, 480);
+    this.ctx.putImageData(imgData, 0, 0);
+  }
+
   setupKeyboard() {
     window.addEventListener('keydown', (e) => {
+      if (this.inTitleScreen) {
+        if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyZ' || e.code === 'KeyX') {
+          e.preventDefault();
+          this.startMatch();
+          return;
+        }
+      }
+
       this.audio.ensureContext();
       this.audio.startBgm();
 
@@ -158,15 +206,27 @@ class MineBombersWeb {
       });
     }
 
+    // Start button and overlay click
+    const startBtn = document.getElementById('btn-start-game');
+    if (startBtn) {
+      startBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.startMatch();
+      });
+    }
+
+    const startOverlay = document.getElementById('start-overlay');
+    if (startOverlay) {
+      startOverlay.addEventListener('click', () => {
+        this.startMatch();
+      });
+    }
+
     // Restart button
     const restartBtn = document.getElementById('btn-restart');
     if (restartBtn) {
       restartBtn.addEventListener('click', () => {
-        const d1 = parseInt(document.getElementById('slot-p1').value, 10);
-        const d2 = parseInt(document.getElementById('slot-p2').value, 10);
-        const d3 = parseInt(document.getElementById('slot-p3').value, 10);
-        const d4 = parseInt(document.getElementById('slot-p4').value, 10);
-        this.exports.mb_init(0, d1, d2, d3, d4);
+        this.startMatch();
       });
     }
 
@@ -191,10 +251,14 @@ class MineBombersWeb {
       });
     }
 
-    // Click canvas to resume audio
+    // Click canvas
     this.canvas.addEventListener('click', () => {
-      this.audio.ensureContext();
-      this.audio.startBgm();
+      if (this.inTitleScreen) {
+        this.startMatch();
+      } else {
+        this.audio.ensureContext();
+        this.audio.startBgm();
+      }
     });
   }
 
@@ -242,10 +306,7 @@ class MineBombersWeb {
         }
 
         // Render Framebuffer
-        const fbPtr = this.exports.mb_get_framebuffer();
-        const pixels = new Uint8ClampedArray(this.memory.buffer, fbPtr, 640 * 480 * 4);
-        const imgData = new ImageData(pixels, 640, 480);
-        this.ctx.putImageData(imgData, 0, 0);
+        this.renderFramebuffer();
       }
     }
 
