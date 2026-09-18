@@ -1,0 +1,87 @@
+# ===================================================================
+# Mine Bombers (Native Rust Engine) - 환경 설정 파일 (Configuration)
+# 메모장(Notepad) 등으로 자유롭게 수정할 수 있습니다.
+# ===================================================================
+
+[display]
+# 창 모드: "Windowed" (창 모드), "Fullscreen" (전체화면), "Borderless" (경계 없는 전체화면)
+# 인게임 단축키: F11 또는 Alt+Enter
+window_mode = "Windowed"
+
+# 창 크기 배율: 1 (640x480), 2 (1280x960), 3 (1920x1440)
+# 인게임 단축키: F1 (1x), F2 (2x), F3 (3x)
+scale = 2
+
+# 창 가로/세로 해상도 (픽셀 단위)
+width = 1280
+height = 960
+
+# 수직동기화 (VSync) 활성화 여부 (화면 찢김 방지)
+vsync = true
+
+# 목표 프레임 레이트 (FPS 제한: 60, 120, 144, 240 등)
+target_fps = 60
+
+# 4:3 고전 레트로 화면 비율 유지 (화면 왜곡 없이 좌우 레터박스 처리)
+# 인게임 단축키: F4
+keep_aspect_ratio = true
+
+[gameplay]
+# 기본 게임 속도 배율 (1.0 = 정속, 0.5 = 느리게, 1.5 = 빠르게)
+# 인게임 단축키: [ 또는 - (감속), ] 또는 + (가속), Backspace (정속 복귀)
+default_speed = 1.0
+
+# 멀티플레이어 시작 시 남은 플레이어 슬롯에 AI 봇 자동 참여 여부
+auto_bots = true
+
+# AI 봇 기본 난이도: "Easy" (쉬움), "Medium" (보통), "Hard" (어려움)
+# 캐릭터 선택 화면에서 [Tab] 또는 [B] 키로 각 슬롯마다 개별 변경도 가능합니다.
+bot_difficulty = "Medium"
+
+# ===================================================================
+# 플레이어 키 설정 (Key Bindings)
+# 키 이름: "Left", "Right", "Up", "Down", "Space", "Return"(Enter),
+# "Tab", "LeftShift", "RightShift", "LeftControl", "RightControl",
+# "A"~"Z", "Keypad 0"~"Keypad 9", "Keypad Enter", "Keypad +" 등
+# 옵션 메뉴의 "Redefine Keys"에서도 직접 키를 눌러 변경 가능합니다.
+# ===================================================================
+
+[keys.player1]
+left = "Left"
+right = "Right"
+up = "Up"
+down = "Down"
+stop = "Space"
+bomb = "Return"
+choose = "RightShift"
+remote = "RightControl"
+
+[keys.player2]
+left = "A"
+right = "D"
+up = "W"
+down = "S"
+stop = "Q"
+bomb = "E"
+choose = "Tab"
+remote = "LeftControl"
+
+[keys.player3]
+left = "J"
+right = "L"
+up = "I"
+down = "K"
+stop = "U"
+bomb = "O"
+choose = "Y"
+remote = "H"
+
+[keys.player4]
+left = "Keypad 4"
+right = "Keypad 6"
+up = "Keypad 8"
+down = "Keypad 2"
+stop = "Keypad 5"
+bomb = "Keypad 0"
+choose = "Keypad Enter"
+remote = "Keypad +"

@@ -1,0 +1,52 @@
+[display]
+window_mode = "Windowed"
+scale = 2
+width = 1280
+height = 960
+vsync = true
+target_fps = 60
+keep_aspect_ratio = true
+
+[gameplay]
+default_speed = 1.0
+auto_bots = true
+
+[keys.player1]
+left = "Left"
+right = "Right"
+up = "Up"
+down = "Down"
+stop = "R"
+bomb = "F"
+choose = "D"
+remote = "S"
+
+[keys.player2]
+left = "A"
+right = "D"
+up = "W"
+down = "S"
+stop = "Q"
+bomb = "E"
+choose = "Tab"
+remote = "Left Ctrl"
+
+[keys.player3]
+left = "J"
+right = "L"
+up = "I"
+down = "K"
+stop = "U"
+bomb = "O"
+choose = "Y"
+remote = "H"
+
+[keys.player4]
+left = "Keypad 4"
+right = "Keypad 6"
+up = "Keypad 8"
+down = "Keypad 2"
+stop = "Keypad 5"
+bomb = "Keypad 0"
+choose = "Keypad Enter"
+remote = "Keypad +"
