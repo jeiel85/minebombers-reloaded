@@ -532,3 +532,25 @@ pub extern "C" fn mb_set_bot_difficulty(player_idx: u32, diff: u32) {
     }
   }
 }
+
+static mut RANDOM_SEED: u64 = 0x853c49e6748fea9b;
+
+fn custom_getrandom(buf: &mut [u8]) -> Result<(), getrandom::Error> {
+  for b in buf.iter_mut() {
+    unsafe {
+      RANDOM_SEED = RANDOM_SEED.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+      *b = (RANDOM_SEED >> 33) as u8;
+    }
+  }
+  Ok(())
+}
+
+getrandom::register_custom_getrandom!(custom_getrandom);
+
+#[no_mangle]
+pub extern "C" fn mb_seed(seed: u32) {
+  unsafe {
+    RANDOM_SEED = (seed as u64) ^ 0x853c49e6748fea9b;
+  }
+}
+

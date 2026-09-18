@@ -10,4 +10,4 @@ crate-type = ["cdylib", "rlib"]
 mb-core = { path = "../mb-core" }
 anyhow = "1.0.65"
 rand = "0.8.5"
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.2", features = ["custom"] }
