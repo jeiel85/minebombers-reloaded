@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mine Bombers (1995) • WebAssembly Edition</title>
+  <title>Mine Bombers (1995) • Authentic DOS WebAssembly Edition</title>
   <link rel="icon" href="./favicon.ico" type="image/x-icon">
   <style>
     * {
@@ -13,7 +13,7 @@
       user-select: none;
     }
     body {
-      background-color: #0c0d10;
+      background-color: #0b0c10;
       color: #ecf0f1;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       display: flex;
@@ -21,16 +21,16 @@
       align-items: center;
       min-height: 100vh;
       overflow-x: hidden;
-      padding: 10px;
+      padding: 8px;
     }
     header {
       display: flex;
       flex-direction: column;
       align-items: center;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     h1 {
-      font-size: 22px;
+      font-size: 20px;
       color: #f1c40f;
       letter-spacing: 2px;
       text-shadow: 2px 2px #000;
@@ -39,72 +39,45 @@
       gap: 8px;
     }
     .subtitle {
-      font-size: 12px;
+      font-size: 11px;
       color: #95a5a6;
       margin-top: 2px;
+      letter-spacing: 1px;
     }
 
-    /* Controls Bar */
+    /* Top Toolbar */
     .top-toolbar {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: center;
-      gap: 10px;
-      background: #1a1c23;
-      padding: 8px 16px;
+      gap: 8px;
+      background: #141721;
+      padding: 6px 14px;
       border-radius: 6px;
-      border: 1px solid #2c3e50;
+      border: 1px solid #282e3f;
       margin-bottom: 8px;
       max-width: 960px;
       width: 100%;
     }
-    .slot-group {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .slot-label {
-      font-size: 12px;
-      font-weight: bold;
-    }
-    .slot-label.p1 { color: #f1c40f; }
-    .slot-label.p2 { color: #e74c3c; }
-    .slot-label.p3 { color: #3498db; }
-    .slot-label.p4 { color: #2ecc71; }
-
-    select {
-      background: #2b2e3b;
-      color: #fff;
-      border: 1px solid #45495d;
-      border-radius: 4px;
-      padding: 4px 6px;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    select:focus {
-      outline: none;
-      border-color: #f1c40f;
-    }
-
     .btn-group {
       display: flex;
       align-items: center;
       gap: 4px;
     }
     button {
-      background: #2b2e3b;
+      background: #232736;
       color: #ecf0f1;
-      border: 1px solid #45495d;
+      border: 1px solid #3c435c;
       border-radius: 4px;
-      padding: 5px 10px;
+      padding: 4px 10px;
       font-size: 12px;
       cursor: pointer;
       transition: all 0.15s ease;
     }
     button:hover {
-      background: #3e4254;
-      border-color: #7f8c8d;
+      background: #353b52;
+      border-color: #f39c12;
     }
     button.active {
       background: #f39c12;
@@ -120,10 +93,10 @@
       max-width: 100%;
       aspect-ratio: 4 / 3;
       background: #000;
-      border: 3px solid #34495e;
+      border: 3px solid #2f364a;
       border-radius: 4px;
       overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.95);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -134,6 +107,7 @@
       image-rendering: pixelated;
       image-rendering: crisp-edges;
       display: block;
+      cursor: pointer;
     }
 
     /* CRT Scanlines Overlay */
@@ -142,7 +116,7 @@
       display: block;
       position: absolute;
       top: 0; left: 0; bottom: 0; right: 0;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.45) 50%);
       background-size: 100% 4px;
       z-index: 2;
       pointer-events: none;
@@ -152,7 +126,7 @@
       display: block;
       position: absolute;
       top: 0; left: 0; bottom: 0; right: 0;
-      box-shadow: inset 0 0 60px rgba(0,0,0,0.85);
+      box-shadow: inset 0 0 70px rgba(0,0,0,0.88);
       z-index: 3;
       pointer-events: none;
     }
@@ -166,474 +140,122 @@
       z-index: 10;
     }
 
-    /* Title Screen / Start Game Overlay */
-    #start-overlay {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.45);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-end;
-      padding-bottom: 45px;
-      z-index: 10;
-      cursor: pointer;
-      transition: opacity 0.25s ease;
-    }
-    #start-overlay.hidden {
-      display: none;
-    }
-    .start-btn-box {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-      background: rgba(16, 18, 26, 0.9);
-      padding: 14px 28px;
-      border-radius: 8px;
-      border: 2px solid #f1c40f;
-      box-shadow: 0 0 25px rgba(241, 196, 15, 0.45);
-      text-align: center;
-    }
-    .start-title {
-      font-size: 15px;
-      font-weight: bold;
-      color: #f39c12;
-      letter-spacing: 2px;
-      text-shadow: 1px 1px #000;
-    }
-    .start-btn {
-      font-size: 16px;
-      font-weight: bold;
-      background: #e67e22;
-      color: #fff;
-      padding: 10px 24px;
+    /* Controls Guide Panel */
+    .controls-panel {
+      margin-top: 10px;
+      max-width: 960px;
+      width: 100%;
+      background: #141721;
+      border: 1px solid #282e3f;
       border-radius: 6px;
-      border: 2px solid #f39c12;
-      cursor: pointer;
-      letter-spacing: 1px;
-      animation: pulse 1.5s infinite;
-      box-shadow: 0 4px 15px rgba(230, 126, 34, 0.5);
-    }
-    .start-btn:hover {
-      background: #d35400;
-      border-color: #f1c40f;
-      transform: scale(1.04);
-    }
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(241, 196, 15, 0.4); }
-      50% { transform: scale(1.05); box-shadow: 0 0 22px rgba(241, 196, 15, 0.8); }
-    }
-    .start-hint {
-      font-size: 12px;
-      color: #bdc3c7;
-    }
-
-    /* Shop / Armory Modal */
-    .shop-modal {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(10, 11, 16, 0.95);
-      z-index: 20;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 15px;
-    }
-    .shop-modal.hidden {
-      display: none;
-    }
-    .shop-content {
-      background: #181a24;
-      border: 2px solid #f39c12;
-      border-radius: 8px;
-      width: 620px;
-      max-width: 95%;
-      max-height: 90%;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
-      overflow: hidden;
-    }
-    .shop-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #232736;
-      padding: 10px 16px;
-      border-bottom: 2px solid #2c3e50;
-    }
-    .shop-header h2 {
-      font-size: 15px;
-      color: #f1c40f;
-      letter-spacing: 1px;
-    }
-    .shop-cash-badge {
-      font-size: 13px;
-      font-weight: bold;
-      color: #2ecc71;
-      background: #111;
-      padding: 4px 10px;
-      border-radius: 4px;
-      border: 1px solid #27ae60;
-    }
-    .shop-controls-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 16px;
-      background: #1c1f2b;
-      border-bottom: 1px solid #2c3e50;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-    .shop-tabs {
-      display: flex;
-      gap: 4px;
-    }
-    .shop-tab {
-      background: #2b2e3b;
-      color: #bbb;
-      border: 1px solid #45495d;
-      padding: 4px 10px;
-      font-size: 12px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    .shop-tab.active {
-      background: #f39c12;
-      color: #000;
-      font-weight: bold;
-      border-color: #f1c40f;
-    }
-    .shop-presets {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .btn-preset {
-      background: #2c3e50;
-      color: #ecf0f1;
-      border: 1px solid #34495e;
-      padding: 3px 7px;
-      font-size: 11px;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-    .btn-preset:hover {
-      background: #34495e;
-      border-color: #f1c40f;
-    }
-    .shop-items-grid {
+      padding: 12px 18px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-      gap: 8px;
-      padding: 12px 16px;
-      overflow-y: auto;
-      max-height: 290px;
-    }
-    .shop-item-card {
-      background: #202330;
-      border: 1px solid #32374a;
-      border-radius: 6px;
-      padding: 8px 10px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-    .item-info {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-    }
-    .item-name {
-      font-size: 13px;
-      font-weight: bold;
-      color: #f1c40f;
-    }
-    .item-desc {
-      font-size: 10px;
-      color: #888;
-      margin-top: 2px;
-    }
-    .item-price {
-      font-size: 11px;
-      font-weight: bold;
-      color: #2ecc71;
-    }
-    .item-counter {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .btn-count {
-      background: #3e4254;
-      color: #fff;
-      border: 1px solid #5a5f78;
-      width: 24px;
-      height: 24px;
-      padding: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: bold;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    .btn-count:hover {
-      background: #f39c12;
-      color: #000;
-    }
-    .item-qty {
-      font-size: 13px;
-      font-weight: bold;
-      min-width: 20px;
-      text-align: center;
-      color: #fff;
-    }
-    .shop-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 16px;
-      background: #232736;
-      border-top: 2px solid #2c3e50;
-    }
-    .shop-total {
-      font-size: 13px;
-      font-weight: bold;
-      color: #ecf0f1;
-    }
-    .shop-action-btn {
-      padding: 7px 16px;
-      font-size: 13px;
-      font-weight: bold;
-      border-radius: 4px;
-      cursor: pointer;
-      border: 1px solid transparent;
-    }
-    .shop-action-btn.primary {
-      background: #27ae60;
-      color: #fff;
-      border-color: #2ecc71;
-    }
-    .shop-action-btn.primary:hover {
-      background: #2ecc71;
-    }
-    .shop-action-btn.secondary {
-      background: #7f8c8d;
-      color: #fff;
-    }
-
-    /* Round End Modal */
-    #round-end-overlay {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.75);
-      z-index: 15;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-    #round-end-overlay.hidden {
-      display: none;
-    }
-    .round-end-box {
-      background: #181a24;
-      border: 2px solid #f1c40f;
-      border-radius: 8px;
-      padding: 20px 30px;
-      text-align: center;
-      box-shadow: 0 0 30px rgba(241, 196, 15, 0.4);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 12px;
+      font-size: 12px;
     }
-    .round-end-title {
-      font-size: 20px;
-      font-weight: bold;
-      color: #f1c40f;
-      letter-spacing: 2px;
+    .control-col h3 {
+      font-size: 12px;
+      color: #f39c12;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #282e3f;
+      padding-bottom: 3px;
+      letter-spacing: 1px;
     }
-    .round-end-stats {
-      font-size: 13px;
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
       color: #bdc3c7;
-      line-height: 1.6;
+    }
+    .control-key {
+      font-family: monospace;
+      background: #232736;
+      color: #ecf0f1;
+      padding: 1px 5px;
+      border-radius: 3px;
+      border: 1px solid #444c66;
+      font-size: 11px;
     }
 
-    /* Bottom Info */
     footer {
       margin-top: 10px;
-      font-size: 12px;
+      font-size: 11px;
       color: #7f8c8d;
       text-align: center;
-      line-height: 1.6;
     }
-    .key-hint {
-      display: inline-block;
-      background: #2c3e50;
-      color: #f1c40f;
-      padding: 1px 6px;
-      border-radius: 3px;
-      font-family: monospace;
-      font-size: 11px;
-      margin: 0 2px;
+    footer a {
+      color: #f39c12;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
 
   <header>
-    <h1>⛏️ MINE BOMBERS 💣 <span style="font-size: 14px; color: #e67e22;">WebAssembly Edition</span></h1>
-    <div class="subtitle">Pure Rust Simulation • Configurable Bot AI • Web Gamepad & Haptic Rumble</div>
+    <h1>💣 MINE BOMBERS <span>(1995)</span></h1>
+    <div class="subtitle">100% AUTHENTIC DOS RETRO EDITION • POWERED BY RUST & WEBASSEMBLY</div>
   </header>
 
   <div class="top-toolbar">
-    <!-- Player Slots -->
-    <div class="slot-group">
-      <span class="slot-label p1">P1:</span>
-      <select id="slot-p1">
-        <option value="0" selected>[YOU] Human</option>
-        <option value="1">[EASY] Bot</option>
-        <option value="2">[NORM] Bot</option>
-        <option value="3">[HARD] Bot</option>
-      </select>
-    </div>
-
-    <div class="slot-group">
-      <span class="slot-label p2">P2:</span>
-      <select id="slot-p2">
-        <option value="0">[YOU] Human</option>
-        <option value="1">[EASY] Bot</option>
-        <option value="2" selected>[NORM] Bot</option>
-        <option value="3">[HARD] Bot</option>
-      </select>
-    </div>
-
-    <div class="slot-group">
-      <span class="slot-label p3">P3:</span>
-      <select id="slot-p3">
-        <option value="0">[YOU] Human</option>
-        <option value="1">[EASY] Bot</option>
-        <option value="2" selected>[NORM] Bot</option>
-        <option value="3">[HARD] Bot</option>
-      </select>
-    </div>
-
-    <div class="slot-group">
-      <span class="slot-label p4">P4:</span>
-      <select id="slot-p4">
-        <option value="0">[YOU] Human</option>
-        <option value="1">[EASY] Bot</option>
-        <option value="2">[NORM] Bot</option>
-        <option value="3" selected>[HARD] Bot</option>
-      </select>
-    </div>
-
-    <!-- Speed Controls -->
     <div class="btn-group">
-      <button class="btn-speed" data-speed="0.5">0.5x</button>
-      <button class="btn-speed active" data-speed="1.0">1.0x</button>
-      <button class="btn-speed" data-speed="1.5">1.5x</button>
-      <button class="btn-speed" data-speed="2.0">2.0x</button>
-    </div>
-
-    <!-- Actions -->
-    <div class="btn-group">
-      <button id="btn-shop">🛒 Shop</button>
-      <button id="btn-crt">📺 CRT</button>
+      <button id="btn-restart" title="Back to Main Menu">🕹️ Menu / Restart</button>
+      <button id="btn-crt" class="active">📺 CRT Scanlines</button>
       <button id="btn-mute">🔊 Sound</button>
-      <button id="btn-restart">🔄 Restart</button>
       <button id="btn-fullscreen">⛶ Fullscreen</button>
+    </div>
+
+    <div class="btn-group">
+      <span style="font-size: 11px; color: #888;">Speed:</span>
+      <button class="btn-speed active" data-speed="1.0">1.0x</button>
+      <button class="btn-speed" data-speed="1.25">1.25x</button>
+      <button class="btn-speed" data-speed="1.5">1.5x</button>
     </div>
   </div>
 
-  <div id="canvas-container">
-    <div id="loading">⛏️ Loading Mine Bombers WebAssembly...</div>
-
-    <!-- Title Screen Overlay -->
-    <div id="start-overlay" class="hidden">
-      <div class="start-btn-box">
-        <div class="start-title">⛏️ MINE BOMBERS (1995) 💣</div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
-          <button id="btn-start-game" class="start-btn">⚡ QUICK PLAY (Starter Pack)</button>
-          <button id="btn-open-shop-title" class="start-btn" style="background: #2980b9; border-color: #3498db;">🛒 VISIT SHOP / ARMORY</button>
-        </div>
-        <div class="start-hint">Press <span class="key-hint">Enter</span> to Quick Play with Retro BGM</div>
-      </div>
-    </div>
-
-    <!-- Round End Overlay -->
-    <div id="round-end-overlay" class="hidden">
-      <div class="round-end-box">
-        <div id="round-end-title" class="round-end-title">🏆 ROUND FINISHED!</div>
-        <div id="round-end-stats" class="round-end-stats"></div>
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
-          <button id="btn-next-shop" class="start-btn" style="background: #2980b9; border-color: #3498db;">🛒 VISIT SHOP</button>
-          <button id="btn-next-round" class="start-btn">▶ NEXT ROUND</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Shop / Armory Modal -->
-    <div id="shop-modal" class="shop-modal hidden">
-      <div class="shop-content">
-        <div class="shop-header">
-          <h2>🛒 MINE BOMBERS ARMORY & SHOP</h2>
-          <div class="shop-cash-badge">💰 CASH: $<span id="shop-cash">750</span></div>
-        </div>
-
-        <!-- Shop Tabs & Presets -->
-        <div class="shop-controls-bar">
-          <div class="shop-tabs">
-            <button class="shop-tab active" data-page="0">Classic Arsenal</button>
-            <button class="shop-tab" data-page="1">Special Weapons ⭐</button>
-          </div>
-          <div class="shop-presets">
-            <span style="font-size: 11px; color: #aaa;">Kits:</span>
-            <button class="btn-preset" data-preset="balanced">⚡ Combat ($660)</button>
-            <button class="btn-preset" data-preset="demo">💣 Demolition ($675)</button>
-            <button class="btn-preset" data-preset="scifi">🌀 Sci-Fi ($650)</button>
-            <button class="btn-preset" data-preset="clear">🔄 Clear</button>
-          </div>
-        </div>
-
-        <!-- Shop Items Grid -->
-        <div id="shop-items-container" class="shop-items-grid"></div>
-
-        <!-- Shop Footer -->
-        <div class="shop-footer">
-          <div class="shop-total">Total Cart: $<span id="shop-total-cost">0</span> | Remaining: $<span id="shop-remaining-cash">750</span></div>
-          <div style="display: flex; gap: 8px;">
-            <button id="btn-shop-close" class="shop-action-btn secondary">✕ Cancel</button>
-            <button id="btn-shop-buy-play" class="shop-action-btn primary">▶ ENTER ARENA (FIGHT!)</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
+  <div id="canvas-container" class="crt">
+    <div id="loading">LOADING MINE BOMBERS WASM...</div>
     <canvas id="screen" width="640" height="480"></canvas>
   </div>
 
+  <div class="controls-panel">
+    <div class="control-col">
+      <h3>🎮 MENU NAVIGATION</h3>
+      <div class="control-row"><span>Move Shovel</span> <span class="control-key">↑ / ↓</span> or <span class="control-key">W / S</span></div>
+      <div class="control-row"><span>Select Option</span> <span class="control-key">Enter</span> or <span class="control-key">Space</span></div>
+      <div class="control-row"><span>Return / Back</span> <span class="control-key">Esc</span></div>
+    </div>
+
+    <div class="control-col">
+      <h3>🛒 AUTHENTIC DOS SHOP</h3>
+      <div class="control-row"><span>Move Slot Cursor</span> <span class="control-key">Arrows</span> or <span class="control-key">WASD</span></div>
+      <div class="control-row"><span>Buy Item / Exit</span> <span class="control-key">Space</span> or <span class="control-key">Enter</span></div>
+      <div class="control-row"><span>Sell Item (Refund)</span> <span class="control-key">C</span> or <span class="control-key">Shift</span></div>
+      <div class="control-row"><span>Special Weapons ⭐</span> <span class="control-key">Tab</span> or <span class="control-key">Q</span></div>
+    </div>
+
+    <div class="control-col">
+      <h3>💣 IN-GAME BATTLE (1P)</h3>
+      <div class="control-row"><span>Move / Dig</span> <span class="control-key">Arrow Keys</span></div>
+      <div class="control-row"><span>Plant Bomb / Attack</span> <span class="control-key">Space</span> or <span class="control-key">Enter</span></div>
+      <div class="control-row"><span>Cycle Weapon</span> <span class="control-key">RShift</span> or <span class="control-key">C</span></div>
+      <div class="control-row"><span>Remote Detonator</span> <span class="control-key">RCtrl</span> or <span class="control-key">X</span></div>
+    </div>
+
+    <div class="control-col">
+      <h3>🎮 GAMEPAD & 2P</h3>
+      <div class="control-row"><span>Movement</span> <span class="control-key">D-Pad / Stick</span></div>
+      <div class="control-row"><span>Confirm / Bomb</span> <span class="control-key">A Button</span></div>
+      <div class="control-row"><span>Cancel / Weapon</span> <span class="control-key">B Button</span></div>
+      <div class="control-row"><span>Shop Page Toggle</span> <span class="control-key">LB / RB</span></div>
+    </div>
+  </div>
+
   <footer>
-    <p>
-      <strong>Controls:</strong>
-      <span class="key-hint">Arrow Keys</span> Move •
-      <span class="key-hint">RCtrl / M</span> Plant Bomb •
-      <span class="key-hint">RShift / N</span> Detonate Remote •
-      <span class="key-hint">Slash / .</span> Weapon Select •
-      <span class="key-hint">Space</span> Stop
-    </p>
-    <p>
-      🎮 <strong>Gamepads:</strong> Xbox, PlayStation, Switch controllers with <strong>Dual-Rumble Haptic Vibration</strong> supported!
-    </p>
-    <p style="margin-top: 4px; font-size: 11px; color: #576574;">
-      Original game © 1995-1996 Sami Lehtinen & Skaven • Native Rust Port & WebAssembly Architecture
-    </p>
+    Original Game © 1995–1996 Skitso Productions • Rust/WASM Port & Enhancements by <a href="https://github.com/jeiel85/minebombers-reloaded" target="_blank">jeiel85</a>
   </footer>
 
   <script type="module" src="./src/main.js"></script>
