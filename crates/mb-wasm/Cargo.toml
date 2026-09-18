@@ -1,0 +1,13 @@
+[package]
+name = "mb-wasm"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+mb-core = { path = "../mb-core" }
+anyhow = "1.0.65"
+rand = "0.8.5"
+getrandom = { version = "0.2", features = ["js"] }

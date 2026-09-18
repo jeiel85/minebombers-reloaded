@@ -1,8 +1,9 @@
-name: Deploy client to GitHub Pages
+name: Deploy WebAssembly to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -11,27 +12,34 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 22
-      - run: npm install --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm --workspace @minebombers/client run build
-        env:
-          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+          targets: wasm32-unknown-unknown
+
+      - name: Build WebAssembly Crate
+        run: |
+          cargo build -p mb-wasm --target wasm32-unknown-unknown --release
+          mkdir -p web/pkg
+          cp target/wasm32-unknown-unknown/release/mb_wasm.wasm web/pkg/mb_wasm.wasm
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/client/dist
+          path: './web'
 
   deploy:
     environment:
