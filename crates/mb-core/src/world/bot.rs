@@ -83,6 +83,9 @@ impl BotController {
   }
 
   fn update_single_bot(world: &mut World, bot_idx: usize) {
+    if world.actors[bot_idx].is_dead || world.actors[bot_idx].frozen_ticks > 0 {
+      return;
+    }
     let cursor = world.actors[bot_idx].pos.cursor();
     let difficulty = world.players[bot_idx].bot_difficulty;
     let mut rng = rand::thread_rng();
@@ -171,11 +174,18 @@ impl BotController {
         world.player_action(bot_idx, Key::Remote);
       }
 
-      // Ranged combat: grenade if aligned in direct line of sight (only Medium & Hard)
+      // Ranged combat: DrillDrone or grenade if aligned in direct line of sight (only Medium & Hard)
       if difficulty != BotDifficulty::Easy {
-        let max_grenade_dist = if difficulty == BotDifficulty::Hard { 8 } else { 7 };
+        let max_grenade_dist = if difficulty == BotDifficulty::Hard { 10 } else { 7 };
         if (cursor.row == target_cursor.row || cursor.col == target_cursor.col) && manhattan <= max_grenade_dist {
-          if world.players[bot_idx].inventory[Equipment::Grenade] > 0 {
+          if world.players[bot_idx].inventory[Equipment::DrillDrone] > 0 {
+            world.players[bot_idx].selection = Equipment::DrillDrone;
+            if let Some(face_dir) = Self::dir_towards(cursor, target_cursor) {
+              world.player_action(bot_idx, dir_to_key(face_dir));
+              world.player_action(bot_idx, Key::Bomb);
+              return;
+            }
+          } else if world.players[bot_idx].inventory[Equipment::Grenade] > 0 {
             world.players[bot_idx].selection = Equipment::Grenade;
             if let Some(face_dir) = Self::dir_towards(cursor, target_cursor) {
               world.player_action(bot_idx, dir_to_key(face_dir));

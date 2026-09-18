@@ -553,9 +553,9 @@ pub enum MapValue {
   Dynamite1 = 0x59,
   /// Same as TempMarker2, but used for napalm
   NapalmTempMarker2 = 0x5A,
-  Map5B = 0x5B,
-  Map5C = 0x5C,
-  Map5D = 0x5D,
+  BlackHoleBomb = 0x5B,
+  BlackHoleActive = 0x5C,
+  FreezeBomb = 0x5D,
   Map5E = 0x5E,
   Map5F = 0x5F,
   Map60 = 0x60,
@@ -673,10 +673,10 @@ pub enum MapValue {
   MapCD = 0xCD,
   MapCE = 0xCE,
   MapCF = 0xCF,
-  MapD0 = 0xD0,
-  MapD1 = 0xD1,
-  MapD2 = 0xD2,
-  MapD3 = 0xD3,
+  DrillDroneRight = 0xD0,
+  DrillDroneLeft = 0xD1,
+  DrillDroneUp = 0xD2,
+  DrillDroneDown = 0xD3,
   MapD4 = 0xD4,
   MapD5 = 0xD5,
   MapD6 = 0xD6,
@@ -852,6 +852,26 @@ impl MapValue {
         | MapValue::GrenadeFlyingUp
         | MapValue::MetalWallPlaced
         | MapValue::JumpingBomb
+        | MapValue::BlackHoleBomb
+        | MapValue::BlackHoleActive
+        | MapValue::FreezeBomb
+        | MapValue::DrillDroneRight
+        | MapValue::DrillDroneLeft
+        | MapValue::DrillDroneUp
+        | MapValue::DrillDroneDown
+    )
+  }
+
+  pub fn is_custom_explodable(self) -> bool {
+    matches!(
+      self,
+      MapValue::BlackHoleBomb
+        | MapValue::BlackHoleActive
+        | MapValue::FreezeBomb
+        | MapValue::DrillDroneRight
+        | MapValue::DrillDroneLeft
+        | MapValue::DrillDroneUp
+        | MapValue::DrillDroneDown
     )
   }
 }

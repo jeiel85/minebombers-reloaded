@@ -113,6 +113,8 @@ pub struct ActorComponent {
   pub accumulated_cash: u32,
   /// Countdown of player activated acceleration bonus
   pub super_drill_count: u32,
+  /// Countdown of frozen state (cannot move while > 0)
+  pub frozen_ticks: u16,
 }
 
 impl Default for ActorComponent {
@@ -130,6 +132,7 @@ impl Default for ActorComponent {
       is_active: false,
       accumulated_cash: 0,
       super_drill_count: 0,
+      frozen_ticks: 0,
     }
   }
 }

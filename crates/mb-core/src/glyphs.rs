@@ -64,10 +64,18 @@ impl Glyph {
         (x, y, x + 29, y + 29)
       }
       Glyph::Map(value) => {
-        let (x, y) = if value >= MapValue::Passage && value <= MapValue::Item182 {
-          MAP_GLYPHS[(value as usize) - (MapValue::Passage as usize)]
-        } else {
-          UNMAPPED
+        let (x, y) = match value {
+          MapValue::BlackHoleBomb => (140, 10),
+          MapValue::BlackHoleActive => (20, 30),
+          MapValue::FreezeBomb => (150, 10),
+          MapValue::DrillDroneRight => (160, 20),
+          MapValue::DrillDroneLeft => (170, 20),
+          MapValue::DrillDroneUp => (180, 20),
+          MapValue::DrillDroneDown => (190, 20),
+          value if value >= MapValue::Passage && value <= MapValue::Item182 => {
+            MAP_GLYPHS[(value as usize) - (MapValue::Passage as usize)]
+          }
+          _ => UNMAPPED,
         };
         (x, y, x + 9, y + 9)
       }
@@ -158,6 +166,9 @@ pub const EQUIPMENT_GLYPHS: [(i16, i16); Equipment::TOTAL] = [
   (105, 40),
   (60, 40),
   (0, 90),
+  (186, 110),
+  (156, 110),
+  (126, 110),
 ];
 
 pub const UNMAPPED: (i16, i16) = (50, 70);

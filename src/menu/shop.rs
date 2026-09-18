@@ -32,6 +32,26 @@ struct PlayerState<'a> {
   /// `None` means level exit
   selection: Option<Equipment>,
   ready: bool,
+  page: usize,
+}
+
+impl PlayerState<'_> {
+  fn current_slot(&self) -> usize {
+    match (self.page, self.selection) {
+      (0, Some(eq)) => (eq as usize).min(26),
+      (0, None) => 27,
+      (1, Some(eq)) => {
+        let idx = eq as usize;
+        if (27..=29).contains(&idx) {
+          idx - 27
+        } else {
+          0
+        }
+      }
+      (1, None) => 27,
+      _ => 27,
+    }
+  }
 }
 
 struct State<'a> {
@@ -92,11 +112,13 @@ impl Application<'_> {
         entity,
         selection: Some(Equipment::SmallBomb),
         ready: false,
+        page: 0,
       }),
       right: PlayerState {
         entity: right,
         selection: Some(Equipment::SmallBomb),
         ready: false,
+        page: 0,
       },
     };
 
@@ -189,14 +211,40 @@ impl Application<'_> {
     prices: &Prices,
   ) -> Result<(), anyhow::Error> {
     let last_selection = state.selection;
+    let last_slot = state.current_slot();
 
     // Left the store already
     if state.ready {
       return Ok(());
     }
 
+    // Toggle shop page (Tab, or Q/E for left player, PageDown/PageUp for right player)
+    let toggle_page = if left {
+      scan == Scancode::Tab || scan == Scancode::Q || scan == Scancode::E
+    } else {
+      scan == Scancode::Tab || scan == Scancode::PageDown || scan == Scancode::PageUp
+    };
+
+    if toggle_page {
+      state.page = 1 - state.page;
+      if state.selection.is_some() {
+        if state.page == 1 {
+          state.selection = Some(Equipment::BlackHole);
+        } else {
+          state.selection = Some(Equipment::SmallBomb);
+        }
+      }
+      ctx.with_render_context(|canvas| {
+        let offsets = if left { (0, 0) } else { (420, 320) };
+        self.render_player_stats(canvas, offsets.0, *shared_cash, state)?;
+        self.render_all_items(canvas, offsets.1, state, prices)?;
+        Ok(())
+      })?;
+      ctx.present()?;
+      return Ok(());
+    }
+
     let cash = shared_cash.as_mut().unwrap_or(&mut state.entity.cash);
-    let offset = state.selection.map_or(Equipment::TOTAL as u8, |item| item as u8);
     if Some(scan) == state.entity.keys[Key::Bomb] {
       if let Some(selection) = state.selection {
         if *cash >= prices[selection] {
@@ -216,26 +264,86 @@ impl Application<'_> {
         }
       }
     } else if Some(scan) == state.entity.keys[Key::Right] {
-      state.selection = Equipment::try_from(offset + 1).ok();
+      if state.page == 0 {
+        let new_slot = (last_slot + 1).min(27);
+        state.selection = if new_slot < 27 {
+          Equipment::try_from(new_slot as u8).ok()
+        } else {
+          None
+        };
+      } else {
+        let new_slot = match last_slot {
+          0 => 1,
+          1 => 2,
+          _ => 27,
+        };
+        state.selection = if new_slot < 3 {
+          Equipment::try_from((27 + new_slot) as u8).ok()
+        } else {
+          None
+        };
+      }
     } else if Some(scan) == state.entity.keys[Key::Left] {
-      state.selection = Equipment::try_from(offset.max(1) - 1).ok();
+      if state.page == 0 {
+        let new_slot = last_slot.saturating_sub(1);
+        state.selection = if new_slot < 27 {
+          Equipment::try_from(new_slot as u8).ok()
+        } else {
+          None
+        };
+      } else {
+        let new_slot = match last_slot {
+          27 => 2,
+          2 => 1,
+          _ => 0,
+        };
+        state.selection = if new_slot < 3 {
+          Equipment::try_from((27 + new_slot) as u8).ok()
+        } else {
+          None
+        };
+      }
     } else if Some(scan) == state.entity.keys[Key::Down] {
-      state.selection = Equipment::try_from(offset + 4).ok();
+      if state.page == 0 {
+        let new_slot = (last_slot + 4).min(27);
+        state.selection = if new_slot < 27 {
+          Equipment::try_from(new_slot as u8).ok()
+        } else {
+          None
+        };
+      } else {
+        state.selection = None; // On Page 1, Down jumps straight to LEAVE
+      }
     } else if Some(scan) == state.entity.keys[Key::Up] {
-      state.selection = Equipment::try_from(offset.max(4) - 4).ok();
+      if state.page == 0 {
+        let new_slot = if last_slot >= 4 { last_slot - 4 } else { last_slot };
+        state.selection = if new_slot < 27 {
+          Equipment::try_from(new_slot as u8).ok()
+        } else {
+          None
+        };
+      } else {
+        let new_slot = if last_slot == 27 { 2 } else { last_slot };
+        state.selection = if new_slot < 3 {
+          Equipment::try_from((27 + new_slot) as u8).ok()
+        } else {
+          None
+        };
+      }
     } else {
       // Nothing to re-render, skip re-rendering
       return Ok(());
     }
 
+    let new_slot = state.current_slot();
     ctx.with_render_context(|canvas| {
       let offsets = if left { (0, 0) } else { (420, 320) };
       self.render_player_stats(canvas, offsets.0, *shared_cash, state)?;
 
-      if last_selection != state.selection {
-        self.render_shop_slot(canvas, offsets.1, last_selection, state, prices)?;
+      if last_slot != new_slot {
+        self.render_shop_slot(canvas, offsets.1, last_slot, last_selection, state, prices)?;
       }
-      self.render_shop_slot(canvas, offsets.1, state.selection, state, prices)?;
+      self.render_shop_slot(canvas, offsets.1, new_slot, state.selection, state, prices)?;
       Ok(())
     })?;
     ctx.present()?;
@@ -300,33 +408,80 @@ impl Application<'_> {
     state: &PlayerState,
     prices: &Prices,
   ) -> Result<(), anyhow::Error> {
-    for slot in Equipment::all_equipment() {
-      self.render_shop_slot(canvas, offset_x, Some(slot), state, prices)?;
+    if state.page == 0 {
+      for slot in 0..=26 {
+        let eq = Equipment::try_from(slot as u8).ok();
+        self.render_shop_slot(canvas, offset_x, slot, eq, state, prices)?;
+      }
+    } else {
+      for slot in 0..3 {
+        let eq = Equipment::try_from((27 + slot) as u8).ok();
+        self.render_shop_slot(canvas, offset_x, slot, eq, state, prices)?;
+      }
+      for slot in 3..27 {
+        self.render_empty_slot(canvas, offset_x, slot)?;
+      }
     }
-    self.render_shop_slot(canvas, offset_x, None, state, prices)?;
+    self.render_shop_slot(canvas, offset_x, 27, None, state, prices)?;
+    self.render_page_banner(canvas, offset_x, state.page)?;
     Ok(())
   }
 
-  /// `selected` is if slot is currently selected
+  fn render_empty_slot(
+    &self,
+    canvas: &mut WindowCanvas,
+    offset_x: i32,
+    slot: usize,
+  ) -> Result<(), anyhow::Error> {
+    let col = (slot % 4) as i32;
+    let row = (slot / 4) as i32;
+    let pos_x = col * 64 + 32 + offset_x;
+    let pos_y = row * 48 + 96;
+    self.glyphs.render(canvas, pos_x, pos_y, Glyph::ShopSlot(false))?;
+    Ok(())
+  }
+
+  fn render_page_banner(
+    &self,
+    canvas: &mut WindowCanvas,
+    offset_x: i32,
+    page: usize,
+  ) -> Result<(), anyhow::Error> {
+    let palette = &self.shop.palette;
+    canvas.set_draw_color(Color::BLACK);
+    canvas
+      .fill_rect(Rect::new(80 + offset_x, 442, 160, 14))
+      .map_err(SdlError)?;
+    let banner_text = if page == 0 {
+      "PAGE 1/2 [TAB]"
+    } else {
+      "PAGE 2/2 [TAB]"
+    };
+    self.font.render(canvas, 96 + offset_x, 444, palette[1], banner_text)?;
+    Ok(())
+  }
+
+  /// `slot_index` is 0..=27 on the current page
   fn render_shop_slot(
     &self,
     canvas: &mut WindowCanvas,
     offset_x: i32,
+    slot_index: usize,
     slot: Option<Equipment>,
     state: &PlayerState,
     prices: &Prices,
   ) -> Result<(), anyhow::Error> {
     let palette = &self.shop.palette;
 
-    let item_index = slot.map(|item| item as usize).unwrap_or(Equipment::TOTAL) as i32;
-    let col = item_index % 4;
-    let row = item_index / 4;
+    let col = (slot_index % 4) as i32;
+    let row = (slot_index / 4) as i32;
 
     let pos_x = col * 64 + 32 + offset_x;
     let pos_y = row * 48 + 96;
+    let is_selected = state.selection == slot;
     self
       .glyphs
-      .render(canvas, pos_x, pos_y, Glyph::ShopSlot(state.selection == slot))?;
+      .render(canvas, pos_x, pos_y, Glyph::ShopSlot(is_selected))?;
 
     // Render item count
     let item_count = slot.map(|item| state.entity.inventory[item] as i32).unwrap_or(0);
@@ -421,6 +576,19 @@ fn auto_buy_for_bot(player: &mut PlayerComponent, prices: &Prices) {
     while player.cash >= prices[Equipment::Mine] && player.inventory[Equipment::Mine] < 4 {
       player.cash -= prices[Equipment::Mine];
       player.inventory[Equipment::Mine] += 1;
+    }
+
+    if player.cash >= prices[Equipment::FreezeBomb] + 300 {
+      player.cash -= prices[Equipment::FreezeBomb];
+      player.inventory[Equipment::FreezeBomb] += 1;
+    }
+    if player.cash >= prices[Equipment::DrillDrone] + 300 {
+      player.cash -= prices[Equipment::DrillDrone];
+      player.inventory[Equipment::DrillDrone] += 1;
+    }
+    if player.cash >= prices[Equipment::BlackHole] + 500 {
+      player.cash -= prices[Equipment::BlackHole];
+      player.inventory[Equipment::BlackHole] += 1;
     }
   }
 
