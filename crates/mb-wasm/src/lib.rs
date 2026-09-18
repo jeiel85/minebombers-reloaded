@@ -304,6 +304,9 @@ pub struct WebGame {
   pub round_start_tick: usize,
   pub max_round_ticks: usize,
   pub choose_hold_ticks: [u32; 4],
+  pub survival_best_wave: u16,
+  pub survival_best_score: u32,
+  pub last_survival_result: Option<(u16, u32)>,
 }
 
 static mut GAME: Option<WebGame> = None;
@@ -465,6 +468,12 @@ impl WebGame {
         self.draw_text(reg, pos + 1, 437, p[8].r, p[8].g, p[8].b);
         self.draw_text(reg, pos, 437, p[0].r, p[0].g, p[0].b);
 
+        if self.options.win == WinCondition::Survival {
+          self.draw_text("★ MODE: SURVIVAL HORDE CO-OP ★", 175, 415, 40, 255, 120);
+        } else if self.options.win == WinCondition::GoldRush {
+          self.draw_text("★ MODE: GOLD RUSH 5K MINING ★", 185, 415, 255, 215, 0);
+        }
+
         self.draw_text("UP/DOWN: MOVE   ENTER: SELECT", 180, 460, p[8].r, p[8].g, p[8].b);
 
         let shovel_y = 136 + 48 * (self.selected_menu as i32);
@@ -532,11 +541,12 @@ impl WebGame {
             self.blit_glyph(MENU_ITEM_X + 185, MENU_ITEM_Y + 5 + opt_y, Glyph::RadioButton(enabled));
             self.blit_glyph(MENU_ITEM_X + 251, MENU_ITEM_Y + 5 + opt_y, Glyph::RadioButton(!enabled));
           } else if i == 10 {
-            // Winner mode: WINS, CASH, GOLD RUSH
+            // Winner mode: WINS, CASH, GOLD RUSH, SURVIVAL
             let text = match self.options.win {
               WinCondition::ByWins => "MOST WINS",
               WinCondition::ByMoney => "MOST CASH",
               WinCondition::GoldRush => "GOLD RUSH",
+              WinCondition::Survival => "SURVIVAL",
             };
             self.fill_rect(MENU_ITEM_X + 175, MENU_ITEM_Y + 4 + opt_y, 110, 14, 0, 0, 0);
             self.draw_text(text, MENU_ITEM_X + 175, MENU_ITEM_Y + 6 + opt_y, p[5].r, p[5].g, p[5].b);
@@ -548,6 +558,9 @@ impl WebGame {
       AppState::Info => {
         Self::copy_rgb_to_fb(&self.info_img.image);
         let p = &self.info_img.palette;
+        let surv_rec = format!("★ SURVIVAL RECORD: WAVE {} | SCORE ${} ★", self.survival_best_wave, self.survival_best_score);
+        self.fill_rect(120, 425, 400, 16, 0, 0, 0);
+        self.draw_text(&surv_rec, 130, 428, p[5].r, p[5].g, p[5].b);
         self.draw_text("PRESS ANY KEY OR ESCAPE TO RETURN", 180, 455, p[1].r, p[1].g, p[1].b);
       }
       AppState::Shop => {
@@ -555,7 +568,11 @@ impl WebGame {
         let p = &self.shop_img.palette;
 
         // Remaining rounds at (306, 120)
-        let rem_str = format!("{}", self.total_rounds.saturating_sub(self.round) + 1);
+        let rem_str = if self.options.win == WinCondition::Survival {
+          format!("W{}", self.round)
+        } else {
+          format!("{}", self.total_rounds.saturating_sub(self.round) + 1)
+        };
         self.draw_text(&rem_str, 306, 120, p[1].r, p[1].g, p[1].b);
 
         // Minimap preview at (288, 51, 64, 45)
@@ -662,12 +679,24 @@ impl WebGame {
         self.render_full();
       }
       AppState::RoundEnd => {
-        self.fill_rect(140, 200, 360, 80, 20, 20, 30);
-        let cash = self.players[0].cash;
-        self.draw_text("ROUND FINISHED!", 240, 215, 255, 220, 50);
-        let c_str = format!("CURRENT BANK: ${}", cash);
-        self.draw_text(&c_str, 220, 235, 100, 240, 120);
-        self.draw_text("PRESS ANY KEY TO VISIT SHOP", 200, 255, 220, 220, 220);
+        if let Some((wave, score)) = self.last_survival_result {
+          self.fill_rect(120, 180, 400, 120, 25, 15, 25);
+          self.draw_text("X SURVIVAL OVER - DEFEAT X", 185, 195, 255, 60, 50);
+          let w_str = format!("WAVES SURVIVED: {}", wave);
+          self.draw_text(&w_str, 220, 220, 255, 220, 50);
+          let s_str = format!("FINAL SCORE: ${}", score);
+          self.draw_text(&s_str, 230, 240, 100, 240, 120);
+          let best_str = format!("BEST RECORD: WAVE {} (${})", self.survival_best_wave, self.survival_best_score);
+          self.draw_text(&best_str, 180, 260, 200, 200, 200);
+          self.draw_text("PRESS ENTER / ESC TO MAIN MENU", 170, 280, 180, 180, 180);
+        } else {
+          self.fill_rect(140, 200, 360, 80, 20, 20, 30);
+          let cash = self.players[0].cash;
+          self.draw_text("ROUND FINISHED!", 240, 215, 255, 220, 50);
+          let c_str = format!("CURRENT BANK: ${}", cash);
+          self.draw_text(&c_str, 220, 235, 100, 240, 120);
+          self.draw_text("PRESS ANY KEY TO VISIT SHOP", 200, 255, 220, 220, 220);
+        }
       }
     }
   }
@@ -831,9 +860,10 @@ impl WebGame {
             GameOption::Selling => { self.options.selling = !self.options.selling; }
             GameOption::Winner => {
               self.options.win = match self.options.win {
-                WinCondition::ByMoney => WinCondition::GoldRush,
+                WinCondition::ByMoney => WinCondition::Survival,
                 WinCondition::ByWins => WinCondition::ByMoney,
                 WinCondition::GoldRush => WinCondition::ByWins,
+                WinCondition::Survival => WinCondition::GoldRush,
               };
             }
             _ => {}
@@ -872,7 +902,8 @@ impl WebGame {
               self.options.win = match self.options.win {
                 WinCondition::ByMoney => WinCondition::ByWins,
                 WinCondition::ByWins => WinCondition::GoldRush,
-                WinCondition::GoldRush => WinCondition::ByMoney,
+                WinCondition::GoldRush => WinCondition::Survival,
+                WinCondition::Survival => WinCondition::ByMoney,
               };
             }
             _ => {}
@@ -902,7 +933,8 @@ impl WebGame {
             self.options.win = match self.options.win {
               WinCondition::ByMoney => WinCondition::ByWins,
               WinCondition::ByWins => WinCondition::GoldRush,
-              WinCondition::GoldRush => WinCondition::ByMoney,
+              WinCondition::GoldRush => WinCondition::Survival,
+              WinCondition::Survival => WinCondition::ByMoney,
             };
             self.render_current_state();
           }
@@ -1058,9 +1090,13 @@ impl WebGame {
         }
       }
       AppState::RoundEnd => {
-        // Transition back to Shop for next round
-        self.state = AppState::Shop;
-        self.shop_p1.ready = false;
+        if self.last_survival_result.is_some() {
+          self.last_survival_result = None;
+          self.state = AppState::MainMenu;
+        } else {
+          self.state = AppState::Shop;
+          self.shop_p1.ready = false;
+        }
         self.render_current_state();
       }
       AppState::Battle => {
@@ -1083,6 +1119,7 @@ impl WebGame {
     };
 
     let is_gold_rush = self.options.win == WinCondition::GoldRush;
+    let is_survival = self.options.win == WinCondition::Survival;
     if is_gold_rush {
       for p in self.players.iter_mut() {
         if p.inventory[Equipment::SmallPickaxe] == 0 {
@@ -1092,7 +1129,8 @@ impl WebGame {
     }
 
     let world = World::create(level, players_ref, self.options.darkness, self.options.bomb_damage, false)
-      .with_gold_rush_mode(is_gold_rush);
+      .with_gold_rush_mode(is_gold_rush)
+      .with_survival_mode(is_survival, self.round as u16);
     self.level = world.maps.level.clone();
     self.world = Some(world);
 
@@ -1229,6 +1267,15 @@ impl WebGame {
       } else if self.options.win == WinCondition::GoldRush {
         self.fill_rect(2, 473, 636 - bar_w, 5, 240, 200, 40);
         self.draw_text("★ GOLD RUSH: FIRST TO $5,000 WINS ★", 185, 464, 255, 215, 0);
+      } else if self.options.win == WinCondition::Survival {
+        let wave = world.current_wave;
+        let killed = world.wave_killed;
+        let quota = world.wave_quota;
+        let p_ratio = if quota > 0 { (killed as u32 * 636) / quota as u32 } else { 0 };
+        self.fill_rect(2, 473, p_ratio.min(636), 5, 40, 220, 100);
+        let surv_str = format!("★ WAVE {} ★  KILLS: {}/{}", wave, killed, quota);
+        let sx = 320 - (surv_str.len() as i32 * 8) / 2;
+        self.draw_text(&surv_str, sx, 464, 50, 255, 120);
       } else {
         self.fill_rect(2, 473, 636 - bar_w, 5, 230, 180, 40);
       }
@@ -1332,6 +1379,9 @@ pub extern "C" fn mb_init(
     round_start_tick: 0,
     max_round_ticks: 60 * 180,
     choose_hold_ticks: [0; 4],
+    survival_best_wave: 1,
+    survival_best_score: 500,
+    last_survival_result: None,
   };
 
   game.render_current_state();
@@ -1595,16 +1645,43 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
     }
 
     if is_end_round {
-      if let Some(ref world) = game.world {
-        for idx in 0..game.players.len() {
-          if idx < world.actors.len() {
-            game.players[idx].cash += world.actors[idx].accumulated_cash;
-          }
+      let is_survival = game.options.win == WinCondition::Survival;
+      let all_players_dead = if let Some(ref world) = game.world {
+        world.alive_players() == 0
+      } else {
+        false
+      };
+
+      if is_survival && all_players_dead {
+        if let Some(ref mut world) = game.world {
+          world.end_of_round();
         }
+        let survived_wave = game.round.saturating_sub(1);
+        let score = game.players[0].cash;
+        if survived_wave > game.survival_best_wave {
+          game.survival_best_wave = survived_wave;
+        }
+        if score > game.survival_best_score {
+          game.survival_best_score = score;
+        }
+        game.last_survival_result = Some((survived_wave, score));
+        game.state = AppState::RoundEnd;
+        game.render_current_state();
+        return 3;
+      }
+
+      if let Some(ref mut world) = game.world {
+        world.end_of_round();
       }
 
       game.round += 1;
-      if game.round <= game.total_rounds {
+      let has_next_round = if is_survival {
+        true
+      } else {
+        game.round <= game.total_rounds
+      };
+
+      if has_next_round {
         let mut rng = rand::thread_rng();
         let biome = CaveBiome::from_u8(rng.gen_range(0..4));
         let seed = rng.gen::<u64>();

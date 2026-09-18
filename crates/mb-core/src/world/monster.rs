@@ -75,7 +75,7 @@ impl World<'_> {
 
   fn clone_can_chase(&self, monster_kind: ActorKind, target_player: Player) -> bool {
     match monster_kind {
-      ActorKind::Clone(clone_player) if clone_player != target_player && !self.campaign_mode => true,
+      ActorKind::Clone(clone_player) if clone_player != target_player && !self.campaign_mode && !self.survival_mode => true,
       ActorKind::Clone(_) => false,
       _ => true,
     }
@@ -89,8 +89,8 @@ impl World<'_> {
       let player = &mut self.actors[player_idx];
       if player.pos.cursor() == cursor {
         match (player.kind, monster_kind) {
-          (ActorKind::Player(p1), ActorKind::Clone(p2)) if p1 == p2 || self.campaign_mode => {
-            // Nothing! This is our clone! Also, no damage in campaign mode.
+          (ActorKind::Player(p1), ActorKind::Clone(p2)) if p1 == p2 || self.campaign_mode || self.survival_mode => {
+            // Nothing! This is our clone! Also, no damage in campaign or survival mode.
           }
           _ => {
             player.health = player.health.saturating_sub(monster_kind.damage());

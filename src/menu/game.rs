@@ -298,7 +298,11 @@ impl Application<'_> {
     if let Some(cash) = shared_cash {
       players[0].cash = cash;
     }
-    let mut world = World::create(level, players, darkness, settings.options.bomb_damage, campaign_mode);
+    let is_gold_rush = settings.options.win == WinCondition::GoldRush;
+    let is_survival = settings.options.win == WinCondition::Survival;
+    let mut world = World::create(level, players, darkness, settings.options.bomb_damage, campaign_mode)
+      .with_gold_rush_mode(is_gold_rush)
+      .with_survival_mode(is_survival, (round + 1) as u16);
 
     sdl2::mixer::Music::halt();
     // FIXME: start playing random music from the level music; also, don't play shop music?
@@ -985,7 +989,7 @@ pub enum PlayerWin {
 fn compute_score(players: &[PlayerComponent], player: usize, win: WinCondition) -> PlayerWin {
   let scorefn = |player: &PlayerComponent| match win {
     WinCondition::ByWins => player.rounds_win,
-    WinCondition::ByMoney | WinCondition::GoldRush => player.cash,
+    WinCondition::ByMoney | WinCondition::GoldRush | WinCondition::Survival => player.cash,
   };
   let score = scorefn(&players[player]);
   let bested_by = players.iter().filter(|player| scorefn(player) > score).count();
