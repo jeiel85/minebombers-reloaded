@@ -58,6 +58,16 @@ pub struct World<'p> {
   pub sudden_death_warning: bool,
   /// Gold rush mining competition mode active
   pub gold_rush_mode: bool,
+  /// Survival Horde co-op mode active
+  pub survival_mode: bool,
+  /// Current wave number (1-indexed)
+  pub current_wave: u16,
+  /// Total monsters to eliminate in this wave
+  pub wave_quota: u16,
+  /// Number of monsters eliminated so far in this wave
+  pub wave_killed: u16,
+  /// Timer ticks until next reinforcement spawn check
+  pub wave_spawn_timer: u16,
 }
 
 /// Request to play sound effect at a given frequency and location
@@ -129,6 +139,11 @@ impl<'p> World<'p> {
       sudden_death_ring: 0,
       sudden_death_warning: false,
       gold_rush_mode: false,
+      survival_mode: false,
+      current_wave: 1,
+      wave_quota: 0,
+      wave_killed: 0,
+      wave_spawn_timer: 0,
     }
   }
 
@@ -141,6 +156,137 @@ impl<'p> World<'p> {
       }
     }
     self
+  }
+
+  /// Enable Survival Horde Co-op mode with wave scaling and dynamic spawners
+  pub fn with_survival_mode(mut self, enabled: bool, wave: u16) -> Self {
+    self.survival_mode = enabled;
+    self.current_wave = wave.max(1);
+    if enabled {
+      // Wave quota: Base 8 + wave * 4
+      self.wave_quota = 8 + self.current_wave * 4;
+      self.wave_killed = 0;
+      self.wave_spawn_timer = 180;
+
+      // Scale existing monsters on the map
+      let hp_multiplier = 1.0 + 0.15 * (self.current_wave.saturating_sub(1) as f32);
+      let drill_bonus = self.current_wave / 2;
+      for monster in self.actors[self.players.len()..].iter_mut() {
+        let base_hp = monster.kind.initial_health() as f32;
+        monster.max_health = (base_hp * hp_multiplier).max(5.0) as u16;
+        monster.health = monster.max_health;
+        monster.drilling += drill_bonus;
+        monster.is_active = true;
+      }
+
+      // Ensure we have an initial wave horde (min 6 + wave * 2, capped by wave_quota)
+      let target_initial = (6 + self.current_wave * 2).min(self.wave_quota) as usize;
+      let existing_monsters = self.actors.len().saturating_sub(self.players.len());
+      if existing_monsters < target_initial {
+        let to_spawn = target_initial - existing_monsters;
+        self.spawn_horde_monsters(to_spawn);
+      }
+    }
+    self
+  }
+
+  /// Spawn specified number of horde monsters at safe locations
+  pub fn spawn_horde_monsters(&mut self, count: usize) {
+    if count == 0 {
+      return;
+    }
+    use rand::prelude::*;
+    let mut rng = rand::thread_rng();
+
+    // Find suitable spawn positions (passable or soft terrain, away from all living players)
+    let player_cursors: Vec<Cursor> = self.actors[0..self.players.len()]
+      .iter()
+      .filter(|p| !p.is_dead)
+      .map(|p| p.pos.cursor())
+      .collect();
+
+    let mut candidates = Vec::new();
+    for r in 2..(crate::world::map::MAP_ROWS - 2) {
+      for c in 2..(crate::world::map::MAP_COLS - 2) {
+        let cur = Cursor::new(r, c);
+        let val = self.maps.level[cur];
+        if val.is_passable() || val.is_sand() || val == MapValue::LightGravel {
+          let far_from_players = player_cursors.iter().all(|&pc| {
+            let dr = (pc.row as i32 - r as i32).abs();
+            let dc = (pc.col as i32 - c as i32).abs();
+            dr + dc >= 8
+          });
+          if far_from_players {
+            candidates.push(cur);
+          }
+        }
+      }
+    }
+
+    if candidates.is_empty() {
+      for cur in Cursor::all() {
+        if self.maps.level[cur].is_passable() {
+          candidates.push(cur);
+        }
+      }
+    }
+
+    if candidates.is_empty() {
+      return;
+    }
+
+    candidates.shuffle(&mut rng);
+
+    let wave = self.current_wave;
+    let hp_multiplier = 1.0 + 0.15 * (wave.saturating_sub(1) as f32);
+    let drill_bonus = wave / 2;
+
+    for i in 0..count {
+      let cur = candidates[i % candidates.len()];
+      let roll = rng.gen_range(0..100);
+      let kind = if wave == 1 {
+        if roll < 60 { ActorKind::Slime } else { ActorKind::Furry }
+      } else if wave == 2 {
+        if roll < 35 { ActorKind::Slime }
+        else if roll < 70 { ActorKind::Furry }
+        else { ActorKind::Grenadier }
+      } else if wave == 3 {
+        if roll < 25 { ActorKind::Slime }
+        else if roll < 55 { ActorKind::Furry }
+        else if roll < 80 { ActorKind::Grenadier }
+        else { ActorKind::Alien }
+      } else {
+        if roll < 15 { ActorKind::Slime }
+        else if roll < 40 { ActorKind::Furry }
+        else if roll < 70 { ActorKind::Grenadier }
+        else { ActorKind::Alien }
+      };
+
+      let base_hp = kind.initial_health() as f32;
+      let max_health = (base_hp * hp_multiplier).max(5.0) as u16;
+      let drilling = kind.drilling_power() + drill_bonus;
+
+      self.actors.push(ActorComponent {
+        kind,
+        facing: Direction::Down,
+        moving: true,
+        max_health,
+        health: max_health,
+        pos: cur.into(),
+        drilling,
+        animation: 0,
+        is_dead: false,
+        is_active: true,
+        accumulated_cash: 0,
+        super_drill_count: 0,
+        frozen_ticks: 0,
+      });
+
+      if !self.maps.level[cur].is_passable() {
+        self.maps.level[cur] = MapValue::Passage;
+        self.update.update_cell(cur);
+      }
+    }
   }
 
   /// Get player component if given entity is a player
@@ -279,7 +425,22 @@ impl<'p> World<'p> {
     }
 
     if self.round_counter % 5 == 0 {
-      if self.campaign_mode {
+      if self.survival_mode {
+        if self.alive_players() == 0 {
+          // All players dead in survival mode -> Round Defeat
+          self.end_round_counter += 3;
+        } else {
+          // Check if wave is cleared
+          let active_monsters = self.actors[self.players.len()..]
+            .iter()
+            .filter(|m| !m.is_dead)
+            .count();
+          if self.wave_killed >= self.wave_quota && active_monsters == 0 {
+            // Wave cleared!
+            self.end_round_counter += 105;
+          }
+        }
+      } else if self.campaign_mode {
         if self.alive_players() == 0 {
           if self.end_round_counter == 0 {
             self.players[0].lives -= 1;
@@ -335,7 +496,29 @@ impl<'p> World<'p> {
 
     self.animate_monsters();
 
-    if self.round_counter % 20 == 0 && !self.campaign_mode && self.gold_remaining() == 0 {
+    // In Survival Mode: Check reinforcement spawns
+    if self.survival_mode && self.alive_players() > 0 && self.round_counter % 30 == 0 {
+      let active_monsters = self.actors[self.players.len()..]
+        .iter()
+        .filter(|m| !m.is_dead)
+        .count() as u16;
+      let spawned_so_far = self.wave_killed + active_monsters;
+      if spawned_so_far < self.wave_quota {
+        if self.wave_spawn_timer == 0 || active_monsters <= 2 {
+          let remaining = self.wave_quota - spawned_so_far;
+          let batch = remaining.min(3);
+          self.spawn_horde_monsters(batch as usize);
+          self.wave_spawn_timer = 240;
+          if let Some(p) = self.actors.get(0) {
+            self.effects.play(SoundEffect::Karjaisu, 10500, p.pos.cursor());
+          }
+        } else {
+          self.wave_spawn_timer = self.wave_spawn_timer.saturating_sub(30);
+        }
+      }
+    }
+
+    if self.round_counter % 20 == 0 && !self.campaign_mode && !self.survival_mode && self.gold_remaining() == 0 {
       self.end_round_counter += 20;
     }
 
@@ -361,7 +544,27 @@ impl<'p> World<'p> {
       player.cash = (107 * player.cash + 50) / 100;
     }
 
-    if self.campaign_mode {
+    if self.survival_mode {
+      let wave_cleared = self.alive_players() > 0 && self.wave_killed >= self.wave_quota;
+      if wave_cleared {
+        let bonus = 200 + u32::from(self.current_wave) * 100;
+        for (idx, player) in self.players.iter_mut().enumerate() {
+          player.cash += bonus;
+          if idx < self.actors.len() {
+            player.cash += self.actors[idx].accumulated_cash;
+          }
+          let actor = &mut self.actors[idx];
+          actor.is_dead = false;
+          actor.health = actor.max_health;
+        }
+      } else {
+        for (idx, player) in self.players.iter_mut().enumerate() {
+          if idx < self.actors.len() {
+            player.cash += self.actors[idx].accumulated_cash;
+          }
+        }
+      }
+    } else if self.campaign_mode {
       // In single player, we never lose money, even if we die
       self.players[0].cash += self.actors[0].accumulated_cash;
     } else {
@@ -976,6 +1179,7 @@ impl<'p> World<'p> {
   /// Apply damage to all actors in the cell. Returns `true` if found live actor in that cell.
   fn apply_damage_in_cell(&mut self, cursor: Cursor, dmg: u16) -> bool {
     let mut found_alive = false;
+    let mut loot_to_drop = Vec::new();
     for idx in 0..self.actors.len() {
       let actor = &self.actors[idx];
       if actor.pos.cursor() != cursor {
@@ -985,6 +1189,7 @@ impl<'p> World<'p> {
       let effective_dmg = match actor.kind {
         // In single player, damage is always 100%
         ActorKind::Player(_) if self.campaign_mode => dmg,
+        ActorKind::Player(_) if self.survival_mode => dmg * u16::from(self.bomb_damage) / 200,
         ActorKind::Player(_) => dmg * u16::from(self.bomb_damage) / 100,
         _ => dmg,
       };
@@ -1007,11 +1212,24 @@ impl<'p> World<'p> {
         if !actor.is_dead {
           if idx < self.players.len() {
             self.players[idx].stats.deaths += 1;
+          } else if self.survival_mode {
+            let bounty = match actor.kind {
+              ActorKind::Slime => 15,
+              ActorKind::Furry => 25,
+              ActorKind::Grenadier => 45,
+              ActorKind::Alien => 100,
+              _ => 20,
+            };
+            loot_to_drop.push(bounty);
           }
           actor.is_dead = true;
           self.effects.play(actor.kind.death_sound_effect(), 11000, cursor);
         }
       }
+    }
+    for bounty in loot_to_drop {
+      self.wave_killed += 1;
+      self.drop_loot_around(cursor, bounty);
     }
     found_alive
   }
@@ -1674,6 +1892,80 @@ mod tests {
     let gr_drill = world_gr.actors[0].drilling;
 
     assert!(gr_drill > normal_drill, "Gold Rush mode should grant bonus drilling power");
+  }
+
+  #[test]
+  fn test_survival_mode_wave_scaling() {
+    let mut players = [PlayerComponent::default(), PlayerComponent::default()];
+    let level = LevelMap::empty();
+    let world_w1 = World::create(level.clone(), &mut players, false, 50, false).with_survival_mode(true, 1);
+    assert_eq!(world_w1.current_wave, 1);
+    assert_eq!(world_w1.wave_quota, 12); // 8 + 1*4
+    assert!(world_w1.actors.len() > 2, "Should spawn initial horde monsters");
+
+    let mut players3 = [PlayerComponent::default(), PlayerComponent::default()];
+    let world_w3 = World::create(level, &mut players3, false, 50, false).with_survival_mode(true, 3);
+    assert_eq!(world_w3.current_wave, 3);
+    assert_eq!(world_w3.wave_quota, 20); // 8 + 3*4
+    // Monster in wave 3 has higher HP than wave 1
+    let m1_hp = world_w1.actors[2].max_health;
+    let m3_hp = world_w3.actors[2].max_health;
+    assert!(m3_hp >= m1_hp, "Wave 3 monsters should have scaled health");
+  }
+
+  #[test]
+  fn test_survival_mode_coop_win_condition_and_revive() {
+    let mut players = [PlayerComponent::default(), PlayerComponent::default()];
+    let level = LevelMap::empty();
+    let mut world = World::create(level, &mut players, false, 50, false).with_survival_mode(true, 2);
+
+    // Kill player 1 (player 0 remains alive)
+    world.actors[1].health = 0;
+    world.check_dead_players();
+    assert!(world.actors[1].is_dead);
+
+    // In versus, 1 alive player triggers end_round_counter immediately.
+    // In survival mode, 1 alive player should NOT end round!
+    world.round_counter = 5; // Triggers % 5 == 0 check
+    world.tick();
+    assert!(world.end_round_counter < 100, "Round must not end prematurely while at least 1 player is alive");
+
+    // Clear all monsters and meet wave quota
+    for monster in world.actors[2..].iter_mut() {
+      monster.is_dead = true;
+    }
+    world.wave_killed = world.wave_quota;
+
+    // Next tick should trigger wave cleared victory!
+    world.round_counter = 10;
+    world.tick();
+    assert!(world.end_round_counter >= 105, "Meeting quota with monsters cleared must trigger victory");
+
+    // Call end_of_round: dead player 1 must be revived and bonus awarded!
+    world.end_of_round();
+    assert!(!world.actors[1].is_dead, "Fallen teammates should be revived on wave victory");
+    assert_eq!(world.actors[1].health, world.actors[1].max_health);
+    assert!(world.players[0].cash >= 400, "Wave bonus must be awarded to players");
+  }
+
+  #[test]
+  fn test_survival_mode_monster_kill_bounty() {
+    let mut players = [PlayerComponent::default(), PlayerComponent::default()];
+    let level = LevelMap::empty();
+    let mut world = World::create(level, &mut players, false, 50, false).with_survival_mode(true, 1);
+
+    let initial_killed = world.wave_killed;
+    let monster_idx = 2;
+    let cur = world.actors[monster_idx].pos.cursor();
+
+    // Kill monster via apply_damage_in_cell
+    world.apply_damage_in_cell(cur, 1000);
+    assert!(world.actors[monster_idx].is_dead);
+    assert_eq!(world.wave_killed, initial_killed + 1, "Monster death should increment wave_killed");
+
+    // Bounty loot dropped
+    let dropped_gold: u32 = Cursor::all().map(|c| world.maps.level[c].gold_value()).sum();
+    assert!(dropped_gold > 0, "Bounty loot should be dropped on monster death");
   }
 }
 

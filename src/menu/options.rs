@@ -94,9 +94,10 @@ impl GameOption {
       }
       GameOption::Winner => {
         options.win = match options.win {
-          WinCondition::ByMoney => WinCondition::GoldRush,
+          WinCondition::ByMoney => WinCondition::Survival,
           WinCondition::ByWins => WinCondition::ByMoney,
           WinCondition::GoldRush => WinCondition::ByWins,
+          WinCondition::Survival => WinCondition::GoldRush,
         };
       }
       _ => {}
@@ -145,7 +146,8 @@ impl GameOption {
         options.win = match options.win {
           WinCondition::ByMoney => WinCondition::ByWins,
           WinCondition::ByWins => WinCondition::GoldRush,
-          WinCondition::GoldRush => WinCondition::ByMoney,
+          WinCondition::GoldRush => WinCondition::Survival,
+          WinCondition::Survival => WinCondition::ByMoney,
         };
       }
       _ => {}

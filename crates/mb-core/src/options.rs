@@ -8,6 +8,7 @@ pub enum WinCondition {
   ByWins,
   ByMoney,
   GoldRush,
+  Survival,
 }
 
 #[derive(Debug)]
@@ -69,6 +70,7 @@ impl Options {
       win: match it.read_u8().unwrap() {
         1 => WinCondition::ByWins,
         2 => WinCondition::GoldRush,
+        3 => WinCondition::Survival,
         _ => WinCondition::ByMoney,
       },
       bomb_damage: it.read_u8().unwrap(),
@@ -129,6 +131,7 @@ impl Options {
     match self.win {
       WinCondition::ByWins => buf.write_u8(1).unwrap(),
       WinCondition::GoldRush => buf.write_u8(2).unwrap(),
+      WinCondition::Survival => buf.write_u8(3).unwrap(),
       WinCondition::ByMoney => buf.write_u8(0).unwrap(),
     };
     buf.write_u8(self.bomb_damage).unwrap();
