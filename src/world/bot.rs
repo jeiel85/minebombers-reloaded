@@ -8,7 +8,7 @@
 
 use crate::keys::Key;
 use crate::world::equipment::Equipment;
-use crate::world::map::{LevelMap, TimerMap};
+use crate::world::map::{LevelMap, MapValue, TimerMap};
 use crate::world::position::{Cursor, Direction};
 use crate::world::World;
 use rand::prelude::*;
@@ -89,6 +89,24 @@ impl BotController {
     let cursor = world.actors[bot_idx].pos.cursor();
     let difficulty = world.players[bot_idx].bot_difficulty;
     let mut rng = rand::thread_rng();
+
+    // 0. SUDDEN DEATH EVASION: Flee inwards toward map center if in or near hazard ring
+    if world.sudden_death_active && world.sudden_death_ring > 0 {
+      let ring = world.sudden_death_ring;
+      let in_hazard = world.is_in_danger_zone(cursor);
+      let near_hazard = cursor.row <= ring + 2
+        || cursor.row >= crate::world::map::MAP_ROWS - 1 - (ring + 2)
+        || cursor.col <= ring + 2
+        || cursor.col >= crate::world::map::MAP_COLS - 1 - (ring + 2);
+
+      if in_hazard || near_hazard {
+        let center = Cursor::new(crate::world::map::MAP_ROWS / 2, crate::world::map::MAP_COLS / 2);
+        if let Some(inward_dir) = Self::dir_towards_center(cursor, center, &world.maps.level) {
+          world.player_action(bot_idx, dir_to_key(inward_dir));
+          return;
+        }
+      }
+    }
 
     // 1. DANGER EVASION: Check for ticking bombs nearby
     let search_radius: i16 = match difficulty {
@@ -397,6 +415,21 @@ impl BotController {
     } else {
       None
     }
+  }
+
+  /// Get candidate direction towards center avoiding obstacles like metal wall or lava
+  fn dir_towards_center(cursor: Cursor, target: Cursor, level: &LevelMap) -> Option<Direction> {
+    let mut candidates = Vec::new();
+    if target.row < cursor.row { candidates.push(Direction::Up); }
+    if target.row > cursor.row { candidates.push(Direction::Down); }
+    if target.col < cursor.col { candidates.push(Direction::Left); }
+    if target.col > cursor.col { candidates.push(Direction::Right); }
+
+    candidates.into_iter().find(|&d| {
+      let next_cur = cursor.to(d);
+      let val = level[next_cur];
+      val != MapValue::MetalWall && val != MapValue::Napalm1 && val != MapValue::Napalm2
+    })
   }
 }
 
