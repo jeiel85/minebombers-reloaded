@@ -1,5 +1,5 @@
 use mb_core::glyphs::{AnimationPhase, Glyph};
-use mb_core::images::{decode_font, decode_spy, DecodedImage};
+use mb_core::images::{decode_font, decode_spy, Color, DecodedImage};
 use mb_core::keys::Key;
 use mb_core::options::Options;
 use mb_core::sound::SoundEffect;
@@ -9,7 +9,7 @@ use mb_core::world::map::{LevelMap, MapValue, MAP_COLS};
 use mb_core::world::player::PlayerComponent;
 use mb_core::world::position::Cursor;
 use mb_core::world::{Update, World};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 const SCREEN_WIDTH: usize = 640;
 const SCREEN_HEIGHT: usize = 480;
@@ -17,92 +17,182 @@ const SCREEN_HEIGHT: usize = 480;
 static SIKA_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/SIKA.SPY");
 static FONTTI_FON_BYTES: &[u8] = include_bytes!("../../../res/minebomb/FONTTI.FON");
 static TITLEBE_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/TITLEBE.SPY");
+static MAIN3_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/MAIN3.SPY");
+static SHOPPIC_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/SHOPPIC.SPY");
 
 static mut FRAMEBUFFER: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4] = [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4];
 
-#[no_mangle]
-pub extern "C" fn mb_render_title() -> u32 {
-  let title_img = match decode_spy(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32, TITLEBE_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
-  };
+// Key constants matching web frontend
+pub const KEY_UP: u32 = 1;
+pub const KEY_DOWN: u32 = 2;
+pub const KEY_LEFT: u32 = 3;
+pub const KEY_RIGHT: u32 = 4;
+pub const KEY_BOMB: u32 = 5;    // Space / Enter (Confirm, Buy in shop)
+pub const KEY_CHOOSE: u32 = 6;  // C / Shift (Sell in shop)
+pub const KEY_REMOTE: u32 = 7;  // X / Ctrl
+pub const KEY_TAB: u32 = 8;     // Tab / Q / E (Page toggle in shop)
+pub const KEY_ESC: u32 = 9;     // Escape
+pub const KEY_ANY: u32 = 10;
 
-  unsafe {
-    for (i, chunk) in title_img.image.chunks_exact(3).enumerate() {
-      if i < SCREEN_WIDTH * SCREEN_HEIGHT {
-        let d_idx = i * 4;
-        FRAMEBUFFER[d_idx] = chunk[0];
-        FRAMEBUFFER[d_idx + 1] = chunk[1];
-        FRAMEBUFFER[d_idx + 2] = chunk[2];
-        FRAMEBUFFER[d_idx + 3] = 255;
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppState {
+  Title = 0,
+  MainMenu = 1,
+  Shop = 2,
+  Battle = 3,
+  RoundEnd = 4,
+}
+
+#[derive(Clone, Copy)]
+pub struct Prices {
+  pub prices: [u32; Equipment::TOTAL],
+}
+
+impl Default for Prices {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl Prices {
+  pub fn new() -> Prices {
+    let mut prices = [0u32; Equipment::TOTAL];
+    for eq in Equipment::all_equipment() {
+      prices[eq as usize] = eq.base_price();
+    }
+    Prices { prices }
+  }
+}
+
+impl std::ops::Index<Equipment> for Prices {
+  type Output = u32;
+  fn index(&self, index: Equipment) -> &u32 {
+    &self.prices[index as usize]
+  }
+}
+
+#[derive(Clone, Copy)]
+pub struct PlayerShopState {
+  pub selection: Option<Equipment>,
+  pub ready: bool,
+  pub page: usize,
+}
+
+impl Default for PlayerShopState {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl PlayerShopState {
+  pub fn new() -> Self {
+    Self {
+      selection: Some(Equipment::SmallBomb),
+      ready: false,
+      page: 0,
+    }
+  }
+
+  pub fn current_slot(&self) -> usize {
+    match (self.page, self.selection) {
+      (0, Some(eq)) => (eq as usize).min(26),
+      (0, None) => 27,
+      (1, Some(eq)) => {
+        let idx = eq as usize;
+        if (27..=29).contains(&idx) {
+          idx - 27
+        } else {
+          0
+        }
       }
-    }
-  }
-
-  1
-}
-
-struct AudioEvent {
-  effect_id: i32,
-  frequency: i32,
-  pan: f32,
-}
-
-struct RumbleEvent {
-  player_idx: i32,
-  intensity: f32,
-  duration_ms: f32,
-}
-
-struct WebGame {
-  players: [PlayerComponent; 4],
-  level: LevelMap,
-  world: Option<World<'static>>,
-  sika: DecodedImage,
-  font: Vec<u8>,
-  audio_queue: Vec<AudioEvent>,
-  rumble_queue: Vec<RumbleEvent>,
-  round_start_tick: usize,
-  max_round_ticks: usize,
-}
-
-static mut GAME: Option<WebGame> = None;
-
-fn equip_bot(player: &mut PlayerComponent, diff: BotDifficulty) {
-  match diff {
-    BotDifficulty::Easy => {
-      player.inventory[Equipment::SmallBomb] = 15;
-      player.inventory[Equipment::BigBomb] = 5;
-      player.inventory[Equipment::Dynamite] = 3;
-      player.inventory[Equipment::SmallPickaxe] = 1;
-      player.selection = Equipment::SmallBomb;
-      player.cash = 300;
-    }
-    BotDifficulty::Medium => {
-      player.inventory[Equipment::SmallBomb] = 20;
-      player.inventory[Equipment::BigBomb] = 8;
-      player.inventory[Equipment::Dynamite] = 6;
-      player.inventory[Equipment::Mine] = 2;
-      player.inventory[Equipment::SmallPickaxe] = 1;
-      player.inventory[Equipment::FreezeBomb] = 1;
-      player.selection = Equipment::SmallBomb;
-      player.cash = 150;
-    }
-    BotDifficulty::Hard => {
-      player.inventory[Equipment::SmallBomb] = 25;
-      player.inventory[Equipment::BigBomb] = 10;
-      player.inventory[Equipment::Dynamite] = 8;
-      player.inventory[Equipment::Mine] = 4;
-      player.inventory[Equipment::SmallPickaxe] = 1;
-      player.inventory[Equipment::DrillDrone] = 1;
-      player.inventory[Equipment::Armor] = 1;
-      player.selection = Equipment::SmallBomb;
-      player.cash = 50;
+      (1, None) => 27,
+      _ => 27,
     }
   }
 }
 
-fn equip_starter_pack(player: &mut PlayerComponent) {
+pub struct AudioEvent {
+  pub effect_id: i32,
+  pub frequency: i32,
+  pub pan: f32,
+}
+
+pub struct RumbleEvent {
+  pub player_idx: i32,
+  pub intensity: f32,
+  pub duration_ms: f32,
+}
+
+fn auto_buy_for_bot(player: &mut PlayerComponent, prices: &Prices) {
+  let max_armor = match player.bot_difficulty {
+    BotDifficulty::Hard => 3,
+    BotDifficulty::Medium => 2,
+    BotDifficulty::Easy => 1,
+  };
+  while player.cash >= prices[Equipment::Armor] && player.inventory[Equipment::Armor] < max_armor {
+    player.cash -= prices[Equipment::Armor];
+    player.inventory[Equipment::Armor] += 1;
+  }
+
+  if player.inventory[Equipment::Drill] == 0 && player.cash >= prices[Equipment::Drill] {
+    player.cash -= prices[Equipment::Drill];
+    player.inventory[Equipment::Drill] += 1;
+  } else if player.inventory[Equipment::LargePickaxe] == 0 && player.cash >= prices[Equipment::LargePickaxe] {
+    player.cash -= prices[Equipment::LargePickaxe];
+    player.inventory[Equipment::LargePickaxe] += 1;
+  }
+
+  let max_bombs = match player.bot_difficulty {
+    BotDifficulty::Hard => 15,
+    BotDifficulty::Medium => 10,
+    BotDifficulty::Easy => 6,
+  };
+  while player.cash >= prices[Equipment::SmallBomb] && player.inventory[Equipment::SmallBomb] < max_bombs {
+    player.cash -= prices[Equipment::SmallBomb];
+    player.inventory[Equipment::SmallBomb] += 1;
+  }
+
+  if player.bot_difficulty != BotDifficulty::Easy {
+    let max_dynamite = if player.bot_difficulty == BotDifficulty::Hard { 8 } else { 5 };
+    while player.cash >= prices[Equipment::Dynamite] && player.inventory[Equipment::Dynamite] < max_dynamite {
+      player.cash -= prices[Equipment::Dynamite];
+      player.inventory[Equipment::Dynamite] += 1;
+    }
+    let max_grenades = if player.bot_difficulty == BotDifficulty::Hard { 6 } else { 4 };
+    while player.cash >= prices[Equipment::Grenade] && player.inventory[Equipment::Grenade] < max_grenades {
+      player.cash -= prices[Equipment::Grenade];
+      player.inventory[Equipment::Grenade] += 1;
+    }
+  }
+
+  if player.bot_difficulty == BotDifficulty::Hard {
+    while player.cash >= prices[Equipment::BigBomb] && player.inventory[Equipment::BigBomb] < 3 {
+      player.cash -= prices[Equipment::BigBomb];
+      player.inventory[Equipment::BigBomb] += 1;
+    }
+    while player.cash >= prices[Equipment::Mine] && player.inventory[Equipment::Mine] < 4 {
+      player.cash -= prices[Equipment::Mine];
+      player.inventory[Equipment::Mine] += 1;
+    }
+    if player.cash >= prices[Equipment::FreezeBomb] + 300 {
+      player.cash -= prices[Equipment::FreezeBomb];
+      player.inventory[Equipment::FreezeBomb] += 1;
+    }
+    if player.cash >= prices[Equipment::DrillDrone] + 300 {
+      player.cash -= prices[Equipment::DrillDrone];
+      player.inventory[Equipment::DrillDrone] += 1;
+    }
+    if player.cash >= prices[Equipment::BlackHole] + 500 {
+      player.cash -= prices[Equipment::BlackHole];
+      player.inventory[Equipment::BlackHole] += 1;
+    }
+  }
+
+  player.selection = Equipment::SmallBomb;
+}
+
+pub fn equip_starter_pack(player: &mut PlayerComponent) {
   player.inventory[Equipment::SmallBomb] = 15;
   player.inventory[Equipment::BigBomb] = 5;
   player.inventory[Equipment::Dynamite] = 5;
@@ -113,76 +203,625 @@ fn equip_starter_pack(player: &mut PlayerComponent) {
   player.cash = 90;
 }
 
-#[no_mangle]
-pub extern "C" fn mb_init(
-  _level_idx: u32,
-  diff1: u32,
-  diff2: u32,
-  diff3: u32,
-  diff4: u32,
-) -> u32 {
-  let sika = match decode_spy(640, 480, SIKA_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
-  };
-  let font = match decode_font(FONTTI_FON_BYTES) {
-    Ok(f) => f,
-    Err(_) => return 0,
-  };
+fn preview_pixel(value: MapValue) -> usize {
+  if value.is_stone_like() || value == MapValue::Boulder || value == MapValue::Barrel {
+    9
+  } else if value == MapValue::Diamond || (value >= MapValue::GoldShield && value <= MapValue::GoldCrown) {
+    5
+  } else if value.is_passable() || value == MapValue::Mine {
+    14
+  } else if value == MapValue::MetalWall {
+    8
+  } else if value == MapValue::Biomass {
+    4
+  } else {
+    12
+  }
+}
 
-  let level = LevelMap::random_map(10);
+pub struct WebGame {
+  pub state: AppState,
+  pub selected_menu: usize, // 0: New Game, 1: Quick Play, 2: Bot Diff, 3: Title
+  pub round: u16,
+  pub total_rounds: u16,
+  pub prices: Prices,
+  pub players: [PlayerComponent; 4],
+  pub shop_p1: PlayerShopState,
+  pub shop_p2: PlayerShopState,
+  pub level: LevelMap,
+  pub world: Option<World<'static>>,
 
-  let parse_diff = |d: u32| match d {
-    1 => (true, BotDifficulty::Easy),
-    2 => (true, BotDifficulty::Medium),
-    3 => (true, BotDifficulty::Hard),
-    _ => (false, BotDifficulty::Medium),
-  };
+  // Decoded assets
+  pub sika: DecodedImage,
+  pub font: Vec<u8>,
+  pub title_img: DecodedImage,
+  pub main_menu_img: DecodedImage,
+  pub shop_img: DecodedImage,
 
-  let (is_bot1, bot_diff1) = parse_diff(diff1);
-  let (is_bot2, bot_diff2) = parse_diff(diff2);
-  let (is_bot3, bot_diff3) = parse_diff(diff3);
-  let (is_bot4, bot_diff4) = parse_diff(diff4);
+  pub audio_queue: Vec<AudioEvent>,
+  pub rumble_queue: Vec<RumbleEvent>,
+  pub round_start_tick: usize,
+  pub max_round_ticks: usize,
+}
 
-  let opts = Options::default();
-  let mut players = [
-    PlayerComponent::new("PLAYER 1".to_string(), Default::default(), &opts, is_bot1, bot_diff1),
-    PlayerComponent::new("PLAYER 2".to_string(), Default::default(), &opts, is_bot2, bot_diff2),
-    PlayerComponent::new("PLAYER 3".to_string(), Default::default(), &opts, is_bot3, bot_diff3),
-    PlayerComponent::new("PLAYER 4".to_string(), Default::default(), &opts, is_bot4, bot_diff4),
-  ];
+static mut GAME: Option<WebGame> = None;
 
-  for p in players.iter_mut() {
-    if p.is_bot {
-      equip_bot(p, p.bot_difficulty);
-    } else {
-      equip_starter_pack(p);
+impl WebGame {
+  pub fn copy_rgb_to_fb(image: &[u8]) {
+    unsafe {
+      for (i, chunk) in image.chunks_exact(3).enumerate() {
+        if i < SCREEN_WIDTH * SCREEN_HEIGHT {
+          let d_idx = i * 4;
+          FRAMEBUFFER[d_idx] = chunk[0];
+          FRAMEBUFFER[d_idx + 1] = chunk[1];
+          FRAMEBUFFER[d_idx + 2] = chunk[2];
+          FRAMEBUFFER[d_idx + 3] = 255;
+        }
+      }
     }
   }
 
-  unsafe {
-    FRAMEBUFFER.fill(0);
-
-    let mut game = WebGame {
-      players,
-      level: level.clone(),
-      world: None,
-      sika,
-      font,
-      audio_queue: Vec::with_capacity(32),
-      rumble_queue: Vec::with_capacity(16),
-      round_start_tick: 0,
-      max_round_ticks: 60 * 180,
-    };
-
-    game.start_round(level);
-    GAME = Some(game);
+  pub fn set_pixel(&self, px: i32, py: i32, r: u8, g: u8, b: u8) {
+    if px >= 0 && px < SCREEN_WIDTH as i32 && py >= 0 && py < SCREEN_HEIGHT as i32 {
+      let idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
+      unsafe {
+        FRAMEBUFFER[idx] = r;
+        FRAMEBUFFER[idx + 1] = g;
+        FRAMEBUFFER[idx + 2] = b;
+        FRAMEBUFFER[idx + 3] = 255;
+      }
+    }
   }
 
-  1
-}
+  pub fn draw_vline(&self, x: i32, y1: i32, y2: i32, r: u8, g: u8, b: u8) {
+    let start_y = y1.min(y2);
+    let end_y = y1.max(y2);
+    for py in start_y..=end_y {
+      self.set_pixel(x, py, r, g, b);
+    }
+  }
 
-impl WebGame {
+  pub fn fill_rect(&self, x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8) {
+    unsafe {
+      for dy in 0..h as i32 {
+        let py = y + dy;
+        if py < 0 || py >= SCREEN_HEIGHT as i32 {
+          continue;
+        }
+        for dx in 0..w as i32 {
+          let px = x + dx;
+          if px < 0 || px >= SCREEN_WIDTH as i32 {
+            continue;
+          }
+          let idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
+          FRAMEBUFFER[idx] = r;
+          FRAMEBUFFER[idx + 1] = g;
+          FRAMEBUFFER[idx + 2] = b;
+          FRAMEBUFFER[idx + 3] = 255;
+        }
+      }
+    }
+  }
+
+  pub fn draw_text(&self, text: &str, x: i32, y: i32, cr: u8, cg: u8, cb: u8) {
+    let mut cur_x = x;
+    for ch in text.chars() {
+      let b = if ch.is_ascii() { ch as u8 } else { b' ' };
+      let col = (b % 16) as u32;
+      let row = (b / 16) as u32;
+      self.draw_char(col * 8, row * 8, cur_x, y, cr, cg, cb);
+      cur_x += 8;
+    }
+  }
+
+  pub fn draw_char(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32, cr: u8, cg: u8, cb: u8) {
+    unsafe {
+      for dy in 0..8 {
+        let py = dst_y + dy;
+        if py < 0 || py >= SCREEN_HEIGHT as i32 {
+          continue;
+        }
+        for dx in 0..8 {
+          let px = dst_x + dx;
+          if px < 0 || px >= SCREEN_WIDTH as i32 {
+            continue;
+          }
+          let s_idx = (((src_y + dy as u32) * 128 + (src_x + dx as u32)) * 4) as usize;
+          let alpha = self.font[s_idx + 3];
+          if alpha > 0 {
+            let d_idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
+            FRAMEBUFFER[d_idx] = cr;
+            FRAMEBUFFER[d_idx + 1] = cg;
+            FRAMEBUFFER[d_idx + 2] = cb;
+            FRAMEBUFFER[d_idx + 3] = 255;
+          }
+        }
+      }
+    }
+  }
+
+  pub fn blit_sika(&self, src_x: u32, src_y: u32, w: u32, h: u32, dst_x: i32, dst_y: i32, transparent: bool) {
+    unsafe {
+      for dy in 0..h as i32 {
+        let py = dst_y + dy;
+        if py < 0 || py >= SCREEN_HEIGHT as i32 {
+          continue;
+        }
+        let sy = src_y + dy as u32;
+        if sy >= 480 {
+          continue;
+        }
+
+        for dx in 0..w as i32 {
+          let px = dst_x + dx;
+          if px < 0 || px >= SCREEN_WIDTH as i32 {
+            continue;
+          }
+          let sx = src_x + dx as u32;
+          if sx >= 640 {
+            continue;
+          }
+
+          let s_idx = ((sy as usize) * 640 + (sx as usize)) * 3;
+          let r = self.sika.image[s_idx];
+          let g = self.sika.image[s_idx + 1];
+          let b = self.sika.image[s_idx + 2];
+
+          if transparent && r == 0 && g == 0 && b == 0 {
+            continue;
+          }
+
+          let d_idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
+          FRAMEBUFFER[d_idx] = r;
+          FRAMEBUFFER[d_idx + 1] = g;
+          FRAMEBUFFER[d_idx + 2] = b;
+          FRAMEBUFFER[d_idx + 3] = 255;
+        }
+      }
+    }
+  }
+
+  pub fn blit_glyph(&self, x: i32, y: i32, glyph: Glyph) {
+    let rect = glyph.rect();
+    self.blit_sika(rect.x as u32, rect.y as u32, rect.w, rect.h, x, y, true);
+  }
+
+  pub fn render_current_state(&mut self) {
+    match self.state {
+      AppState::Title => {
+        Self::copy_rgb_to_fb(&self.title_img.image);
+        let p = &self.title_img.palette;
+        self.draw_text("PRESS ANY KEY OR ENTER TO START", 184, 440, p[1].r, p[1].g, p[1].b);
+      }
+      AppState::MainMenu => {
+        Self::copy_rgb_to_fb(&self.main_menu_img.image);
+        let p = &self.main_menu_img.palette;
+
+        let reg = "MINE BOMBERS RELOADED";
+        let pos = ((26 - reg.len()) * 4 + 254) as i32;
+        self.draw_text(reg, pos - 1, 437, p[10].r, p[10].g, p[10].b);
+        self.draw_text(reg, pos + 1, 437, p[8].r, p[8].g, p[8].b);
+        self.draw_text(reg, pos, 437, p[0].r, p[0].g, p[0].b);
+
+        self.draw_text("UP/DOWN: MOVE   ENTER: SELECT", 180, 460, p[8].r, p[8].g, p[8].b);
+
+        let shovel_y = 136 + 48 * (self.selected_menu as i32);
+        self.blit_glyph(222, shovel_y, Glyph::ShovelPointer);
+
+        // Show mode info below
+        let mode_desc = match self.selected_menu {
+          0 => "STANDARD GAME - VISIT SHOP BEFORE ARENA",
+          1 => "QUICK PLAY - INSTANT STARTER LOADOUT",
+          2 => match self.players[1].bot_difficulty {
+            BotDifficulty::Easy => "BOT DIFFICULTY: EASY (PRESS ENTER TO CHANGE)",
+            BotDifficulty::Medium => "BOT DIFFICULTY: MEDIUM (PRESS ENTER TO CHANGE)",
+            BotDifficulty::Hard => "BOT DIFFICULTY: HARD (PRESS ENTER TO CHANGE)",
+          },
+          3 => "BACK TO RETRO TITLE SCREEN",
+          _ => "",
+        };
+        self.fill_rect(100, 340, 440, 16, 0, 0, 0);
+        self.draw_text(mode_desc, 120, 344, p[1].r, p[1].g, p[1].b);
+      }
+      AppState::Shop => {
+        Self::copy_rgb_to_fb(&self.shop_img.image);
+        let p = &self.shop_img.palette;
+
+        // Remaining rounds at (306, 120)
+        let rem_str = format!("{}", self.total_rounds.saturating_sub(self.round) + 1);
+        self.draw_text(&rem_str, 306, 120, p[1].r, p[1].g, p[1].b);
+
+        // Minimap preview at (288, 51, 64, 45)
+        for row in 0..45 {
+          for col in 0..64 {
+            let val = self.level[row as u16][col as u16];
+            let color_idx = preview_pixel(val);
+            let c = p[color_idx];
+            self.set_pixel(288 + col as i32, 51 + row as i32, c.r, c.g, c.b);
+          }
+        }
+
+        // Left Player (P1) stats
+        let p1 = &self.players[0];
+        let power1 = 1 + p1.initial_drilling_power();
+        self.fill_rect(35, 30, 7 * 8, 8, 0, 0, 0);
+        self.fill_rect(35, 44, 7 * 8, 8, 0, 0, 0);
+        self.fill_rect(35, 58, 7 * 8, 8, 0, 0, 0);
+        self.draw_text(&p1.stats.name, 35, 16, p[1].r, p[1].g, p[1].b);
+        self.draw_text(&power1.to_string(), 35, 30, p[3].r, p[3].g, p[3].b);
+        self.draw_text(&p1.cash.to_string(), 35, 44, p[5].r, p[5].g, p[5].b);
+        if let Some(item) = self.shop_p1.selection {
+          let cnt = p1.inventory[item].to_string();
+          self.draw_text(&cnt, 35, 58, p[1].r, p[1].g, p[1].b);
+        }
+
+        // Right Player (Bot 1) stats
+        let p2 = &self.players[1];
+        let power2 = 1 + p2.initial_drilling_power();
+        self.fill_rect(455, 30, 7 * 8, 8, 0, 0, 0);
+        self.fill_rect(455, 44, 7 * 8, 8, 0, 0, 0);
+        self.fill_rect(455, 58, 7 * 8, 8, 0, 0, 0);
+        let name2 = if p2.is_bot {
+          match p2.bot_difficulty {
+            BotDifficulty::Easy => "CPU (EASY)".to_string(),
+            BotDifficulty::Medium => "CPU (NORM)".to_string(),
+            BotDifficulty::Hard => "CPU (HARD)".to_string(),
+          }
+        } else {
+          p2.stats.name.clone()
+        };
+        self.draw_text(&name2, 455, 16, p[1].r, p[1].g, p[1].b);
+        self.draw_text(&power2.to_string(), 455, 30, p[3].r, p[3].g, p[3].b);
+        self.draw_text(&p2.cash.to_string(), 455, 44, p[5].r, p[5].g, p[5].b);
+        if let Some(item) = self.shop_p2.selection {
+          let cnt = p2.inventory[item].to_string();
+          self.draw_text(&cnt, 455, 58, p[1].r, p[1].g, p[1].b);
+        }
+
+        // Draw Slots for P1 (left: offset_x = 0)
+        let page1 = self.shop_p1.page;
+        let selected1 = self.shop_p1.current_slot();
+        if page1 == 0 {
+          for slot in 0..=26 {
+            let eq = Equipment::try_from(slot as u8).ok();
+            self.render_shop_slot(0, slot, eq, slot == selected1, p1, p);
+          }
+        } else {
+          for slot in 0..3 {
+            let eq = Equipment::try_from((27 + slot) as u8).ok();
+            self.render_shop_slot(0, slot, eq, slot == selected1, p1, p);
+          }
+          for slot in 3..27 {
+            self.render_empty_slot(0, slot);
+          }
+        }
+        self.render_shop_slot(0, 27, None, selected1 == 27, p1, p);
+
+        // Page banner P1
+        self.fill_rect(80, 442, 160, 14, 0, 0, 0);
+        let banner1 = if page1 == 0 { "PAGE 1/2 [TAB]" } else { "PAGE 2/2 [TAB]" };
+        self.draw_text(banner1, 96, 444, p[1].r, p[1].g, p[1].b);
+
+        // Draw Slots for P2 (right: offset_x = 320)
+        let page2 = self.shop_p2.page;
+        let selected2 = self.shop_p2.current_slot();
+        if page2 == 0 {
+          for slot in 0..=26 {
+            let eq = Equipment::try_from(slot as u8).ok();
+            self.render_shop_slot(320, slot, eq, slot == selected2, p2, p);
+          }
+        } else {
+          for slot in 0..3 {
+            let eq = Equipment::try_from((27 + slot) as u8).ok();
+            self.render_shop_slot(320, slot, eq, slot == selected2, p2, p);
+          }
+          for slot in 3..27 {
+            self.render_empty_slot(320, slot);
+          }
+        }
+        self.render_shop_slot(320, 27, None, selected2 == 27, p2, p);
+
+        // Page banner P2
+        self.fill_rect(400, 442, 160, 14, 0, 0, 0);
+        let banner2 = if page2 == 0 { "PAGE 1/2 [TAB]" } else { "PAGE 2/2 [TAB]" };
+        self.draw_text(banner2, 416, 444, p[1].r, p[1].g, p[1].b);
+      }
+      AppState::Battle => {
+        self.render_full();
+      }
+      AppState::RoundEnd => {
+        // Overlay banner on top of current view
+        self.fill_rect(140, 200, 360, 80, 20, 20, 30);
+        let cash = self.players[0].cash;
+        self.draw_text("ROUND FINISHED!", 240, 215, 255, 220, 50);
+        let c_str = format!("CURRENT BANK: ${}", cash);
+        self.draw_text(&c_str, 220, 235, 100, 240, 120);
+        self.draw_text("PRESS ANY KEY TO VISIT SHOP", 200, 255, 220, 220, 220);
+      }
+    }
+  }
+
+  fn render_shop_slot(
+    &self,
+    offset_x: i32,
+    slot_index: usize,
+    slot: Option<Equipment>,
+    is_selected: bool,
+    player: &PlayerComponent,
+    palette: &[Color; 16],
+  ) {
+    let col = (slot_index % 4) as i32;
+    let row = (slot_index / 4) as i32;
+
+    let pos_x = col * 64 + 32 + offset_x;
+    let pos_y = row * 48 + 96;
+
+    // Slot outline
+    self.blit_glyph(pos_x, pos_y, Glyph::ShopSlot(is_selected));
+
+    // Item count bar gauge
+    let item_count = slot.map(|item| player.inventory[item] as i32).unwrap_or(0);
+    if item_count != 0 {
+      let gx = col * 64 + 88 + offset_x;
+      let gy = row * 48 + 99;
+      let delta = 40 - ((item_count * 2).min(40));
+      for (idx, color_idx) in [14, 13, 12, 11, 7].iter().copied().enumerate() {
+        let c = palette[color_idx];
+        self.draw_vline(gx + idx as i32, gy + delta, gy + 41, c.r, c.g, c.b);
+      }
+    }
+
+    // Item glyph
+    let ix = col * 64 + 49 + offset_x;
+    let iy = row * 48 + 99;
+    let glyph = slot.map(Glyph::Selection).unwrap_or(Glyph::Ready);
+    self.blit_glyph(ix, iy, glyph);
+
+    // Price text
+    let tx = col * 64 + 44 + offset_x;
+    let ty = row * 48 + 132;
+    let text = slot
+      .map(|s| format!("{}$", self.prices[s]))
+      .unwrap_or_else(|| "LEAVE".to_string());
+    self.draw_text(&text, tx, ty, palette[5].r, palette[5].g, palette[5].b);
+  }
+
+  fn render_empty_slot(&self, offset_x: i32, slot: usize) {
+    let col = (slot % 4) as i32;
+    let row = (slot / 4) as i32;
+    let pos_x = col * 64 + 32 + offset_x;
+    let pos_y = row * 48 + 96;
+    self.blit_glyph(pos_x, pos_y, Glyph::ShopSlot(false));
+  }
+
+  pub fn handle_key(&mut self, key: u32) {
+    match self.state {
+      AppState::Title => {
+        self.state = AppState::MainMenu;
+        self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+        self.render_current_state();
+      }
+      AppState::MainMenu => match key {
+        KEY_UP => {
+          self.selected_menu = if self.selected_menu == 0 { 3 } else { self.selected_menu - 1 };
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+        }
+        KEY_DOWN => {
+          self.selected_menu = (self.selected_menu + 1) % 4;
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+        }
+        KEY_BOMB => match self.selected_menu {
+          0 => {
+            // NEW GAME: Start match, open authentic DOS Shop
+            self.round = 1;
+            self.total_rounds = 10;
+            self.level = LevelMap::random_map(10);
+            self.world = None;
+            for eq in Equipment::all_equipment() {
+              self.players[0].inventory[eq] = 0;
+            }
+            self.players[0].cash = 750;
+            self.players[0].selection = Equipment::SmallBomb;
+            for p in self.players[1..].iter_mut() {
+              auto_buy_for_bot(p, &self.prices);
+            }
+            self.shop_p1 = PlayerShopState::new();
+            self.shop_p2 = PlayerShopState::new();
+            self.shop_p2.ready = true;
+            self.state = AppState::Shop;
+            self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
+          }
+          1 => {
+            // QUICK PLAY: Starter pack and direct battle
+            self.round = 1;
+            self.total_rounds = 10;
+            let level = LevelMap::random_map(10);
+            self.level = level.clone();
+            equip_starter_pack(&mut self.players[0]);
+            for p in self.players[1..].iter_mut() {
+              auto_buy_for_bot(p, &self.prices);
+            }
+            self.start_round(level);
+            self.state = AppState::Battle;
+            self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
+            self.render_full();
+          }
+          2 => {
+            // Cycle bot difficulty
+            let next_diff = match self.players[1].bot_difficulty {
+              BotDifficulty::Easy => BotDifficulty::Medium,
+              BotDifficulty::Medium => BotDifficulty::Hard,
+              BotDifficulty::Hard => BotDifficulty::Easy,
+            };
+            for p in self.players[1..].iter_mut() {
+              p.bot_difficulty = next_diff;
+            }
+            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
+          }
+          3 => {
+            // Return to Title
+            self.state = AppState::Title;
+            self.render_current_state();
+          }
+          _ => {}
+        },
+        _ => {}
+      },
+      AppState::Shop => {
+        if key == KEY_ESC {
+          self.state = AppState::MainMenu;
+          self.render_current_state();
+          return;
+        }
+
+        if key == KEY_TAB {
+          self.shop_p1.page = 1 - self.shop_p1.page;
+          if self.shop_p1.selection.is_some() {
+            self.shop_p1.selection = if self.shop_p1.page == 1 {
+              Some(Equipment::BlackHole)
+            } else {
+              Some(Equipment::SmallBomb)
+            };
+          }
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+          return;
+        }
+
+        let last_slot = self.shop_p1.current_slot();
+        match key {
+          KEY_RIGHT => {
+            if self.shop_p1.page == 0 {
+              let new_slot = (last_slot + 1).min(27);
+              self.shop_p1.selection = if new_slot < 27 {
+                Equipment::try_from(new_slot as u8).ok()
+              } else {
+                None
+              };
+            } else {
+              let new_slot = match last_slot {
+                0 => 1,
+                1 => 2,
+                _ => 27,
+              };
+              self.shop_p1.selection = if new_slot < 3 {
+                Equipment::try_from((27 + new_slot) as u8).ok()
+              } else {
+                None
+              };
+            }
+            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
+          }
+          KEY_LEFT => {
+            if self.shop_p1.page == 0 {
+              let new_slot = last_slot.saturating_sub(1);
+              self.shop_p1.selection = if new_slot < 27 {
+                Equipment::try_from(new_slot as u8).ok()
+              } else {
+                None
+              };
+            } else {
+              let new_slot = match last_slot {
+                27 => 2,
+                2 => 1,
+                _ => 0,
+              };
+              self.shop_p1.selection = if new_slot < 3 {
+                Equipment::try_from((27 + new_slot) as u8).ok()
+              } else {
+                None
+              };
+            }
+            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
+          }
+          KEY_DOWN => {
+            if self.shop_p1.page == 0 {
+              let new_slot = (last_slot + 4).min(27);
+              self.shop_p1.selection = if new_slot < 27 {
+                Equipment::try_from(new_slot as u8).ok()
+              } else {
+                None
+              };
+            } else {
+              self.shop_p1.selection = None;
+            }
+            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
+          }
+          KEY_UP => {
+            if self.shop_p1.page == 0 {
+              let new_slot = if last_slot >= 4 { last_slot - 4 } else { last_slot };
+              self.shop_p1.selection = if new_slot < 27 {
+                Equipment::try_from(new_slot as u8).ok()
+              } else {
+                None
+              };
+            } else {
+              let new_slot = if last_slot == 27 { 2 } else { last_slot };
+              self.shop_p1.selection = if new_slot < 3 {
+                Equipment::try_from((27 + new_slot) as u8).ok()
+              } else {
+                None
+              };
+            }
+            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.render_current_state();
+          }
+          KEY_BOMB => {
+            if let Some(selection) = self.shop_p1.selection {
+              let price = self.prices[selection];
+              if self.players[0].cash >= price {
+                self.players[0].cash -= price;
+                self.players[0].inventory[selection] += 1;
+                self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
+                self.render_current_state();
+              }
+            } else {
+              // LEAVE selected: Enter arena!
+              self.shop_p1.ready = true;
+              let level = self.level.clone();
+              self.start_round(level);
+              self.state = AppState::Battle;
+              self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
+              self.render_full();
+            }
+          }
+          KEY_CHOOSE => {
+            if let Some(selection) = self.shop_p1.selection {
+              if self.players[0].inventory[selection] > 0 {
+                let price = self.prices[selection];
+                let refund = (7 * price + 5) / 10;
+                self.players[0].cash += refund;
+                self.players[0].inventory[selection] -= 1;
+                self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+                self.render_current_state();
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+      AppState::RoundEnd => {
+        // Transition back to Shop for next round
+        self.state = AppState::Shop;
+        self.shop_p1.ready = false;
+        self.render_current_state();
+      }
+      AppState::Battle => {
+        if key == KEY_ESC {
+          self.state = AppState::MainMenu;
+          self.render_current_state();
+        }
+      }
+    }
+  }
+
   fn start_round(&mut self, level: LevelMap) {
     self.audio_queue.clear();
     self.rumble_queue.clear();
@@ -224,106 +863,6 @@ impl WebGame {
     let glyph = Glyph::Map(val);
     let rect = glyph.rect();
     self.blit_sika(rect.x as u32, rect.y as u32, rect.w, rect.h, dst_x, dst_y, false);
-  }
-
-  fn fill_rect(&self, x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8) {
-    unsafe {
-      for dy in 0..h as i32 {
-        let py = y + dy;
-        if py < 0 || py >= SCREEN_HEIGHT as i32 {
-          continue;
-        }
-        for dx in 0..w as i32 {
-          let px = x + dx;
-          if px < 0 || px >= SCREEN_WIDTH as i32 {
-            continue;
-          }
-          let idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
-          FRAMEBUFFER[idx] = r;
-          FRAMEBUFFER[idx + 1] = g;
-          FRAMEBUFFER[idx + 2] = b;
-          FRAMEBUFFER[idx + 3] = 255;
-        }
-      }
-    }
-  }
-
-  fn blit_sika(&self, src_x: u32, src_y: u32, w: u32, h: u32, dst_x: i32, dst_y: i32, transparent: bool) {
-    unsafe {
-      for dy in 0..h as i32 {
-        let py = dst_y + dy;
-        if py < 0 || py >= SCREEN_HEIGHT as i32 {
-          continue;
-        }
-        let sy = src_y + dy as u32;
-        if sy >= 480 {
-          continue;
-        }
-
-        for dx in 0..w as i32 {
-          let px = dst_x + dx;
-          if px < 0 || px >= SCREEN_WIDTH as i32 {
-            continue;
-          }
-          let sx = src_x + dx as u32;
-          if sx >= 640 {
-            continue;
-          }
-
-          let s_idx = ((sy as usize) * 640 + (sx as usize)) * 3;
-          let r = self.sika.image[s_idx];
-          let g = self.sika.image[s_idx + 1];
-          let b = self.sika.image[s_idx + 2];
-
-          if transparent && r == 0 && g == 0 && b == 0 {
-            continue;
-          }
-
-          let d_idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
-          FRAMEBUFFER[d_idx] = r;
-          FRAMEBUFFER[d_idx + 1] = g;
-          FRAMEBUFFER[d_idx + 2] = b;
-          FRAMEBUFFER[d_idx + 3] = 255;
-        }
-      }
-    }
-  }
-
-  fn draw_text(&self, text: &str, x: i32, y: i32, color_r: u8, color_g: u8, color_b: u8) {
-    let mut cur_x = x;
-    for ch in text.chars() {
-      let b = if ch.is_ascii() { ch as u8 } else { b' ' };
-      let col = (b % 16) as u32;
-      let row = (b / 16) as u32;
-      self.draw_char(col * 8, row * 8, cur_x, y, color_r, color_g, color_b);
-      cur_x += 8;
-    }
-  }
-
-  fn draw_char(&self, src_x: u32, src_y: u32, dst_x: i32, dst_y: i32, cr: u8, cg: u8, cb: u8) {
-    unsafe {
-      for dy in 0..8 {
-        let py = dst_y + dy;
-        if py < 0 || py >= SCREEN_HEIGHT as i32 {
-          continue;
-        }
-        for dx in 0..8 {
-          let px = dst_x + dx;
-          if px < 0 || px >= SCREEN_WIDTH as i32 {
-            continue;
-          }
-          let s_idx = (((src_y + dy as u32) * 128 + (src_x + dx as u32)) * 4) as usize;
-          let alpha = self.font[s_idx + 3];
-          if alpha > 0 {
-            let d_idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
-            FRAMEBUFFER[d_idx] = cr;
-            FRAMEBUFFER[d_idx + 1] = cg;
-            FRAMEBUFFER[d_idx + 2] = cb;
-            FRAMEBUFFER[d_idx + 3] = 255;
-          }
-        }
-      }
-    }
   }
 
   fn draw_hud(&self) {
@@ -402,12 +941,155 @@ impl WebGame {
 }
 
 #[no_mangle]
+pub extern "C" fn mb_init(
+  _level_idx: u32,
+  diff1: u32,
+  diff2: u32,
+  diff3: u32,
+  diff4: u32,
+) -> u32 {
+  let sika = match decode_spy(640, 480, SIKA_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
+  let font = match decode_font(FONTTI_FON_BYTES) {
+    Ok(f) => f,
+    Err(_) => return 0,
+  };
+  let title_img = match decode_spy(640, 480, TITLEBE_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
+  let main_menu_img = match decode_spy(640, 480, MAIN3_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
+  let shop_img = match decode_spy(640, 480, SHOPPIC_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
+
+  let level = LevelMap::random_map(10);
+
+  let parse_diff = |d: u32| match d {
+    1 => (true, BotDifficulty::Easy),
+    2 => (true, BotDifficulty::Medium),
+    3 => (true, BotDifficulty::Hard),
+    _ => (false, BotDifficulty::Medium),
+  };
+
+  let (is_bot1, bot_diff1) = parse_diff(diff1);
+  let (is_bot2, bot_diff2) = parse_diff(diff2);
+  let (is_bot3, bot_diff3) = parse_diff(diff3);
+  let (is_bot4, bot_diff4) = parse_diff(diff4);
+
+  let opts = Options::default();
+  let mut players = [
+    PlayerComponent::new("PLAYER 1".to_string(), Default::default(), &opts, is_bot1, bot_diff1),
+    PlayerComponent::new("PLAYER 2".to_string(), Default::default(), &opts, is_bot2, bot_diff2),
+    PlayerComponent::new("PLAYER 3".to_string(), Default::default(), &opts, is_bot3, bot_diff3),
+    PlayerComponent::new("PLAYER 4".to_string(), Default::default(), &opts, is_bot4, bot_diff4),
+  ];
+
+  let prices = Prices::new();
+  for p in players.iter_mut() {
+    if p.is_bot {
+      auto_buy_for_bot(p, &prices);
+    } else {
+      equip_starter_pack(p);
+    }
+  }
+
+  let mut game = WebGame {
+    state: AppState::Title,
+    selected_menu: 0,
+    round: 1,
+    total_rounds: 10,
+    prices,
+    players,
+    shop_p1: PlayerShopState::new(),
+    shop_p2: PlayerShopState::new(),
+    level,
+    world: None,
+    sika,
+    font,
+    title_img,
+    main_menu_img,
+    shop_img,
+    audio_queue: Vec::with_capacity(32),
+    rumble_queue: Vec::with_capacity(16),
+    round_start_tick: 0,
+    max_round_ticks: 60 * 180,
+  };
+
+  game.render_current_state();
+
+  unsafe {
+    GAME = Some(game);
+  }
+
+  1
+}
+
+#[no_mangle]
+pub extern "C" fn mb_render_title() -> u32 {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      game.state = AppState::Title;
+      game.render_current_state();
+      1
+    } else {
+      0
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_render() -> u32 {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      game.render_current_state();
+      1
+    } else {
+      0
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_get_state() -> u32 {
+  unsafe {
+    if let Some(ref game) = GAME {
+      game.state as u32
+    } else {
+      0
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn mb_handle_key(key: u32) -> u32 {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      game.handle_key(key);
+      game.state as u32
+    } else {
+      0
+    }
+  }
+}
+
+#[no_mangle]
 pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
   unsafe {
     let game = match GAME.as_mut() {
       Some(g) => g,
       None => return 0,
     };
+
+    if game.state != AppState::Battle {
+      return 1;
+    }
 
     game.round_start_tick += 1;
 
@@ -440,7 +1122,6 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
       let is_flash = world.flash;
       let is_end_round = world.is_end_of_round();
 
-      // Snapshot updated tile values directly from live world map
       let map_snapshots: Vec<(Cursor, MapValue)> = updates
         .iter()
         .filter_map(|u| match u {
@@ -449,7 +1130,6 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         })
         .collect();
 
-      // Snapshot actors for rendering
       let actors: Vec<_> = world.actors.iter().map(|a| {
         (a.pos, a.kind, a.facing, a.moving, a.animation)
       }).collect();
@@ -457,7 +1137,7 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
       (effects, updates, map_snapshots, is_flash, is_end_round, actors)
     };
 
-    // Process sound effects and rumble
+    // Audio and Rumble
     for req in effects {
       let eff_id = match req.effect {
         SoundEffect::Kili => 0,
@@ -528,7 +1208,6 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         }
       }
     } else {
-      // First, update live map tiles in both game.level and framebuffer
       for (cursor, val) in map_snapshots {
         game.level[cursor] = val;
         game.draw_map_tile(cursor, val);
@@ -536,7 +1215,7 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
 
       for update in updates {
         match update {
-          Update::Map(_) => {} // Already drawn above with live value
+          Update::Map(_) => {}
           Update::Actor(actor_idx, digging) => {
             if actor_idx < actors_data.len() {
               let (pos, kind, facing, moving, animation) = actors_data[actor_idx];
@@ -574,7 +1253,25 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
           }
         }
       }
-      return 2;
+
+      game.round += 1;
+      if game.round <= game.total_rounds {
+        let next_level = LevelMap::random_map(10);
+        game.level = next_level;
+        for p in game.players[1..].iter_mut() {
+          auto_buy_for_bot(p, &game.prices);
+        }
+        game.shop_p1 = PlayerShopState::new();
+        game.shop_p2 = PlayerShopState::new();
+        game.shop_p2.ready = true;
+        game.state = AppState::Shop;
+        game.render_current_state();
+        return 2;
+      } else {
+        game.state = AppState::MainMenu;
+        game.render_current_state();
+        return 3;
+      }
     }
 
     1
@@ -741,4 +1438,3 @@ pub extern "C" fn mb_seed(seed: u32) {
     RANDOM_SEED = (seed as u64) ^ 0x853c49e6748fea9b;
   }
 }
-
