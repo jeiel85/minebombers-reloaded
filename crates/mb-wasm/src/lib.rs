@@ -5,12 +5,13 @@ use mb_core::options::{Options, WinCondition};
 use mb_core::sound::SoundEffect;
 use mb_core::world::bot::BotDifficulty;
 use mb_core::world::equipment::Equipment;
-use mb_core::world::map::{LevelMap, MapValue, MAP_COLS};
+use mb_core::world::map::{CaveBiome, LevelMap, MapValue, MAP_COLS};
 use mb_core::world::player::PlayerComponent;
 use mb_core::world::position::Cursor;
 use mb_core::world::{Update, World};
 use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
+use rand::Rng;
 
 const SCREEN_WIDTH: usize = 640;
 const SCREEN_HEIGHT: usize = 480;
@@ -285,6 +286,7 @@ pub struct WebGame {
   pub players: [PlayerComponent; 4],
   pub shop_p1: PlayerShopState,
   pub shop_p2: PlayerShopState,
+  pub current_biome: CaveBiome,
   pub level: LevelMap,
   pub world: Option<World<'static>>,
 
@@ -558,6 +560,11 @@ impl WebGame {
           }
         }
 
+        // Biome name display below minimap
+        let biome_name = self.current_biome.name();
+        let biome_x = 320 - (biome_name.len() as i32 * 8) / 2;
+        self.draw_text(biome_name, biome_x, 102, p[5].r, p[5].g, p[5].b);
+
         // Left Player (P1) stats
         let p1 = &self.players[0];
         let power1 = 1 + p1.initial_drilling_power();
@@ -733,7 +740,11 @@ impl WebGame {
             // NEW GAME: Start match using current configured options, open authentic DOS Shop
             self.round = 1;
             self.total_rounds = self.options.rounds;
-            self.level = LevelMap::random_map(10);
+            let mut rng = rand::thread_rng();
+            let biome = CaveBiome::from_u8(rng.gen_range(0..4));
+            let seed = rng.gen::<u64>();
+            self.current_biome = biome;
+            self.level = LevelMap::procedural_map(seed, biome, self.options.treasures, 10);
             self.world = None;
             for eq in Equipment::all_equipment() {
               self.players[0].inventory[eq] = 0;
@@ -1268,6 +1279,7 @@ pub extern "C" fn mb_init(
     players,
     shop_p1: PlayerShopState::new(),
     shop_p2: PlayerShopState::new(),
+    current_biome: CaveBiome::Classic,
     level,
     world: None,
     sika,
@@ -1555,7 +1567,11 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
 
       game.round += 1;
       if game.round <= game.total_rounds {
-        let next_level = LevelMap::random_map(10);
+        let mut rng = rand::thread_rng();
+        let biome = CaveBiome::from_u8(rng.gen_range(0..4));
+        let seed = rng.gen::<u64>();
+        game.current_biome = biome;
+        let next_level = LevelMap::procedural_map(seed, biome, game.options.treasures, 10);
         game.level = next_level;
         for p in game.players[1..].iter_mut() {
           auto_buy_for_bot(p, &game.prices);

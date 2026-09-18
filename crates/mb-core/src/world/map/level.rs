@@ -4,6 +4,7 @@ use crate::world::position::{Cursor, Direction};
 use num_enum::TryFromPrimitive;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -38,6 +39,60 @@ const RANDOM_TREASURES: [MapValue; 13] = [
   MapValue::Diamond,
 ];
 const RANDOM_TREASURES_WEIGHTS: [usize; 13] = [18, 12, 8, 200, 200, 200, 200, 200, 180, 160, 140, 80, 3];
+
+const TREASURY_TREASURES_WEIGHTS: [usize; 13] = [
+  5,   // SmallPickaxe
+  5,   // LargePickaxe
+  5,   // Drill
+  40,  // GoldShield
+  80,  // GoldEgg
+  200, // GoldPileCoins
+  150, // GoldBracelet
+  300, // GoldBar
+  250, // GoldCross
+  250, // GoldScepter
+  250, // GoldRubin
+  200, // GoldCrown
+  60,  // Diamond
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CaveBiome {
+  Classic = 0,
+  Ice = 1,
+  Magma = 2,
+  Treasury = 3,
+}
+
+impl CaveBiome {
+  pub fn name(&self) -> &'static str {
+    match self {
+      CaveBiome::Classic => "Classic Mine",
+      CaveBiome::Ice => "Ice Cavern",
+      CaveBiome::Magma => "Magma Core",
+      CaveBiome::Treasury => "Ancient Treasury",
+    }
+  }
+
+  pub fn from_u8(val: u8) -> Self {
+    match val % 4 {
+      0 => CaveBiome::Classic,
+      1 => CaveBiome::Ice,
+      2 => CaveBiome::Magma,
+      _ => CaveBiome::Treasury,
+    }
+  }
+
+  pub fn all() -> [CaveBiome; 4] {
+    [
+      CaveBiome::Classic,
+      CaveBiome::Ice,
+      CaveBiome::Magma,
+      CaveBiome::Treasury,
+    ]
+  }
+}
 
 pub enum LevelInfo {
   Random,
@@ -90,12 +145,25 @@ impl LevelMap {
 
   /// Generate randomized map
   pub fn random_map(treasures: u8) -> Self {
+    let mut rng = rand::thread_rng();
+    let seed = rng.gen::<u64>();
+    let biome = CaveBiome::from_u8(rng.gen_range(0..4));
+    Self::procedural_map(seed, biome, treasures, 10)
+  }
+
+  /// Generate deterministic procedural map with seed, biome and density parameters
+  pub fn procedural_map(seed: u64, biome: CaveBiome, mineral_density: u8, monster_density: u8) -> Self {
+    let mut rng = StdRng::seed_from_u64(seed);
     let mut map = LevelMap::empty();
-    map.generate_random_stone();
-    map.finalize_map();
-    map.generate_treasures(treasures);
-    map.generate_random_items();
+    map.generate_random_stone_seeded(&mut rng, biome);
+    map.finalize_map_seeded(&mut rng, biome);
+    map.generate_treasures_seeded(&mut rng, biome, mineral_density);
+    map.generate_random_items_seeded(&mut rng, biome);
+    if monster_density > 0 {
+      map.generate_monsters_seeded(&mut rng, biome, monster_density);
+    }
     map.generate_borders();
+    map.generate_entrances_seeded(4, &mut rng);
     map
   }
 
@@ -129,18 +197,33 @@ impl LevelMap {
     })
   }
 
-  /// Generate random stones on the map. This algorithm is close to the one used in the original
-  /// game, but not exactly the same.
+  /// Generate random stones on the map.
+  #[allow(dead_code)]
   fn generate_random_stone(&mut self) {
-    let mut rng = rand::thread_rng();
-    for _ in 0..rng.gen_range(29..40) {
-      self.generate_stone_chunk();
+    let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+    self.generate_random_stone_seeded(&mut rng, CaveBiome::Classic);
+  }
+
+  fn generate_random_stone_seeded(&mut self, rng: &mut StdRng, biome: CaveBiome) {
+    let chunks = match biome {
+      CaveBiome::Classic => rng.gen_range(29..40),
+      CaveBiome::Ice => rng.gen_range(26..36),
+      CaveBiome::Magma => rng.gen_range(32..44),
+      CaveBiome::Treasury => rng.gen_range(28..38),
+    };
+    for _ in 0..chunks {
+      self.generate_stone_chunk_seeded(rng);
     }
   }
 
   /// Generate one single stone chunk
+  #[allow(dead_code)]
   fn generate_stone_chunk(&mut self) {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+    self.generate_stone_chunk_seeded(&mut rng);
+  }
+
+  fn generate_stone_chunk_seeded(&mut self, rng: &mut StdRng) {
     let mut col = rng.gen_range(1..(MAP_COLS - 1));
     let mut row = rng.gen_range(1..(MAP_ROWS - 1));
     loop {
@@ -194,9 +277,6 @@ impl LevelMap {
           self[row + 1][col - 1] = MapValue::Stone1;
           self[row - 1][col + 1] = MapValue::Stone1;
         }
-        // In original game, this seems to be never triggered as random number above is generated
-        // in the range [0; 9) (end range is excluded). We, however, allow for this branch by
-        // extending the random interval by one.
         9 => {
           self[row][col] = MapValue::Stone1;
           self[row - 1][col] = MapValue::Stone1;
@@ -216,18 +296,19 @@ impl LevelMap {
         break;
       }
 
-      row = random_offset(row, MAP_ROWS);
-      col = random_offset(col, MAP_COLS);
+      row = random_offset_seeded(row, MAP_ROWS, rng);
+      col = random_offset_seeded(col, MAP_COLS, rng);
     }
   }
 
   /// Finalize stone corners, randomize stones and sand
-  ///
-  /// This function in particular was rewritten a bit compared to the original one (minor changes
-  /// to make code more readable, result looks similar).
+  #[allow(dead_code)]
   fn finalize_map(&mut self) {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+    self.finalize_map_seeded(&mut rng, CaveBiome::Classic);
+  }
 
+  fn finalize_map_seeded(&mut self, rng: &mut StdRng, biome: CaveBiome) {
     // Step 1: replace lonely stones with boulders
     for cursor in Cursor::all_without_borders() {
       if self[cursor].is_stone_like()
@@ -302,70 +383,261 @@ impl LevelMap {
       }
     }
 
-    // Step 4: randomize sand and stone
+    // Step 4: randomize sand and stone by biome
     for cursor in Cursor::all() {
       if self[cursor] == MapValue::Stone1 {
-        self[cursor] = *[MapValue::Stone1, MapValue::Stone2, MapValue::Stone3, MapValue::Stone4]
-          .choose(&mut rng)
-          .unwrap();
+        self[cursor] = match biome {
+          CaveBiome::Ice => {
+            if rng.gen_bool(0.4) {
+              MapValue::StoneLightCracked
+            } else {
+              *[MapValue::Stone1, MapValue::Stone4].choose(rng).unwrap()
+            }
+          }
+          CaveBiome::Magma => {
+            if rng.gen_bool(0.4) {
+              MapValue::StoneHeavyCracked
+            } else if rng.gen_bool(0.3) {
+              MapValue::StoneLightCracked
+            } else {
+              MapValue::Stone3
+            }
+          }
+          CaveBiome::Treasury => {
+            if rng.gen_bool(0.45) {
+              MapValue::Brick
+            } else if rng.gen_bool(0.2) {
+              MapValue::BrickLightCracked
+            } else {
+              *[MapValue::Stone1, MapValue::Stone2].choose(rng).unwrap()
+            }
+          }
+          CaveBiome::Classic => {
+            *[MapValue::Stone1, MapValue::Stone2, MapValue::Stone3, MapValue::Stone4]
+              .choose(rng)
+              .unwrap()
+          }
+        };
       } else if self[cursor] == MapValue::Passage {
-        self[cursor] = *[MapValue::Sand1, MapValue::Sand2, MapValue::Sand3]
-          .choose(&mut rng)
-          .unwrap();
+        self[cursor] = match biome {
+          CaveBiome::Ice => {
+            if rng.gen_bool(0.6) {
+              MapValue::LightGravel
+            } else {
+              MapValue::Sand1
+            }
+          }
+          CaveBiome::Magma => {
+            if rng.gen_bool(0.7) {
+              MapValue::Sand3
+            } else {
+              MapValue::Sand2
+            }
+          }
+          CaveBiome::Treasury => {
+            if rng.gen_bool(0.5) {
+              MapValue::Sand1
+            } else {
+              MapValue::Passage
+            }
+          }
+          CaveBiome::Classic => {
+            *[MapValue::Sand1, MapValue::Sand2, MapValue::Sand3]
+              .choose(rng)
+              .unwrap()
+          }
+        };
       }
     }
 
-    // Step 5: place gravel
-    for _ in 0..300 {
-      let cursor = self.pick_random_coord(MapValue::is_sand);
-      self[cursor] = *[MapValue::LightGravel, MapValue::HeavyGravel].choose(&mut rng).unwrap();
+    // Step 5: place gravel / hazards by biome
+    match biome {
+      CaveBiome::Ice => {
+        for _ in 0..200 {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_sand, rng);
+          self[cursor] = MapValue::LightGravel;
+        }
+      }
+      CaveBiome::Magma => {
+        for _ in 0..200 {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_sand, rng);
+          self[cursor] = MapValue::HeavyGravel;
+        }
+        let lava_pools = rng.gen_range(12..25);
+        for _ in 0..lava_pools {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_sand, rng);
+          self[cursor] = MapValue::Napalm1;
+        }
+      }
+      CaveBiome::Treasury => {
+        for _ in 0..100 {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_sand, rng);
+          self[cursor] = MapValue::HeavyGravel;
+        }
+      }
+      CaveBiome::Classic => {
+        for _ in 0..300 {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_sand, rng);
+          self[cursor] = *[MapValue::LightGravel, MapValue::HeavyGravel].choose(rng).unwrap();
+        }
+      }
     }
   }
 
   /// Place treasures on the map
+  #[allow(dead_code)]
   fn generate_treasures(&mut self, treasures: u8) {
-    let mut rng = rand::thread_rng();
-    // Original game would randomize treasures, but "min treasures" is always the same as
-    // "max treasures", so we don't bother calling random.
+    let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+    self.generate_treasures_seeded(&mut rng, CaveBiome::Classic, treasures);
+  }
 
-    let distribution = WeightedIndex::new(RANDOM_TREASURES_WEIGHTS).unwrap();
+  fn generate_treasures_seeded(&mut self, rng: &mut StdRng, biome: CaveBiome, mineral_density: u8) {
+    let weights = match biome {
+      CaveBiome::Treasury => &TREASURY_TREASURES_WEIGHTS,
+      _ => &RANDOM_TREASURES_WEIGHTS,
+    };
+    let distribution = WeightedIndex::new(weights).unwrap();
+
+    let count_base = if mineral_density > 0 { mineral_density as usize } else { 40 };
+    let treasure_count = match biome {
+      CaveBiome::Treasury => (count_base * 3 / 2).max(45),
+      _ => count_base,
+    };
 
     let mut treasures_in_stone = 0;
-    for _ in 0..treasures {
-      let item = RANDOM_TREASURES[distribution.sample(&mut rng)];
-
-      // Once we placed 20 treasures into stone, we place remaining ones randomly
+    for _ in 0..treasure_count {
+      let item = RANDOM_TREASURES[distribution.sample(rng)];
       if treasures_in_stone > 20 {
-        let col = rng.gen_range(0..MAP_COLS);
-        let row = rng.gen_range(0..MAP_ROWS);
+        let col = rng.gen_range(1..(MAP_COLS - 1));
+        let row = rng.gen_range(1..(MAP_ROWS - 1));
         self[Cursor::new(row, col)] = item;
       } else {
-        let cursor = self.pick_random_coord(MapValue::is_stone);
+        let cursor = self.pick_random_coord_seeded(MapValue::is_stone, rng);
         self[cursor] = item;
         treasures_in_stone += 1;
       }
     }
+
+    match biome {
+      CaveBiome::Ice => {
+        let freeze_bombs = rng.gen_range(4..9);
+        for _ in 0..freeze_bombs {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_stone, rng);
+          self[cursor] = MapValue::FreezeBomb;
+        }
+      }
+      CaveBiome::Magma => {
+        let explosives = rng.gen_range(3..7);
+        for _ in 0..explosives {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_stone, rng);
+          self[cursor] = MapValue::Dynamite1;
+        }
+      }
+      CaveBiome::Treasury => {
+        let diamonds = rng.gen_range(2..5);
+        for _ in 0..diamonds {
+          let cursor = self.pick_random_coord_seeded(MapValue::is_stone, rng);
+          self[cursor] = MapValue::Diamond;
+        }
+      }
+      _ => {}
+    }
   }
 
   /// Generate various random items
-  /// Note that original game would also place items on borders, but we don't.
+  #[allow(dead_code)]
   fn generate_random_items(&mut self) {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+    self.generate_random_items_seeded(&mut rng, CaveBiome::Classic);
+  }
+
+  fn generate_random_items_seeded(&mut self, rng: &mut StdRng, biome: CaveBiome) {
     while rng.gen_range(0..100) > 70 {
-      self[random_coord()] = MapValue::Boulder;
+      let coord = random_coord_seeded(rng);
+      self[coord] = MapValue::Boulder;
     }
 
     while rng.gen_range(0..100) > 70 {
-      self[random_coord()] = MapValue::WeaponsCrate;
+      let coord = random_coord_seeded(rng);
+      self[coord] = MapValue::WeaponsCrate;
     }
 
     while rng.gen_range(0..100) > 65 {
-      self[random_coord()] = MapValue::Medikit;
+      let coord = random_coord_seeded(rng);
+      self[coord] = MapValue::Medikit;
     }
 
     while rng.gen_range(0..100) > 70 {
-      self[random_coord()] = MapValue::Teleport;
-      self[random_coord()] = MapValue::Teleport;
+      let c1 = random_coord_seeded(rng);
+      let c2 = random_coord_seeded(rng);
+      self[c1] = MapValue::Teleport;
+      self[c2] = MapValue::Teleport;
+    }
+
+    if biome == CaveBiome::Magma {
+      let barrels = rng.gen_range(4..10);
+      for _ in 0..barrels {
+        let cursor = self.pick_random_coord_seeded(MapValue::is_passable, rng);
+        self[cursor] = MapValue::Barrel;
+      }
+    }
+  }
+
+  fn generate_monsters_seeded(&mut self, rng: &mut StdRng, biome: CaveBiome, monster_density: u8) {
+    let count = ((monster_density as usize + 7) / 8).clamp(2, 16);
+    let monster_options: &[MapValue] = match biome {
+      CaveBiome::Ice => &[
+        MapValue::SlimeRight,
+        MapValue::SlimeLeft,
+        MapValue::SlimeUp,
+        MapValue::SlimeDown,
+        MapValue::FurryRight,
+        MapValue::FurryLeft,
+      ],
+      CaveBiome::Magma => &[
+        MapValue::GrenadierRight,
+        MapValue::GrenadierLeft,
+        MapValue::AlienRight,
+        MapValue::AlienLeft,
+      ],
+      CaveBiome::Treasury => &[
+        MapValue::AlienRight,
+        MapValue::AlienLeft,
+        MapValue::AlienUp,
+        MapValue::AlienDown,
+        MapValue::GrenadierRight,
+        MapValue::GrenadierLeft,
+      ],
+      CaveBiome::Classic => &[
+        MapValue::FurryRight,
+        MapValue::FurryLeft,
+        MapValue::GrenadierRight,
+        MapValue::GrenadierLeft,
+        MapValue::SlimeRight,
+        MapValue::SlimeLeft,
+        MapValue::AlienRight,
+        MapValue::AlienLeft,
+      ],
+    };
+
+    for _ in 0..count {
+      let mut placed = false;
+      for _ in 0..20 {
+        let row = rng.gen_range(5..(MAP_ROWS - 5));
+        let col = rng.gen_range(5..(MAP_COLS - 5));
+        let cur = Cursor::new(row, col);
+        if self[cur].is_passable() || self[cur].is_sand() {
+          let m = *monster_options.choose(rng).unwrap();
+          self[cur] = m;
+          placed = true;
+          break;
+        }
+      }
+      if !placed {
+        let cur = self.pick_random_coord_seeded(MapValue::is_sand, rng);
+        let m = *monster_options.choose(rng).unwrap();
+        self[cur] = m;
+      }
     }
   }
 
@@ -383,29 +655,38 @@ impl LevelMap {
   }
 
   /// Pick random coordinate such that its map value matches the predicate. Returns row and column.
+  #[allow(dead_code)]
   fn pick_random_coord(&self, predicate: impl Fn(MapValue) -> bool) -> Cursor {
-    let mut cursor = random_coord();
-    for _ in 0..MAP_ROWS * MAP_COLS {
+    let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+    self.pick_random_coord_seeded(predicate, &mut rng)
+  }
+
+  fn pick_random_coord_seeded(&self, predicate: impl Fn(MapValue) -> bool, rng: &mut StdRng) -> Cursor {
+    let mut cursor = random_coord_seeded(rng);
+    for _ in 0..(MAP_ROWS * MAP_COLS) {
       if predicate(self[cursor]) {
         break;
       }
 
-      if cursor.col < MAP_COLS - 1 {
+      if cursor.col < MAP_COLS - 2 {
         cursor.col += 1;
       } else {
-        cursor.col = 0;
+        cursor.col = 1;
         cursor.row += 1;
       }
-      if cursor.row > MAP_ROWS - 1 {
-        cursor = random_coord();
+      if cursor.row >= MAP_ROWS - 1 {
+        cursor = random_coord_seeded(rng);
       }
     }
     cursor
   }
 
   pub fn generate_entrances(&mut self, players: u8) {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+    self.generate_entrances_seeded(players, &mut rng);
+  }
 
+  pub fn generate_entrances_seeded(&mut self, players: u8, rng: &mut StdRng) {
     // Top left
     let rnd = rng.gen_range(4..10);
     for col in 1..=rnd {
@@ -450,8 +731,13 @@ impl LevelMap {
   }
 }
 
+#[allow(dead_code)]
 fn random_coord() -> Cursor {
-  let mut rng = rand::thread_rng();
+  let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+  random_coord_seeded(&mut rng)
+}
+
+fn random_coord_seeded(rng: &mut StdRng) -> Cursor {
   let col = rng.gen_range(1..(MAP_COLS - 1));
   let row = rng.gen_range(1..(MAP_ROWS - 1));
   Cursor::new(row, col)
@@ -877,9 +1163,13 @@ impl MapValue {
 }
 
 /// Apply random offset to the coordinate
-fn random_offset(mut coord: u16, max: u16) -> u16 {
-  let mut rng = rand::thread_rng();
+#[allow(dead_code)]
+fn random_offset(coord: u16, max: u16) -> u16 {
+  let mut rng = StdRng::seed_from_u64(rand::thread_rng().gen());
+  random_offset_seeded(coord, max, &mut rng)
+}
 
+fn random_offset_seeded(mut coord: u16, max: u16, rng: &mut StdRng) -> u16 {
   // Note: original game uses condition `x < 1` here (for both rows and columns). We use `x < 2` so
   // we never get too close to the border that one of the offsets above go outside of the map.
   if coord < 2 {
@@ -892,4 +1182,67 @@ fn random_offset(mut coord: u16, max: u16) -> u16 {
     coord -= rng.gen_range(0..3);
   }
   coord
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_procedural_biome_generation_deterministic() {
+    let seed = 123456789;
+    for biome in CaveBiome::all().iter().copied() {
+      let map1 = LevelMap::procedural_map(seed, biome, 20, 10);
+      let map2 = LevelMap::procedural_map(seed, biome, 20, 10);
+      assert_eq!(
+        map1.to_file_map(),
+        map2.to_file_map(),
+        "Maps with identical seeds and biome must match"
+      );
+    }
+  }
+
+  #[test]
+  fn test_procedural_biome_differences() {
+    let seed = 987654321;
+    let classic = LevelMap::procedural_map(seed, CaveBiome::Classic, 30, 10);
+    let magma = LevelMap::procedural_map(seed, CaveBiome::Magma, 30, 10);
+    let ice = LevelMap::procedural_map(seed, CaveBiome::Ice, 30, 10);
+    let treasury = LevelMap::procedural_map(seed, CaveBiome::Treasury, 30, 10);
+
+    // Magma should have napalm pools or barrels
+    let magma_hazards = Cursor::all().any(|c| magma[c] == MapValue::Napalm1 || magma[c] == MapValue::Barrel);
+    assert!(magma_hazards, "Magma biome must contain lava pools or barrels");
+
+    // Ice cavern should have slick floor (LightGravel) or freeze bombs
+    let ice_slick = Cursor::all().any(|c| ice[c] == MapValue::LightGravel || ice[c] == MapValue::FreezeBomb);
+    assert!(ice_slick, "Ice biome must contain slick light gravel or freeze bombs");
+
+    // Treasury should contain bricks and high value treasures
+    let treasury_bricks = Cursor::all().any(|c| treasury[c].is_brick_like());
+    assert!(treasury_bricks, "Treasury biome must contain ancient bricks");
+
+    // Maps with different biomes must not be identical
+    assert_ne!(classic.to_file_map(), magma.to_file_map());
+    assert_ne!(ice.to_file_map(), treasury.to_file_map());
+  }
+
+  #[test]
+  fn test_map_borders_and_entrances() {
+    let map = LevelMap::procedural_map(42, CaveBiome::Classic, 15, 5);
+    // Borders must be metal walls
+    for col in 0..MAP_COLS {
+      assert_eq!(map[0][col], MapValue::MetalWall);
+      assert_eq!(map[MAP_ROWS - 1][col], MapValue::MetalWall);
+    }
+    for row in 0..MAP_ROWS {
+      assert_eq!(map[row][0], MapValue::MetalWall);
+      assert_eq!(map[row][MAP_COLS - 1], MapValue::MetalWall);
+    }
+    // Spawn corners must be clear passages
+    assert_eq!(map[1][1], MapValue::Passage);
+    assert_eq!(map[MAP_ROWS - 2][MAP_COLS - 2], MapValue::Passage);
+    assert_eq!(map[1][MAP_COLS - 2], MapValue::Passage);
+    assert_eq!(map[MAP_ROWS - 2][1], MapValue::Passage);
+  }
 }
