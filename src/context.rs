@@ -24,6 +24,7 @@ pub struct ApplicationContext<'canvas, 'textures> {
   pub texture_creator: &'textures TextureCreator<WindowContext>,
   pub config: crate::config::AppConfig,
   pub is_fullscreen: bool,
+  pub gamepad: crate::gamepad::GamepadManager,
 }
 
 pub enum Animation {
@@ -104,6 +105,11 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
 
     // Initialize audio
     sdl2::mixer::open_audio(44100, AUDIO_S16LSB, 2, 1024).map_err(SdlError)?;
+
+    // Initialize game controller subsystem
+    let controller_subsystem = sdl_context.game_controller().map_err(SdlError)?;
+    let gamepad = crate::gamepad::GamepadManager::new(controller_subsystem);
+
     let ctx = ApplicationContext {
       game_dir,
       canvas: &mut canvas,
@@ -112,6 +118,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       texture_creator: &texture_creator,
       config: app_cfg,
       is_fullscreen,
+      gamepad,
     };
     cb(ctx)?;
     Ok(())
@@ -302,9 +309,35 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
   pub fn wait_input_event(&mut self) -> InputEvent {
     loop {
       let event = self.events.wait_event();
+      self.gamepad.handle_event(&event);
       match event {
         Event::Quit { .. } => {
           std::process::exit(0);
+        }
+        Event::ControllerButtonDown { button, .. } => {
+          use sdl2::controller::Button;
+          match button {
+            Button::DPadUp => return InputEvent::KeyPress(Scancode::Up, Keycode::Up),
+            Button::DPadDown => return InputEvent::KeyPress(Scancode::Down, Keycode::Down),
+            Button::DPadLeft => return InputEvent::KeyPress(Scancode::Left, Keycode::Left),
+            Button::DPadRight => return InputEvent::KeyPress(Scancode::Right, Keycode::Right),
+            Button::A | Button::Start => return InputEvent::KeyPress(Scancode::Return, Keycode::Return),
+            Button::B | Button::Back => return InputEvent::KeyPress(Scancode::Escape, Keycode::Escape),
+            Button::X | Button::Y | Button::LeftShoulder | Button::RightShoulder => {
+              return InputEvent::KeyPress(Scancode::Tab, Keycode::Tab)
+            }
+            _ => {}
+          }
+        }
+        Event::ControllerAxisMotion { axis, value, .. } if value.abs() > 16000 => {
+          use sdl2::controller::Axis;
+          match axis {
+            Axis::LeftY if value < -16000 => return InputEvent::KeyPress(Scancode::Up, Keycode::Up),
+            Axis::LeftY if value > 16000 => return InputEvent::KeyPress(Scancode::Down, Keycode::Down),
+            Axis::LeftX if value < -16000 => return InputEvent::KeyPress(Scancode::Left, Keycode::Left),
+            Axis::LeftX if value > 16000 => return InputEvent::KeyPress(Scancode::Right, Keycode::Right),
+            _ => {}
+          }
         }
         Event::KeyDown {
           scancode: Some(code),
@@ -328,8 +361,12 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     }
   }
 
-  pub fn poll_iter(&mut self) -> impl Iterator<Item = Event> + '_ {
-    self.events.poll_iter()
+  pub fn poll_events(&mut self) -> Vec<Event> {
+    let events: Vec<Event> = self.events.poll_iter().collect();
+    for event in &events {
+      self.gamepad.handle_event(event);
+    }
+    events
   }
 
   pub fn game_dir(&self) -> &Path {

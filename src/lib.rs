@@ -13,6 +13,7 @@ mod context;
 pub mod effects;
 mod error;
 pub mod fonts;
+pub mod gamepad;
 mod glyphs;
 mod highscore;
 mod identities;

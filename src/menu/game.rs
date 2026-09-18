@@ -331,10 +331,20 @@ impl Application<'_> {
         let mut display_set_scale: Option<u32> = None;
         let mut display_toggle_aspect = false;
 
-        for event in ctx.poll_iter() {
+        for event in ctx.poll_events() {
           match event {
             Event::Quit { .. } => {
               std::process::exit(0);
+            }
+            Event::ControllerButtonDown { button, .. } => {
+              use sdl2::controller::Button;
+              match button {
+                Button::Back => break 'round RoundEnd::AbortToMenu,
+                Button::Start => {
+                  paused = true;
+                }
+                _ => {}
+              }
             }
             Event::KeyDown {
               scancode: Some(scancode),
@@ -406,6 +416,16 @@ impl Application<'_> {
               }
             }
             _ => {}
+          }
+        }
+
+        // Query gamepad actions for each human player
+        for player in 0..world.players.len() {
+          if world.players[player].is_bot {
+            continue;
+          }
+          for key in ctx.gamepad.get_player_actions(player) {
+            world.player_action(player, key);
           }
         }
         if display_toggle_fullscreen {
@@ -489,15 +509,48 @@ impl Application<'_> {
 
       if world.flash {
         ctx.present_flash()?;
+        ctx.gamepad.rumble_all(1.0, 350);
       } else if world.shake % 2 != 0 {
         ctx.present_shake(world.shake)?;
+        let intensity = (f32::from(world.shake) / 20.0).min(1.0).max(0.3);
+        ctx.gamepad.rumble_all(intensity, 150);
       } else {
         ctx.present()?;
       }
 
-      // Play sound effects
+      // Play sound effects and trigger localized rumble for nearby explosions
       for request in &world.effects.queue {
         self.effects.play(request.effect, request.frequency, request.location)?;
+        match request.effect {
+          SoundEffect::Explos1 | SoundEffect::Explos2 | SoundEffect::Explos4 | SoundEffect::Explos5 => {
+            let expl_col = request.location.col;
+            let expl_row = request.location.row;
+            for (p_idx, player) in world.players.iter().enumerate() {
+              if player.is_bot || p_idx >= world.actors.len() {
+                continue;
+              }
+              let p_cursor = world.actors[p_idx].pos.cursor();
+              let dc = (expl_col as f32 - p_cursor.col as f32).abs();
+              let dr = (expl_row as f32 - p_cursor.row as f32).abs();
+              let dist: f32 = (dc * dc + dr * dr).sqrt();
+              if dist < 20.0 {
+                let intensity: f32 = (1.0f32 - (dist / 20.0f32)).max(0.25f32);
+                ctx.gamepad.rumble_player(p_idx, intensity, 180);
+              }
+            }
+          }
+          SoundEffect::Explos3 => {
+            ctx.gamepad.rumble_all(1.0, 400);
+          }
+          SoundEffect::Aargh | SoundEffect::Karjaisu => {
+            for (p_idx, player) in world.players.iter().enumerate() {
+              if !player.is_bot && p_idx < world.actors.len() && world.actors[p_idx].pos.cursor() == request.location {
+                ctx.gamepad.rumble_player(p_idx, 0.85, 250);
+              }
+            }
+          }
+          _ => {}
+        }
       }
       world.effects.queue.clear();
 
