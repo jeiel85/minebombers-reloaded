@@ -11,7 +11,8 @@ use mb_core::world::position::Cursor;
 use mb_core::world::{Update, World};
 use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 const SCREEN_WIDTH: usize = 640;
 const SCREEN_HEIGHT: usize = 480;
@@ -23,6 +24,150 @@ static MAIN3_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/MAIN3.SPY"
 static SHOPPIC_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/SHOPPIC.SPY");
 static OPTIONS5_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/OPTIONS5.SPY");
 static INFO1_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/INFO1.SPY");
+static HALLOFFA_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/HALLOFFA.SPY");
+
+// Classic 1995 Handcrafted Maps
+static MAP_BATTLE: &[u8] = include_bytes!("../../../res/minebomb/BATTLE.MNE");
+static MAP_CASTLE: &[u8] = include_bytes!("../../../res/minebomb/CASTLE.MNE");
+static MAP_JAIL: &[u8] = include_bytes!("../../../res/minebomb/JAIL.MNE");
+static MAP_LABYRINT: &[u8] = include_bytes!("../../../res/minebomb/LABYRINT.MNE");
+static MAP_BIOFARM: &[u8] = include_bytes!("../../../res/minebomb/BIOFARM.MNE");
+static MAP_OLDMINE: &[u8] = include_bytes!("../../../res/minebomb/OLDMINE.MNE");
+static MAP_CRUMBLE: &[u8] = include_bytes!("../../../res/minebomb/CRUMBLE.MNE");
+static MAP_ROCKS: &[u8] = include_bytes!("../../../res/minebomb/ROCKS.MNE");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapSelection {
+  Procedural,
+  Battle,
+  Castle,
+  Jail,
+  Labyrinth,
+  Biofarm,
+  OldMine,
+  Crumble,
+  Rocks,
+  RandomClassic,
+}
+
+impl MapSelection {
+  pub fn name(&self) -> &'static str {
+    match self {
+      MapSelection::Procedural => "PROCEDURAL",
+      MapSelection::Battle => "BATTLE",
+      MapSelection::Castle => "CASTLE",
+      MapSelection::Jail => "JAIL",
+      MapSelection::Labyrinth => "LABYRINTH",
+      MapSelection::Biofarm => "BIOFARM",
+      MapSelection::OldMine => "OLD MINE",
+      MapSelection::Crumble => "CRUMBLE",
+      MapSelection::Rocks => "ROCKS",
+      MapSelection::RandomClassic => "RANDOM CLASSIC",
+    }
+  }
+
+  pub fn next(&self) -> Self {
+    match self {
+      MapSelection::Procedural => MapSelection::Battle,
+      MapSelection::Battle => MapSelection::Castle,
+      MapSelection::Castle => MapSelection::Jail,
+      MapSelection::Jail => MapSelection::Labyrinth,
+      MapSelection::Labyrinth => MapSelection::Biofarm,
+      MapSelection::Biofarm => MapSelection::OldMine,
+      MapSelection::OldMine => MapSelection::Crumble,
+      MapSelection::Crumble => MapSelection::Rocks,
+      MapSelection::Rocks => MapSelection::RandomClassic,
+      MapSelection::RandomClassic => MapSelection::Procedural,
+    }
+  }
+
+  pub fn prev(&self) -> Self {
+    match self {
+      MapSelection::Procedural => MapSelection::RandomClassic,
+      MapSelection::Battle => MapSelection::Procedural,
+      MapSelection::Castle => MapSelection::Battle,
+      MapSelection::Jail => MapSelection::Castle,
+      MapSelection::Labyrinth => MapSelection::Jail,
+      MapSelection::Biofarm => MapSelection::Labyrinth,
+      MapSelection::OldMine => MapSelection::Biofarm,
+      MapSelection::Crumble => MapSelection::OldMine,
+      MapSelection::Rocks => MapSelection::Crumble,
+      MapSelection::RandomClassic => MapSelection::Rocks,
+    }
+  }
+
+  pub fn get_map(&self, seed: u64, biome: CaveBiome, treasures: u8) -> LevelMap {
+    let pick_classic = |bytes: &[u8]| {
+      LevelMap::from_file_map(bytes.to_vec()).unwrap_or_else(|_| LevelMap::procedural_map(seed, biome, treasures, 10))
+    };
+
+    match self {
+      MapSelection::Procedural => LevelMap::procedural_map(seed, biome, treasures, 10),
+      MapSelection::Battle => pick_classic(MAP_BATTLE),
+      MapSelection::Castle => pick_classic(MAP_CASTLE),
+      MapSelection::Jail => pick_classic(MAP_JAIL),
+      MapSelection::Labyrinth => pick_classic(MAP_LABYRINT),
+      MapSelection::Biofarm => pick_classic(MAP_BIOFARM),
+      MapSelection::OldMine => pick_classic(MAP_OLDMINE),
+      MapSelection::Crumble => pick_classic(MAP_CRUMBLE),
+      MapSelection::Rocks => pick_classic(MAP_ROCKS),
+      MapSelection::RandomClassic => {
+        let classics = [
+          MAP_BATTLE, MAP_CASTLE, MAP_JAIL, MAP_LABYRINT,
+          MAP_BIOFARM, MAP_OLDMINE, MAP_CRUMBLE, MAP_ROCKS,
+        ];
+        let mut rng = StdRng::seed_from_u64(seed);
+        let idx = rng.gen_range(0..classics.len());
+        pick_classic(classics[idx])
+      }
+    }
+  }
+}
+
+const HIGHSCORE_SLOTS: usize = 10;
+
+/// Left edge of the selected-map plate on the Options screen (just right of the "LOAD LEVELS" label).
+const MAP_NAME_X: i32 = 446;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HighscoreEntry {
+  pub name: String,
+  pub level: u8,
+  pub cash: u32,
+}
+
+/// Inserts a finished single-player run into the table, ordered by level and then cash (best first).
+/// Ties rank below the existing entry. Returns the zero-based rank, or `None` if the run did not
+/// make the top `HIGHSCORE_SLOTS`.
+fn insert_highscore(table: &mut Vec<HighscoreEntry>, entry: HighscoreEntry) -> Option<usize> {
+  let pos = table
+    .iter()
+    .position(|e| (entry.level, entry.cash) > (e.level, e.cash))
+    .unwrap_or(table.len());
+  if pos >= HIGHSCORE_SLOTS {
+    return None;
+  }
+  table.insert(pos, entry);
+  table.truncate(HIGHSCORE_SLOTS);
+  Some(pos)
+}
+
+/// Seed table shown before any run is recorded. Kept in memory only: the WASM module has no
+/// storage of its own, so the table resets when the page is reloaded.
+fn default_highscores() -> Vec<HighscoreEntry> {
+  vec![
+    HighscoreEntry { name: "Skhar".to_string(), level: 10, cash: 18500 },
+    HighscoreEntry { name: "Sami".to_string(), level: 9, cash: 15200 },
+    HighscoreEntry { name: "Ivan".to_string(), level: 8, cash: 12800 },
+    HighscoreEntry { name: "Miner49er".to_string(), level: 7, cash: 10400 },
+    HighscoreEntry { name: "GoldDigger".to_string(), level: 6, cash: 8900 },
+    HighscoreEntry { name: "DynamiteKid".to_string(), level: 5, cash: 7200 },
+    HighscoreEntry { name: "CaveDweller".to_string(), level: 4, cash: 5600 },
+    HighscoreEntry { name: "BoomMaster".to_string(), level: 3, cash: 4100 },
+    HighscoreEntry { name: "TntExpert".to_string(), level: 2, cash: 2800 },
+    HighscoreEntry { name: "Rookie".to_string(), level: 1, cash: 1500 },
+  ]
+}
 
 static mut FRAMEBUFFER: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4] = [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4];
 
@@ -48,6 +193,7 @@ pub enum AppState {
   Shop = 4,
   Battle = 5,
   RoundEnd = 6,
+  HallOfFame = 7,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,6 +426,10 @@ pub struct WebGame {
   pub selected_menu: usize, // 0: New Game, 1: Options, 2: Info, 3: Quit
   pub selected_option: GameOption,
   pub options: Options,
+  pub map_selection: MapSelection,
+  pub highscores: Vec<HighscoreEntry>,
+  /// Rank (zero-based) of the run that was just recorded, highlighted on the Hall of Fame screen.
+  pub new_score_rank: Option<usize>,
   pub round: u16,
   pub total_rounds: u16,
   pub prices: Prices,
@@ -298,6 +448,7 @@ pub struct WebGame {
   pub shop_img: DecodedImage,
   pub options_img: DecodedImage,
   pub info_img: DecodedImage,
+  pub hall_img: DecodedImage,
 
   pub audio_queue: Vec<AudioEvent>,
   pub rumble_queue: Vec<RumbleEvent>,
@@ -550,6 +701,13 @@ impl WebGame {
             };
             self.fill_rect(MENU_ITEM_X + 175, MENU_ITEM_Y + 4 + opt_y, 110, 14, 0, 0, 0);
             self.draw_text(text, MENU_ITEM_X + 175, MENU_ITEM_Y + 6 + opt_y, p[5].r, p[5].g, p[5].b);
+          } else if i == 12 {
+            // Load levels: which map every round is played on. The value goes right of the (long)
+            // "LOAD LEVELS" label, on a plate sized to the text so the label stays visible.
+            let name = self.map_selection.name();
+            let plate_w = (name.len() * 8) as u32 + 8;
+            self.fill_rect(MAP_NAME_X, MENU_ITEM_Y + 4 + opt_y, plate_w, 14, 0, 0, 0);
+            self.draw_text(name, MAP_NAME_X + 4, MENU_ITEM_Y + 6 + opt_y, p[5].r, p[5].g, p[5].b);
           }
         }
 
@@ -678,6 +836,22 @@ impl WebGame {
       AppState::Battle => {
         self.render_full();
       }
+      AppState::HallOfFame => {
+        Self::copy_rgb_to_fb(&self.hall_img.image);
+        let p = &self.hall_img.palette;
+        for (idx, entry) in self.highscores.iter().enumerate() {
+          let line = format!(
+            "{:<2}    {:<20}Level {:<2} Money {}",
+            idx + 1,
+            entry.name,
+            entry.level,
+            entry.cash
+          );
+          let color = if self.new_score_rank == Some(idx) { p[5] } else { p[1] };
+          self.draw_text(&line, 127, 10 * (idx as i32) + 179, color.r, color.g, color.b);
+        }
+        self.draw_text("PRESS ANY KEY TO RETURN", 208, 455, p[1].r, p[1].g, p[1].b);
+      }
       AppState::RoundEnd => {
         if let Some((wave, score)) = self.last_survival_result {
           self.fill_rect(120, 180, 400, 120, 25, 15, 25);
@@ -777,11 +951,7 @@ impl WebGame {
             // NEW GAME: Start match using current configured options, open authentic DOS Shop
             self.round = 1;
             self.total_rounds = self.options.rounds;
-            let mut rng = rand::thread_rng();
-            let biome = CaveBiome::from_u8(rng.gen_range(0..4));
-            let seed = rng.gen::<u64>();
-            self.current_biome = biome;
-            self.level = LevelMap::procedural_map(seed, biome, self.options.treasures, 10);
+            self.pick_next_level();
             self.world = None;
             for eq in Equipment::all_equipment() {
               self.players[0].inventory[eq] = 0;
@@ -866,6 +1036,7 @@ impl WebGame {
                 WinCondition::Survival => WinCondition::GoldRush,
               };
             }
+            GameOption::LoadLevels => { self.map_selection = self.map_selection.prev(); }
             _ => {}
           }
           self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
@@ -906,6 +1077,7 @@ impl WebGame {
                 WinCondition::Survival => WinCondition::ByMoney,
               };
             }
+            GameOption::LoadLevels => { self.map_selection = self.map_selection.next(); }
             _ => {}
           }
           self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
@@ -938,6 +1110,10 @@ impl WebGame {
             };
             self.render_current_state();
           }
+          GameOption::LoadLevels => {
+            self.map_selection = self.map_selection.next();
+            self.render_current_state();
+          }
           _ => {}
         },
         KEY_ESC => {
@@ -947,6 +1123,13 @@ impl WebGame {
         }
         _ => {}
       },
+      AppState::HallOfFame => {
+        // Any key returns to MainMenu
+        self.new_score_rank = None;
+        self.state = AppState::MainMenu;
+        self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+        self.render_current_state();
+      }
       AppState::Info => {
         // Any key or escape returns to MainMenu
         self.state = AppState::MainMenu;
@@ -1106,6 +1289,36 @@ impl WebGame {
         }
       }
     }
+  }
+
+  /// Prepares the map for the next round according to `map_selection`.
+  ///
+  /// The RNG draw order (biome, then seed) is fixed so that the default `Procedural` selection
+  /// produces exactly the same map for the same `mb_seed`, which netplay lockstep relies on.
+  fn pick_next_level(&mut self) {
+    let mut rng = rand::thread_rng();
+    let biome = CaveBiome::from_u8(rng.gen_range(0..4));
+    let seed = rng.gen::<u64>();
+    self.current_biome = match self.map_selection {
+      MapSelection::Procedural => biome,
+      _ => CaveBiome::Classic,
+    };
+    self.level = self.map_selection.get_map(seed, biome, self.options.treasures);
+  }
+
+  /// Records a finished single-player match in the Hall of Fame, as the original game does after
+  /// a campaign. Returns whether the Hall of Fame screen should be shown.
+  fn record_single_player_result(&mut self) -> bool {
+    if self.options.players != 1 {
+      return false;
+    }
+    let entry = HighscoreEntry {
+      name: self.players[0].stats.name.clone(),
+      level: self.total_rounds.min(u16::from(u8::MAX)) as u8,
+      cash: self.players[0].cash,
+    };
+    self.new_score_rank = insert_highscore(&mut self.highscores, entry);
+    true
   }
 
   fn start_round(&mut self, level: LevelMap) {
@@ -1321,6 +1534,10 @@ pub extern "C" fn mb_init(
     Ok(img) => img,
     Err(_) => return 0,
   };
+  let hall_img = match decode_spy(640, 480, HALLOFFA_SPY_BYTES) {
+    Ok(img) => img,
+    Err(_) => return 0,
+  };
 
   let level = LevelMap::random_map(10);
 
@@ -1358,6 +1575,9 @@ pub extern "C" fn mb_init(
     selected_menu: 0,
     selected_option: GameOption::MainMenu,
     options: opts,
+    map_selection: MapSelection::Procedural,
+    highscores: default_highscores(),
+    new_score_rank: None,
     round: 1,
     total_rounds: 10,
     prices,
@@ -1374,6 +1594,7 @@ pub extern "C" fn mb_init(
     shop_img,
     options_img,
     info_img,
+    hall_img,
     audio_queue: Vec::with_capacity(32),
     rumble_queue: Vec::with_capacity(16),
     round_start_tick: 0,
@@ -1682,12 +1903,7 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
       };
 
       if has_next_round {
-        let mut rng = rand::thread_rng();
-        let biome = CaveBiome::from_u8(rng.gen_range(0..4));
-        let seed = rng.gen::<u64>();
-        game.current_biome = biome;
-        let next_level = LevelMap::procedural_map(seed, biome, game.options.treasures, 10);
-        game.level = next_level;
+        game.pick_next_level();
         for p in game.players[1..].iter_mut() {
           auto_buy_for_bot(p, &game.prices);
         }
@@ -1698,7 +1914,11 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         game.render_current_state();
         return 2;
       } else {
-        game.state = AppState::MainMenu;
+        game.state = if game.record_single_player_result() {
+          AppState::HallOfFame
+        } else {
+          AppState::MainMenu
+        };
         game.render_current_state();
         return 3;
       }
@@ -1848,6 +2068,17 @@ pub extern "C" fn mb_set_bot_difficulty(player_idx: u32, diff: u32) {
   }
 }
 
+/// Forces the procedural map generator. Netplay peers do not exchange the Options screen, so a
+/// locally chosen classic map would desync the lockstep simulation.
+#[no_mangle]
+pub extern "C" fn mb_reset_map_selection() {
+  unsafe {
+    if let Some(ref mut game) = GAME {
+      game.map_selection = MapSelection::Procedural;
+    }
+  }
+}
+
 static mut RANDOM_SEED: u64 = 0x853c49e6748fea9b;
 
 fn custom_getrandom(buf: &mut [u8]) -> Result<(), getrandom::Error> {
@@ -1866,5 +2097,262 @@ getrandom::register_custom_getrandom!(custom_getrandom);
 pub extern "C" fn mb_seed(seed: u32) {
   unsafe {
     RANDOM_SEED = (seed as u64) ^ 0x853c49e6748fea9b;
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  const ALL_SELECTIONS: [MapSelection; 10] = [
+    MapSelection::Procedural,
+    MapSelection::Battle,
+    MapSelection::Castle,
+    MapSelection::Jail,
+    MapSelection::Labyrinth,
+    MapSelection::Biofarm,
+    MapSelection::OldMine,
+    MapSelection::Crumble,
+    MapSelection::Rocks,
+    MapSelection::RandomClassic,
+  ];
+
+  fn tiles(map: &LevelMap) -> Vec<MapValue> {
+    Cursor::all().map(|c| map[c]).collect()
+  }
+
+  fn entry(name: &str, level: u8, cash: u32) -> HighscoreEntry {
+    HighscoreEntry { name: name.to_string(), level, cash }
+  }
+
+  #[test]
+  fn map_selection_next_visits_every_variant_once_and_wraps() {
+    let mut seen = Vec::new();
+    let mut cur = MapSelection::Procedural;
+    for _ in 0..ALL_SELECTIONS.len() {
+      assert!(!seen.contains(&cur), "{:?} visited twice", cur);
+      seen.push(cur);
+      cur = cur.next();
+    }
+    assert_eq!(cur, MapSelection::Procedural, "next() must wrap back to the start");
+    assert_eq!(seen.len(), ALL_SELECTIONS.len());
+  }
+
+  #[test]
+  fn map_selection_prev_is_the_inverse_of_next() {
+    for sel in ALL_SELECTIONS {
+      assert_eq!(sel.next().prev(), sel);
+      assert_eq!(sel.prev().next(), sel);
+    }
+  }
+
+  #[test]
+  fn map_selection_names_are_unique_and_fit_on_screen() {
+    let mut names: Vec<&str> = ALL_SELECTIONS.iter().map(|s| s.name()).collect();
+    // The plate is `len * 8 + 8` px wide (8px font advance) and starts at MAP_NAME_X.
+    assert!(
+      names.iter().all(|n| MAP_NAME_X as usize + n.len() * 8 + 8 <= SCREEN_WIDTH),
+      "{:?}",
+      names
+    );
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), ALL_SELECTIONS.len());
+  }
+
+  #[test]
+  fn every_embedded_classic_map_parses() {
+    // `get_map` falls back to a procedural map on a parse error, which would hide a corrupt asset.
+    for (name, bytes) in [
+      ("BATTLE", MAP_BATTLE),
+      ("CASTLE", MAP_CASTLE),
+      ("JAIL", MAP_JAIL),
+      ("LABYRINT", MAP_LABYRINT),
+      ("BIOFARM", MAP_BIOFARM),
+      ("OLDMINE", MAP_OLDMINE),
+      ("CRUMBLE", MAP_CRUMBLE),
+      ("ROCKS", MAP_ROCKS),
+    ] {
+      assert!(LevelMap::from_file_map(bytes.to_vec()).is_ok(), "{}.MNE failed to parse", name);
+    }
+  }
+
+  #[test]
+  fn classic_selection_ignores_seed_biome_and_treasures() {
+    let a = MapSelection::Castle.get_map(1, CaveBiome::Classic, 10);
+    let b = MapSelection::Castle.get_map(999, CaveBiome::from_u8(2), 70);
+    assert_eq!(tiles(&a), tiles(&b));
+    let expected = LevelMap::from_file_map(MAP_CASTLE.to_vec()).unwrap();
+    assert_eq!(tiles(&a), tiles(&expected));
+  }
+
+  #[test]
+  fn procedural_selection_matches_direct_generation() {
+    let biome = CaveBiome::from_u8(1);
+    let via_selection = MapSelection::Procedural.get_map(42, biome, 45);
+    let direct = LevelMap::procedural_map(42, biome, 45, 10);
+    assert_eq!(tiles(&via_selection), tiles(&direct));
+  }
+
+  #[test]
+  fn random_classic_is_deterministic_per_seed_and_varies_across_seeds() {
+    for seed in [0u64, 7, 12345] {
+      let a = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
+      let b = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
+      assert_eq!(tiles(&a), tiles(&b), "seed {} must be reproducible (netplay lockstep)", seed);
+    }
+    let mut distinct: Vec<Vec<MapValue>> = Vec::new();
+    for seed in 0..64u64 {
+      let t = tiles(&MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45));
+      if !distinct.contains(&t) {
+        distinct.push(t);
+      }
+    }
+    assert!(distinct.len() > 1, "RandomClassic always produced the same map");
+  }
+
+  #[test]
+  fn default_highscores_are_full_and_sorted() {
+    let table = default_highscores();
+    assert_eq!(table.len(), HIGHSCORE_SLOTS);
+    assert!(table.windows(2).all(|w| (w[0].level, w[0].cash) >= (w[1].level, w[1].cash)));
+  }
+
+  #[test]
+  fn highscore_new_best_takes_first_and_drops_last() {
+    let mut table = default_highscores();
+    let last = table.last().cloned().unwrap();
+    assert_eq!(insert_highscore(&mut table, entry("Me", 15, 99999)), Some(0));
+    assert_eq!(table.len(), HIGHSCORE_SLOTS);
+    assert_eq!(table[0].name, "Me");
+    assert!(!table.contains(&last), "the previous last place must be pushed out");
+  }
+
+  #[test]
+  fn highscore_below_the_table_is_rejected_and_leaves_it_unchanged() {
+    let mut table = default_highscores();
+    let before = table.clone();
+    assert_eq!(insert_highscore(&mut table, entry("Loser", 1, 0)), None);
+    assert_eq!(table, before);
+  }
+
+  #[test]
+  fn highscore_orders_by_level_then_cash_and_ties_rank_below() {
+    let mut table = vec![entry("A", 5, 1000), entry("B", 5, 500), entry("C", 3, 9000)];
+    // Same level, cash between A and B.
+    assert_eq!(insert_highscore(&mut table, entry("D", 5, 700)), Some(1));
+    // A tie with an existing entry ranks below it.
+    assert_eq!(insert_highscore(&mut table, entry("E", 5, 700)), Some(2));
+    // Higher level beats any cash at a lower level.
+    assert_eq!(insert_highscore(&mut table, entry("F", 6, 1)), Some(0));
+    let names: Vec<&str> = table.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["F", "A", "D", "E", "B", "C"]);
+  }
+
+  /// `mb_init` keeps the game in a process-wide static, so the tests that go through it take this
+  /// lock instead of racing each other on the parallel test runner.
+  static GAME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+  #[test]
+  fn every_map_selection_survives_a_battle() {
+    let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // The wasm build uses `panic = "abort"`, so a panic in a round would kill the whole game.
+    assert_eq!(mb_init(0, 0, 2, 2, 2), 1);
+    for sel in ALL_SELECTIONS {
+      // NEW GAME resets rounds, cash, inventory and the world, so one init serves every selection.
+      unsafe {
+        let game = GAME.as_mut().unwrap();
+        game.map_selection = sel;
+        game.state = AppState::MainMenu;
+        game.selected_menu = 0;
+      }
+      assert_eq!(mb_handle_key(KEY_BOMB), AppState::Shop as u32, "{:?}: NEW GAME", sel);
+      for _ in 0..7 {
+        mb_handle_key(KEY_DOWN); // walk to the LEAVE slot
+      }
+      assert_eq!(mb_handle_key(KEY_BOMB), AppState::Battle as u32, "{:?}: leaving the shop", sel);
+      for _ in 0..600 {
+        mb_step(0, 0, 0, 0);
+        if mb_get_state() != AppState::Battle as u32 {
+          break;
+        }
+      }
+      assert_ne!(mb_get_state(), AppState::MainMenu as u32, "{:?}: fell back to the menu unexpectedly", sel);
+    }
+  }
+
+  #[test]
+  fn menu_flow_selects_classic_map_and_shows_hall_of_fame() {
+    let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    assert_eq!(mb_init(0, 0, 2, 2, 2), 1, "assets (including HALLOFFA.SPY) must decode");
+
+    assert_eq!(mb_get_state(), AppState::Title as u32);
+    mb_handle_key(KEY_ANY);
+    assert_eq!(mb_get_state(), AppState::MainMenu as u32);
+
+    // MainMenu -> Options (second entry); the cursor starts on "main menu", one step up is "load levels"
+    mb_handle_key(KEY_DOWN);
+    mb_handle_key(KEY_BOMB);
+    assert_eq!(mb_get_state(), AppState::Options as u32);
+    mb_handle_key(KEY_UP);
+    mb_handle_key(KEY_RIGHT);
+    unsafe {
+      let game = GAME.as_ref().unwrap();
+      assert_eq!(game.selected_option, GameOption::LoadLevels);
+      assert_eq!(game.map_selection, MapSelection::Battle);
+    }
+    // Enter on the row also advances, left steps back, ESC leaves without resetting it
+    mb_handle_key(KEY_BOMB);
+    unsafe {
+      assert_eq!(GAME.as_ref().unwrap().map_selection, MapSelection::Castle);
+    }
+    mb_handle_key(KEY_LEFT);
+    mb_handle_key(KEY_ESC);
+    assert_eq!(mb_get_state(), AppState::MainMenu as u32);
+    unsafe {
+      assert_eq!(GAME.as_ref().unwrap().map_selection, MapSelection::Battle);
+    }
+
+    // NEW GAME must load the selected classic map, not a procedural one
+    unsafe {
+      GAME.as_mut().unwrap().selected_menu = 0;
+    }
+    mb_handle_key(KEY_BOMB);
+    assert_eq!(mb_get_state(), AppState::Shop as u32);
+    unsafe {
+      let game = GAME.as_ref().unwrap();
+      let battle = LevelMap::from_file_map(MAP_BATTLE.to_vec()).unwrap();
+      assert_eq!(tiles(&game.level), tiles(&battle));
+      assert_eq!(game.current_biome, CaveBiome::Classic);
+    }
+
+    // Netplay start forces the procedural generator again
+    mb_reset_map_selection();
+    unsafe {
+      assert_eq!(GAME.as_ref().unwrap().map_selection, MapSelection::Procedural);
+    }
+
+    // Hall of Fame: only single-player matches are recorded
+    unsafe {
+      let game = GAME.as_mut().unwrap();
+      game.options.players = 2;
+      assert!(!game.record_single_player_result());
+      assert_eq!(game.highscores, default_highscores());
+
+      game.options.players = 1;
+      game.total_rounds = 15;
+      game.players[0].cash = 99_999;
+      assert!(game.record_single_player_result());
+      assert_eq!(game.new_score_rank, Some(0));
+      assert_eq!(game.highscores[0].cash, 99_999);
+      assert_eq!(game.highscores.len(), HIGHSCORE_SLOTS);
+
+      game.state = AppState::HallOfFame;
+      game.render_current_state();
+    }
+    assert_eq!(mb_handle_key(KEY_ANY), AppState::MainMenu as u32);
+    unsafe {
+      assert_eq!(GAME.as_ref().unwrap().new_score_rank, None);
+    }
   }
 }

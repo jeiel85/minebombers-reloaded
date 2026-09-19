@@ -145,7 +145,7 @@ class MineBombersWeb {
 
       this.audio.ensureContext();
 
-      const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Options, 3: Info, 4: Shop, 5: Battle, 6: RoundEnd
+      const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Options, 3: Info, 4: Shop, 5: Battle, 6: RoundEnd, 7: HallOfFame
 
       if (state !== 5) {
         // Menu or Shop interaction
@@ -467,6 +467,8 @@ class MineBombersWeb {
 
       // Seed deterministic generator
       this.exports.mb_seed(data.seed);
+      // Peers only share the seed, so every peer must generate the same (procedural) map
+      this.exports.mb_reset_map_selection();
 
       // Configure players vs bots
       data.slots.forEach((slot, idx) => {
@@ -562,7 +564,7 @@ class MineBombersWeb {
       this.lastFrameTime = timestamp - (delta % requiredInterval);
 
       if (this.exports) {
-        const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Options, 3: Info, 4: Shop, 5: Battle, 6: RoundEnd
+        const state = this.exports.mb_get_state(); // 0: Title, 1: MainMenu, 2: Options, 3: Info, 4: Shop, 5: Battle, 6: RoundEnd, 7: HallOfFame
 
         if (state === 5) {
           // Battle simulation frame
