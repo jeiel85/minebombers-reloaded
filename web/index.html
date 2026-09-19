@@ -141,6 +141,196 @@
       z-index: 10;
     }
 
+    /* Virtual Touch Controls Styling */
+    #touch-controls-container {
+      display: none;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      width: 100%;
+      max-width: 960px;
+      margin-top: 8px;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: rgba(18, 22, 34, 0.9);
+      border: 1px solid #282e3f;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+
+    /* D-PAD STYLING */
+    .touch-dpad {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+      touch-action: none;
+      position: relative;
+    }
+    .touch-dpad-mid {
+      display: flex;
+      align-items: center;
+    }
+    .touch-dpad-center {
+      width: 44px;
+      height: 44px;
+      background: #141721;
+      border: 1px solid #282e3f;
+    }
+    .touch-dpad-btn {
+      width: 48px;
+      height: 48px;
+      background: #232736;
+      color: #f1c40f;
+      border: 2px solid #3c435c;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      touch-action: none;
+      user-select: none;
+      transition: background 0.08s, transform 0.08s;
+      box-shadow: inset 0 0 4px rgba(0,0,0,0.5);
+    }
+    .touch-up { border-radius: 8px 8px 0 0; }
+    .touch-down { border-radius: 0 0 8px 8px; }
+    .touch-left { border-radius: 8px 0 0 8px; }
+    .touch-right { border-radius: 0 8px 8px 0; }
+
+    .touch-dpad-btn:active, .touch-dpad-btn.pressed {
+      background: #f39c12 !important;
+      color: #000 !important;
+      border-color: #f1c40f !important;
+      box-shadow: 0 0 14px rgba(243, 156, 18, 0.8) !important;
+      transform: scale(0.95);
+    }
+
+    /* ACTION BUTTONS CLUSTER */
+    .touch-actions-cluster {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      touch-action: none;
+      user-select: none;
+    }
+    .touch-action-btn {
+      width: 84px;
+      height: 52px;
+      background: #232736;
+      border: 2px solid #3c435c;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ecf0f1;
+      touch-action: none;
+      user-select: none;
+      cursor: pointer;
+      transition: all 0.08s ease;
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+    }
+    .touch-action-btn .touch-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+    .touch-action-btn .touch-label {
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+
+    .btn-bomb {
+      border-color: #e74c3c;
+      background: #2c1a1d;
+      color: #ff7675;
+    }
+    .btn-choose {
+      border-color: #3498db;
+      background: #152233;
+      color: #74b9ff;
+    }
+    .btn-remote {
+      border-color: #e67e22;
+      background: #2d2013;
+      color: #fab1a0;
+    }
+    .btn-special {
+      border-color: #9b59b6;
+      background: #24162e;
+      color: #e056fd;
+    }
+
+    .touch-action-btn:active, .touch-action-btn.pressed {
+      transform: scale(0.94);
+      filter: brightness(1.3);
+      box-shadow: 0 0 14px currentColor !important;
+    }
+
+    .touch-util-btn {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #232736;
+      border: 1px solid #7f8c8d;
+      color: #bdc3c7;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      touch-action: none;
+      user-select: none;
+      cursor: pointer;
+    }
+    .touch-util-btn:active, .touch-util-btn.pressed {
+      background: #e74c3c;
+      color: #fff;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 4px;
+      }
+      header h1 {
+        font-size: 16px;
+      }
+      .subtitle {
+        font-size: 9px;
+      }
+      .top-toolbar {
+        padding: 4px 6px;
+        gap: 4px;
+      }
+      .top-toolbar button {
+        padding: 4px 6px;
+        font-size: 10px;
+      }
+      .touch-dpad-btn {
+        width: 44px;
+        height: 44px;
+        font-size: 15px;
+      }
+      .touch-dpad-center {
+        width: 38px;
+        height: 38px;
+      }
+      .touch-action-btn {
+        width: 70px;
+        height: 46px;
+      }
+      .touch-action-btn .touch-icon {
+        font-size: 14px;
+      }
+      .touch-action-btn .touch-label {
+        font-size: 8px;
+      }
+    }
+
     /* Controls Guide Panel */
     .controls-panel {
       margin-top: 10px;
@@ -205,6 +395,7 @@
     <div class="btn-group">
       <button id="btn-restart" title="Back to Main Menu">🕹️ Menu / Restart</button>
       <button id="btn-netplay" style="background:#1b4d3e;border-color:#2ecc71;font-weight:bold;color:#2ecc71;">🌐 Netplay (P2P)</button>
+      <button id="btn-touch" title="Toggle On-Screen Touch Controls">📱 Touch</button>
       <button id="btn-crt" class="active">📺 CRT Scanlines</button>
       <button id="btn-mute">🔊 Sound</button>
       <button id="btn-fullscreen">⛶ Fullscreen</button>
@@ -221,6 +412,43 @@
   <div id="canvas-container" class="crt">
     <div id="loading">LOADING MINE BOMBERS WASM...</div>
     <canvas id="screen" width="640" height="480"></canvas>
+  </div>
+
+  <!-- Virtual Touch Controls Container -->
+  <div id="touch-controls-container">
+    <!-- Utility ESC / Menu Button -->
+    <button id="touch-btn-esc" class="touch-util-btn" title="Escape / Menu">⏸️ ESC / MENU</button>
+
+    <!-- Left: Virtual D-Pad -->
+    <div id="touch-dpad" class="touch-dpad">
+      <button id="touch-up" class="touch-dpad-btn touch-up">▲</button>
+      <div class="touch-dpad-mid">
+        <button id="touch-left" class="touch-dpad-btn touch-left">◀</button>
+        <div class="touch-dpad-center"></div>
+        <button id="touch-right" class="touch-dpad-btn touch-right">▶</button>
+      </div>
+      <button id="touch-down" class="touch-dpad-btn touch-down">▼</button>
+    </div>
+
+    <!-- Right: Action Buttons Cluster -->
+    <div class="touch-actions-cluster">
+      <button id="touch-btn-tab" class="touch-action-btn btn-special" title="Special Weapon / Tab">
+        <span class="touch-icon">⭐</span>
+        <span class="touch-label">SPECIAL</span>
+      </button>
+      <button id="touch-btn-remote" class="touch-action-btn btn-remote" title="Remote Detonator">
+        <span class="touch-icon">💥</span>
+        <span class="touch-label">DETONATE</span>
+      </button>
+      <button id="touch-btn-choose" class="touch-action-btn btn-choose" title="Weapon / Sell">
+        <span class="touch-icon">🔄</span>
+        <span class="touch-label">WEAPON</span>
+      </button>
+      <button id="touch-btn-bomb" class="touch-action-btn btn-bomb" title="Bomb / Buy / Action">
+        <span class="touch-icon">💣</span>
+        <span class="touch-label">BOMB</span>
+      </button>
+    </div>
   </div>
 
   <div class="controls-panel">

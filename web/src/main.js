@@ -1,6 +1,7 @@
 import { AudioManager } from './audio.js';
 import { GamepadManager } from './gamepad.js';
 import { NetplayManager } from './network.js';
+import { TouchController } from './touch.js';
 
 // WASM Key Constants
 const KEY_UP = 1;
@@ -21,6 +22,7 @@ class MineBombersWeb {
     this.audio = new AudioManager();
     this.gamepad = new GamepadManager();
     this.netplay = new NetplayManager();
+    this.touch = new TouchController(this);
 
     this.wasm = null;
     this.memory = null;
@@ -565,7 +567,8 @@ class MineBombersWeb {
         if (state === 5) {
           // Battle simulation frame
           const padInputs = this.gamepad.getPlayerInputs();
-          const localInput = (this.keyState.p1 | padInputs[0]) || 0;
+          const touchInputs = this.touch.getInputs();
+          const localInput = (this.keyState.p1 | padInputs[0] | touchInputs) || 0;
 
           if (this.netplay.state === 'IN_GAME') {
             const frame = this.netplay.currentFrame++;
@@ -606,12 +609,15 @@ class MineBombersWeb {
           this.audio.playSfx(effId, freq, pan);
         }
 
-        // Process rumble events from WASM
+        // Process rumble events from WASM (gamepad & mobile haptics)
         while (this.exports.mb_get_rumble_event(this.rumblePtr) === 1) {
           const pIdx = Math.round(memF32[rumbleOffset]);
           const intensity = memF32[rumbleOffset + 1];
           const duration = memF32[rumbleOffset + 2];
           this.gamepad.rumble(pIdx, intensity, duration);
+          if (pIdx === 0 && intensity > 0.2) {
+            this.touch.vibrate(Math.min(120, Math.max(20, Math.round(duration * 0.8))));
+          }
         }
       }
     }
