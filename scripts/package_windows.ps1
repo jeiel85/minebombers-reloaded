@@ -40,7 +40,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $stage), (Join-Path (Resolve-Path $OutDir) "$name.zip"), [System.IO.Compression.CompressionLevel]::Optimal, $true)
 
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-"$hash  $name.zip" | Set-Content -Encoding ascii (Join-Path $OutDir "$name.zip.sha256")
+# LF, not the CRLF that Set-Content adds: `sha256sum -c` on Linux/Git Bash rejects a CR at the end of the file name.
+[System.IO.File]::WriteAllText((Join-Path (Resolve-Path $OutDir) "$name.zip.sha256"), "$hash  $name.zip`n", [System.Text.Encoding]::ASCII)
 
 Write-Host "$zip"
 Write-Host "sha256 $hash"
