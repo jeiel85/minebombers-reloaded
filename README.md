@@ -33,7 +33,7 @@
 ```powershell
 cargo run --release
 ```
-SDL2 DLL은 저장소에 들어 있습니다. 빌드한 exe를 따로 옮겨 실행하려면 DLL을 exe 옆에 두세요. `Play_MineBombers_PC.bat`도 같은 일을 합니다. 릴리스 zip 자체는 `pwsh scripts/package_windows.ps1`이 만듭니다.
+SDL2 DLL은 저장소에 들어 있어 `cargo run --release`가 바로 동작합니다. 빌드한 exe를 따로 옮겨 실행하려면 DLL을 exe 옆에 두세요. 릴리스 zip 자체는 `pwsh scripts/package_windows.ps1`이 만듭니다.
 
 **Linux**
 ```bash
