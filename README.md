@@ -34,7 +34,7 @@
 - ⚡ **순수 네이티브 64비트 Windows 엔진 (No DOSBox)**:
   - DOSBox 에뮬레이션 없이 Rust와 SDL2로 직접 구동되어 초저지연 반응성과 60 FPS의 부드러운 화면을 제공합니다.
   - Windows GUI 서브시스템으로 컴파일되어 실행 시 **검은색 cmd 콘솔 창이 전혀 뜨지 않습니다.**
-  - 전용 광부 & 다이너마이트 커스텀 멀티 해상도 아이콘 내장 (`MineBombers.exe`).
+  - 멀티 해상도 앱 아이콘 내장 (`MineBombers.exe`, 직접 그린 폭탄 아이콘).
 - 🌐 **온라인 & LAN P2P 멀티플레이 넷플레이 (WebRTC Netplay)**:
   - 서버리스 WebRTC DataChannel P2P 아키텍처 및 6자리 룸 코드(`mb-XXXXXX`)로 원거리 친구와 즉시 매칭.
   - 브라우저 `BroadcastChannel` 기반 로컬/LAN 방 자동 검색 기능 내장.
@@ -210,7 +210,7 @@ Copy-Item target\release\MineBombers.exe .\MineBombers.exe -Force
 
 - **Original Game**: *Mine Bombers* 3.11 by **Skitso Productions** (Finland). 원작의 저작권은 Skitso Productions에 있으며, 이 저장소는 원작과 제휴하거나 승인받은 프로젝트가 아닙니다.
 - **Engine base**: 게임 엔진의 뼈대(DOS 데이터 디코딩, 타일 렌더링, 월드 시뮬레이션)는 **Ivan Dubrov**의 [`mb-reloaded`](https://github.com/idubrov/mb-reloaded)를 기반으로 합니다. 해당 저장소에는 라이선스가 명시되어 있지 않아 [라이선스를 요청하는 이슈](https://github.com/idubrov/mb-reloaded/issues/1)를 올려 두었습니다.
-- **라이선스 상태**: 이 프로젝트의 코드 라이선스는 **아직 정리되지 않았습니다**. 원작 게임 파일은 이 프로젝트에 포함되지 않으며 사용자가 자기 사본을 준비합니다(다만 git 이력에는 과거 커밋의 원본 파일이 남아 있습니다). 근거와 현황은 [assets/LICENSE-NOTES.md](assets/LICENSE-NOTES.md)에 있으며, 권리자께서 요청하시면 해당 자료를 바로 제거하겠습니다.
+- **라이선스 상태**: 이 프로젝트의 코드 라이선스는 **아직 정리되지 않았습니다**. 원작 게임 파일은 이 프로젝트에 포함되지 않으며 사용자가 자기 사본을 준비합니다(이전 저장소의 이력에 있던 원본 파일은 이력을 재작성해 모두 제거했습니다). 근거와 현황은 [assets/LICENSE-NOTES.md](assets/LICENSE-NOTES.md)에 있으며, 권리자께서 요청하시면 해당 자료를 바로 제거하겠습니다.
 - **Enhanced Remaster Engine**:
   - 3단계 반응형 AI 봇 시스템 (`src/world/bot.rs`)
   - WebAssembly 제로 카피 렌더링 & 웹 오디오/햅틱 브라우저 파이프라인 (`crates/mb-wasm`, `web/`)

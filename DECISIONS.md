@@ -6,7 +6,7 @@
 
 - **사실**: 원작 패키지의 문서가 서로 모순됩니다(`FILE_ID.DIZ`는 "MAY BE DISTRIBUTED", `MINEENG.TXT`는 "복사·배포는 불법"). 변환·내장(파생)에 대한 언급은 없습니다. 상위 `mb-reloaded`, ScummVM, OpenRA, OpenTyrian, OpenRCT2는 원본 데이터를 소스 저장소에 넣지 않습니다.
 - **대안**: 원본 동봉 / 사이트가 원본을 제공 / 권리자 허락을 받고 동봉 / 대체 에셋 제작.
-- **결과**: 저장소·배포 사이트·WASM에 원본이 없고, 사용자가 자기 사본을 고릅니다(PR #12). 웹 데모는 처음에 파일을 한 번 골라야 열립니다. git 이력에는 원본이 남아 있습니다(D4).
+- **결과**: 저장소·배포 사이트·WASM에 원본이 없고, 사용자가 자기 사본을 고릅니다(PR #12). 웹 데모는 처음에 파일을 한 번 골라야 열립니다. git 이력의 원본은 D4에서 제거했습니다.
 
 ## D2. 제품 방향: 원작 3.11을 최신 Windows/Linux에서 돌리는 이식 — 제안됨 (2026-09-20)
 
@@ -23,8 +23,11 @@
 - **유지관리자 의견**: (b) 지향("엔진을 직접 만든다").
 - **(b)의 전제**: 규칙의 출처를 문서로 남긴다(원본 파일 포맷, DOS 원작 관찰). 모듈별 출처 표를 유지한다. 기존 코드를 보며 옮겨 적지 않는다. 이미 상위 코드를 읽은 사람이 쓰는 재구현은 독립성을 입증하기 어렵다는 점을 인지한다.
 
-## D4. git 이력에 남은 원본 자료 — 미결
+## D4. git 이력의 원본 자료: B, 이력을 재작성해 새 저장소로 이전 — 결정됨 (2026-09-20)
 
-- **사실** (2026-09-20): 이력에 `res/minebomb/`(130개)와 `res/minebomb.zip`, JS-DOS 번들(`apps/client/public/minebomb.{jsdos,zip}`), 변환 오디오(`web/audio/`, `apps/client/public/assets/audio/`), 46개 맵을 변환한 `packages/shared/src/game/classicMapsData.json`, 원본이 내장된 과거 `web/pkg/mb_wasm.wasm`이 있습니다. 커밋 41개, `.git` 52 MB, 포크·스타·릴리스·태그 0개, `main` 보호 없음.
-- **대안**: (A) `git filter-repo`로 이력 재작성 + force-push + GitHub 지원에 캐시/PR 참조 삭제 요청 / (B) 재작성한 이력을 새 저장소로 옮기고 기존 저장소 삭제 / (C) 비공개 전환만.
-- **주의**: 브랜치를 고쳐도 GitHub의 `refs/pull/*` 참조와 SHA 직접 조회는 남습니다(A의 한계).
+- **사실**: 이력에 `res/minebomb/`(130개)와 `res/minebomb.zip`, JS-DOS 번들(`apps/client/public/minebomb.{jsdos,zip}`), 변환 오디오(`web/audio/`, `apps/client/public/assets/audio/`), 46개 맵을 변환한 `packages/shared/src/game/classicMapsData.json`, 원본이 내장된 과거 `web/pkg/mb_wasm.wasm`이 있었습니다. 재작성 리허설 중에 **앱 아이콘(`res/minebombers.ico`, `web/favicon.ico`)이 원작 타이틀 화면을 잘라 축소한 이미지**이고 이 아이콘이 `MineBombers.exe`에도 내장돼 있음을 추가로 확인했습니다(바이트 검색은 축소된 파생물을 못 잡습니다). 포크·스타·릴리스·태그 0개.
+- **대안**: (A) 같은 저장소에서 재작성 + force-push + GitHub 지원에 캐시/PR 참조 삭제 요청 / (B) 재작성한 이력을 새 저장소로 옮기고 기존 저장소 삭제 / (C) 비공개 전환만.
+- **이유**: 기존 저장소에서는 브랜치를 고쳐도 `refs/pull/*`와 SHA 직접 조회에 옛 객체가 남고, 사용자가 이를 지울 수 없습니다. 포크·스타·릴리스가 없어 이전 비용이 작습니다.
+- **조치**: 위 경로에 `MineBombers.exe`, 두 아이콘, 쓰지 않는 JS-DOS 에뮬레이터(`apps/client/public/js-dos/`)를 더해 이력 전체에서 제거하고, 아이콘은 도형으로 직접 그린 것으로 교체했습니다.
+- **검증**: 삭제 경로를 건드리는 커밋 0개, 삭제 경로 blob 261개 중 잔존 0개, 원본 바이트가 든 객체 613개 중 156개 → 360개 중 0개, 커밋 48개 → 46개, 최상단 브랜치에서 테스트 통과, wasm 재빌드 결과가 삭제 전과 바이트 동일.
+- **한계**: 압축·재인코딩·축소된 형태(ZIP, JS-DOS 번들, JSON, MP3, 아이콘 같은 축소 이미지)는 바이트 검색에 걸리지 않아 경로, blob ID, 눈으로 본 출처 확인에만 의존했습니다. 코드로 생성한 과거 스프라이트(`scripts/generate_retro_art.cjs` 산출물)가 원작을 모사했는지는 판정하지 못했습니다. 이미 다른 사람이 받아 간 사본은 회수할 수 없습니다.
