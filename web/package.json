@@ -1,0 +1,6 @@
+{
+  "name": "mine-bombers-web",
+  "private": true,
+  "type": "module",
+  "description": "Static site. This file only lets Node treat the ES modules here as modules for scripts and tests."
+}

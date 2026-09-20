@@ -1,23 +1,19 @@
+import { ChiptuneJsPlayer } from '../vendor/chiptune3/chiptune3.js';
+import { SFX_FILES, BGM_FILE, decodeVoc } from './assets.js';
+
+const BGM_VOLUME = 0.45;
+
 export class AudioManager {
   constructor() {
     this.ctx = null;
-    this.buffers = {};
+    // Indexed like SFX_FILES / the wasm module's AudioEvent.effect_id
+    this.buffers = [];
+    this.bgmData = null;
     this.bgm = null;
+    this.bgmReady = false;
+    this.bgmWanted = false;
+    this.bgmPlaying = false;
     this.muted = false;
-    this.sfxNames = [
-      'sfx_kili',     // 0
-      'sfx_picaxe',   // 1
-      'sfx_explos1',  // 2
-      'sfx_explos2',  // 3
-      'sfx_explos3',  // 4
-      'sfx_explos4',  // 5
-      'sfx_explos5',  // 6
-      'sfx_aargh',    // 7
-      'sfx_karjaisu', // 8
-      'sfx_pikkupom', // 9
-      'sfx_urethan',  // 10
-      'sfx_applause', // 11
-    ];
   }
 
   ensureContext() {
@@ -30,29 +26,37 @@ export class AudioManager {
     }
   }
 
-  async preload() {
+  /**
+   * Builds the sound effects from the original .VOC files and keeps the original tracker module
+   * for the background music.
+   * @param {Map<string, Uint8Array>} files original game files, see assets.js
+   */
+  preload(files) {
     this.ensureContext();
-    const promises = this.sfxNames.map(async (name) => {
+    SFX_FILES.forEach((name, id) => {
       try {
-        const res = await fetch(`./audio/${name}.wav`);
-        if (!res.ok) return;
-        const arrayBuf = await res.arrayBuffer();
-        this.buffers[name] = await this.ctx.decodeAudioData(arrayBuf);
+        const { pcm, sampleRate } = decodeVoc(files.get(name));
+        const buffer = this.ctx.createBuffer(1, pcm.length, sampleRate);
+        const samples = buffer.getChannelData(0);
+        for (let i = 0; i < pcm.length; i++) {
+          samples[i] = (pcm[i] - 128) / 128; // 8-bit unsigned PCM
+        }
+        this.buffers[id] = buffer;
       } catch (e) {
         console.warn('Failed to load sound:', name, e);
       }
     });
-    await Promise.all(promises);
+    this.bgmData = files.get(BGM_FILE) || null;
   }
 
   playSfx(id, freq = 11000, pan = 0.0) {
     if (this.muted || !this.ctx) return;
-    const name = this.sfxNames[id];
-    if (!name || !this.buffers[name]) return;
+    const buffer = this.buffers[id];
+    if (!buffer) return;
 
     try {
       const source = this.ctx.createBufferSource();
-      source.buffer = this.buffers[name];
+      source.buffer = buffer;
 
       // Pitch/frequency scaling
       if (freq > 0 && freq !== 11000) {
@@ -80,26 +84,45 @@ export class AudioManager {
   }
 
   startBgm() {
-    if (this.bgm) return;
+    if (!this.bgmData || !this.ctx || this.bgmPlaying) return;
     try {
-      this.bgm = new Audio('./audio/bgm_oeku.mp3');
-      this.bgm.loop = true;
-      this.bgm.volume = 0.45;
-      this.bgm.play().catch(() => {});
-    } catch (e) {}
+      if (!this.bgm) {
+        // libopenmpt (via chiptune3) plays the original Scream Tracker 3 module
+        const player = new ChiptuneJsPlayer({ context: this.ctx });
+        player.gain.connect(this.ctx.destination);
+        player.setVol(this.muted ? 0 : BGM_VOLUME);
+        player.onInitialized(() => {
+          this.bgmReady = true;
+          this.playBgm();
+        });
+        player.onError((e) => console.warn('BGM error:', e));
+        this.bgm = player;
+      }
+      this.bgmWanted = true;
+      this.playBgm();
+    } catch (e) {
+      console.warn('BGM unavailable:', e);
+    }
+  }
+
+  playBgm() {
+    if (!this.bgmWanted || !this.bgmReady || this.bgmPlaying) return;
+    this.bgm.play(this.bgmData.slice().buffer); // loops until stopped
+    this.bgmPlaying = true;
   }
 
   stopBgm() {
-    if (this.bgm) {
-      this.bgm.pause();
-      this.bgm = null;
+    this.bgmWanted = false;
+    if (this.bgm && this.bgmPlaying) {
+      this.bgm.stop();
+      this.bgmPlaying = false;
     }
   }
 
   toggleMute() {
     this.muted = !this.muted;
     if (this.bgm) {
-      this.bgm.muted = this.muted;
+      this.bgm.setVol(this.muted ? 0 : BGM_VOLUME);
     }
     return this.muted;
   }

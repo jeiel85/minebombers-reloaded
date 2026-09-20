@@ -1,4 +1,5 @@
 import { AudioManager } from './audio.js';
+import { GAME_FILES, SFX_FILES, BGM_FILE, loadOriginalFiles } from './assets.js';
 import { GamepadManager } from './gamepad.js';
 import { NetplayManager } from './network.js';
 import { TouchController } from './touch.js';
@@ -65,15 +66,21 @@ class MineBombersWeb {
       this.exports = instance.exports;
       this.memory = instance.exports.memory;
 
-      // Preload audio
-      await this.audio.preload();
+      // The original game files are fetched at runtime; the wasm module contains none of them
+      const files = await loadOriginalFiles([...GAME_FILES, ...SFX_FILES, BGM_FILE]);
+      for (const name of GAME_FILES) {
+        this.registerGameFile(name, files.get(name));
+      }
+      this.audio.preload(files);
 
-      // Allocate small scratch buffers in wasm memory for audio/rumble events
-      this.audioPtr = 1024 * 1024 * 3; // 3MB offset safely beyond static data
-      this.rumblePtr = this.audioPtr + 64;
+      // Scratch buffers for audio/rumble events, allocated by the module so they never overlap its heap
+      this.audioPtr = this.allocScratch(64);
+      this.rumblePtr = this.allocScratch(64);
 
       // Initialize game into Title screen
-      this.exports.mb_init(0, 0, 2, 2, 2);
+      if (this.exports.mb_init(0, 0, 2, 2, 2) !== 1) {
+        throw new Error('The original game files could not be decoded (mb_init failed)');
+      }
 
       document.getElementById('loading').style.display = 'none';
 
@@ -86,6 +93,29 @@ class MineBombersWeb {
       console.error("Initialization error:", err);
       document.getElementById('loading').textContent = "Error: " + err.message;
     }
+  }
+
+  // Copies bytes into a fresh buffer inside the wasm module and returns its address.
+  writeToWasm(bytes) {
+    const ptr = this.exports.mb_alloc(bytes.length) >>> 0;
+    // Build the view after the allocation: it may have grown (and detached) the old memory buffer
+    new Uint8Array(this.memory.buffer, ptr, bytes.length).set(bytes);
+    return ptr;
+  }
+
+  // Hands one original game file to the wasm module (it takes ownership of both buffers)
+  registerGameFile(name, bytes) {
+    const nameBytes = new TextEncoder().encode(name);
+    const namePtr = this.writeToWasm(nameBytes);
+    const dataPtr = this.writeToWasm(bytes);
+    if (this.exports.mb_asset_register(namePtr, nameBytes.length, dataPtr, bytes.length) !== 1) {
+      throw new Error(`Could not register game file ${name}`);
+    }
+  }
+
+  // 16-byte aligned scratch space that lives as long as the page
+  allocScratch(size) {
+    return ((this.exports.mb_alloc(size + 15) >>> 0) + 15) & ~15;
   }
 
   renderFramebuffer() {

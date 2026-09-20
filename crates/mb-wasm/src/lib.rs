@@ -17,24 +17,62 @@ use rand::{Rng, SeedableRng};
 const SCREEN_WIDTH: usize = 640;
 const SCREEN_HEIGHT: usize = 480;
 
-static SIKA_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/SIKA.SPY");
-static FONTTI_FON_BYTES: &[u8] = include_bytes!("../../../res/minebomb/FONTTI.FON");
-static TITLEBE_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/TITLEBE.SPY");
-static MAIN3_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/MAIN3.SPY");
-static SHOPPIC_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/SHOPPIC.SPY");
-static OPTIONS5_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/OPTIONS5.SPY");
-static INFO1_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/INFO1.SPY");
-static HALLOFFA_SPY_BYTES: &[u8] = include_bytes!("../../../res/minebomb/HALLOFFA.SPY");
+/// Classic 1995 handcrafted maps that the Options screen can select.
+const CLASSIC_MAP_FILES: [&str; 8] = [
+  "BATTLE.MNE",
+  "CASTLE.MNE",
+  "JAIL.MNE",
+  "LABYRINT.MNE",
+  "BIOFARM.MNE",
+  "OLDMINE.MNE",
+  "CRUMBLE.MNE",
+  "ROCKS.MNE",
+];
 
-// Classic 1995 Handcrafted Maps
-static MAP_BATTLE: &[u8] = include_bytes!("../../../res/minebomb/BATTLE.MNE");
-static MAP_CASTLE: &[u8] = include_bytes!("../../../res/minebomb/CASTLE.MNE");
-static MAP_JAIL: &[u8] = include_bytes!("../../../res/minebomb/JAIL.MNE");
-static MAP_LABYRINT: &[u8] = include_bytes!("../../../res/minebomb/LABYRINT.MNE");
-static MAP_BIOFARM: &[u8] = include_bytes!("../../../res/minebomb/BIOFARM.MNE");
-static MAP_OLDMINE: &[u8] = include_bytes!("../../../res/minebomb/OLDMINE.MNE");
-static MAP_CRUMBLE: &[u8] = include_bytes!("../../../res/minebomb/CRUMBLE.MNE");
-static MAP_ROCKS: &[u8] = include_bytes!("../../../res/minebomb/ROCKS.MNE");
+/// Screens and font that `mb_init` decodes.
+const SCREEN_ASSET_FILES: [&str; 8] = [
+  "SIKA.SPY",
+  "FONTTI.FON",
+  "TITLEBE.SPY",
+  "MAIN3.SPY",
+  "SHOPPIC.SPY",
+  "OPTIONS5.SPY",
+  "INFO1.SPY",
+  "HALLOFFA.SPY",
+];
+
+// The original Mine Bombers game files are not compiled into this module. The host page fetches the
+// unmodified files and hands them over with `mb_alloc` + `mb_asset_register` before calling `mb_init`.
+static mut ASSETS: Vec<(String, Vec<u8>)> = Vec::new();
+
+fn register_asset(name: &str, data: Vec<u8>) {
+  // SAFETY: the module is single-threaded and no reference into `ASSETS` outlives this call.
+  let assets = unsafe { &mut *std::ptr::addr_of_mut!(ASSETS) };
+  match assets.iter_mut().find(|(n, _)| n == name) {
+    Some(entry) => entry.1 = data,
+    None => assets.push((name.to_string(), data)),
+  }
+}
+
+fn asset(name: &str) -> Option<Vec<u8>> {
+  // SAFETY: see `register_asset`; the data is cloned so nothing borrows the registry.
+  let assets = unsafe { &*std::ptr::addr_of!(ASSETS) };
+  assets.iter().find(|(n, _)| n == name).map(|(_, data)| data.clone())
+}
+
+/// First required file for which `has` is false.
+fn find_missing(has: impl Fn(&str) -> bool) -> Option<&'static str> {
+  SCREEN_ASSET_FILES
+    .iter()
+    .chain(CLASSIC_MAP_FILES.iter())
+    .copied()
+    .find(|name| !has(name))
+}
+
+/// First file that `mb_init` needs but the host has not registered.
+fn missing_asset() -> Option<&'static str> {
+  find_missing(|name| asset(name).is_some())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapSelection {
@@ -96,30 +134,42 @@ impl MapSelection {
     }
   }
 
+  /// File name of the classic map behind this selection, if it is a fixed one.
+  fn classic_file(&self) -> Option<&'static str> {
+    match self {
+      MapSelection::Procedural | MapSelection::RandomClassic => None,
+      MapSelection::Battle => Some(CLASSIC_MAP_FILES[0]),
+      MapSelection::Castle => Some(CLASSIC_MAP_FILES[1]),
+      MapSelection::Jail => Some(CLASSIC_MAP_FILES[2]),
+      MapSelection::Labyrinth => Some(CLASSIC_MAP_FILES[3]),
+      MapSelection::Biofarm => Some(CLASSIC_MAP_FILES[4]),
+      MapSelection::OldMine => Some(CLASSIC_MAP_FILES[5]),
+      MapSelection::Crumble => Some(CLASSIC_MAP_FILES[6]),
+      MapSelection::Rocks => Some(CLASSIC_MAP_FILES[7]),
+    }
+  }
+
   pub fn get_map(&self, seed: u64, biome: CaveBiome, treasures: u8) -> LevelMap {
-    let pick_classic = |bytes: &[u8]| {
-      LevelMap::from_file_map(bytes.to_vec()).unwrap_or_else(|_| LevelMap::procedural_map(seed, biome, treasures, 10))
+    let procedural = || LevelMap::procedural_map(seed, biome, treasures, 10);
+    // `mb_init` refuses to start unless every classic map is registered, so the fallback only
+    // covers a file that is present but fails to parse.
+    let load = |file: &str| {
+      asset(file)
+        .and_then(|bytes| LevelMap::from_file_map(bytes).ok())
+        .unwrap_or_else(procedural)
     };
 
     match self {
-      MapSelection::Procedural => LevelMap::procedural_map(seed, biome, treasures, 10),
-      MapSelection::Battle => pick_classic(MAP_BATTLE),
-      MapSelection::Castle => pick_classic(MAP_CASTLE),
-      MapSelection::Jail => pick_classic(MAP_JAIL),
-      MapSelection::Labyrinth => pick_classic(MAP_LABYRINT),
-      MapSelection::Biofarm => pick_classic(MAP_BIOFARM),
-      MapSelection::OldMine => pick_classic(MAP_OLDMINE),
-      MapSelection::Crumble => pick_classic(MAP_CRUMBLE),
-      MapSelection::Rocks => pick_classic(MAP_ROCKS),
+      MapSelection::Procedural => procedural(),
       MapSelection::RandomClassic => {
-        let classics = [
-          MAP_BATTLE, MAP_CASTLE, MAP_JAIL, MAP_LABYRINT,
-          MAP_BIOFARM, MAP_OLDMINE, MAP_CRUMBLE, MAP_ROCKS,
-        ];
         let mut rng = StdRng::seed_from_u64(seed);
-        let idx = rng.gen_range(0..classics.len());
-        pick_classic(classics[idx])
+        let idx = rng.gen_range(0..CLASSIC_MAP_FILES.len());
+        load(CLASSIC_MAP_FILES[idx])
       }
+      fixed => match fixed.classic_file() {
+        Some(file) => load(file),
+        None => procedural(),
+      },
     }
   }
 }
@@ -1498,6 +1548,34 @@ impl WebGame {
   }
 }
 
+/// Allocates `len` bytes inside the module for the host to fill (game files, event scratch buffers).
+/// Ownership passes to the host until the buffer is given back through `mb_asset_register`;
+/// scratch buffers are simply kept for the lifetime of the page.
+#[no_mangle]
+pub extern "C" fn mb_alloc(len: u32) -> *mut u8 {
+  Box::into_raw(vec![0u8; len as usize].into_boxed_slice()) as *mut u8
+}
+
+/// Registers one original game file. `name_ptr`/`data_ptr` must come from `mb_alloc` with exactly
+/// `name_len`/`data_len` bytes; both buffers are consumed. Returns 0 if the name is not UTF-8.
+#[no_mangle]
+pub extern "C" fn mb_asset_register(name_ptr: *mut u8, name_len: u32, data_ptr: *mut u8, data_len: u32) -> u32 {
+  // SAFETY: the pointers were produced by `mb_alloc` with these exact lengths and are used once.
+  let (name, data) = unsafe {
+    (
+      Box::from_raw(std::ptr::slice_from_raw_parts_mut(name_ptr, name_len as usize)).into_vec(),
+      Box::from_raw(std::ptr::slice_from_raw_parts_mut(data_ptr, data_len as usize)).into_vec(),
+    )
+  };
+  match String::from_utf8(name) {
+    Ok(name) => {
+      register_asset(&name, data);
+      1
+    }
+    Err(_) => 0,
+  }
+}
+
 #[no_mangle]
 pub extern "C" fn mb_init(
   _level_idx: u32,
@@ -1506,37 +1584,26 @@ pub extern "C" fn mb_init(
   diff3: u32,
   diff4: u32,
 ) -> u32 {
-  let sika = match decode_spy(640, 480, SIKA_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
+  // The host must have registered the original game files first (see `mb_asset_register`).
+  if missing_asset().is_some() {
+    return 0;
+  }
+  let decode_screen = |name: &str| -> Option<DecodedImage> { decode_spy(640, 480, &asset(name)?).ok() };
+  let (Some(sika), Some(font), Some(title_img), Some(main_menu_img)) = (
+    decode_screen("SIKA.SPY"),
+    asset("FONTTI.FON").and_then(|bytes| decode_font(&bytes).ok()),
+    decode_screen("TITLEBE.SPY"),
+    decode_screen("MAIN3.SPY"),
+  ) else {
+    return 0;
   };
-  let font = match decode_font(FONTTI_FON_BYTES) {
-    Ok(f) => f,
-    Err(_) => return 0,
-  };
-  let title_img = match decode_spy(640, 480, TITLEBE_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
-  };
-  let main_menu_img = match decode_spy(640, 480, MAIN3_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
-  };
-  let shop_img = match decode_spy(640, 480, SHOPPIC_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
-  };
-  let options_img = match decode_spy(640, 480, OPTIONS5_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
-  };
-  let info_img = match decode_spy(640, 480, INFO1_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
-  };
-  let hall_img = match decode_spy(640, 480, HALLOFFA_SPY_BYTES) {
-    Ok(img) => img,
-    Err(_) => return 0,
+  let (Some(shop_img), Some(options_img), Some(info_img), Some(hall_img)) = (
+    decode_screen("SHOPPIC.SPY"),
+    decode_screen("OPTIONS5.SPY"),
+    decode_screen("INFO1.SPY"),
+    decode_screen("HALLOFFA.SPY"),
+  ) else {
+    return 0;
   };
 
   let level = LevelMap::random_map(10);
@@ -2125,6 +2192,21 @@ mod tests {
     HighscoreEntry { name: name.to_string(), level, cash }
   }
 
+  fn original_file(name: &str) -> Vec<u8> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/minebomb");
+    std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("cannot read original game file {}: {}", name, e))
+  }
+
+  /// Registers the original game files the way the web host does, once per test process.
+  fn load_original_assets() {
+    static LOAD: std::sync::Once = std::sync::Once::new();
+    LOAD.call_once(|| {
+      for name in SCREEN_ASSET_FILES.iter().chain(CLASSIC_MAP_FILES.iter()) {
+        register_asset(name, original_file(name));
+      }
+    });
+  }
+
   #[test]
   fn map_selection_next_visits_every_variant_once_and_wraps() {
     let mut seen = Vec::new();
@@ -2161,28 +2243,20 @@ mod tests {
   }
 
   #[test]
-  fn every_embedded_classic_map_parses() {
-    // `get_map` falls back to a procedural map on a parse error, which would hide a corrupt asset.
-    for (name, bytes) in [
-      ("BATTLE", MAP_BATTLE),
-      ("CASTLE", MAP_CASTLE),
-      ("JAIL", MAP_JAIL),
-      ("LABYRINT", MAP_LABYRINT),
-      ("BIOFARM", MAP_BIOFARM),
-      ("OLDMINE", MAP_OLDMINE),
-      ("CRUMBLE", MAP_CRUMBLE),
-      ("ROCKS", MAP_ROCKS),
-    ] {
-      assert!(LevelMap::from_file_map(bytes.to_vec()).is_ok(), "{}.MNE failed to parse", name);
+  fn every_classic_map_file_parses() {
+    // `get_map` falls back to a procedural map on a parse error, which would hide a corrupt file.
+    for name in CLASSIC_MAP_FILES {
+      assert!(LevelMap::from_file_map(original_file(name)).is_ok(), "{} failed to parse", name);
     }
   }
 
   #[test]
   fn classic_selection_ignores_seed_biome_and_treasures() {
+    load_original_assets();
     let a = MapSelection::Castle.get_map(1, CaveBiome::Classic, 10);
     let b = MapSelection::Castle.get_map(999, CaveBiome::from_u8(2), 70);
     assert_eq!(tiles(&a), tiles(&b));
-    let expected = LevelMap::from_file_map(MAP_CASTLE.to_vec()).unwrap();
+    let expected = LevelMap::from_file_map(original_file("CASTLE.MNE")).unwrap();
     assert_eq!(tiles(&a), tiles(&expected));
   }
 
@@ -2196,6 +2270,7 @@ mod tests {
 
   #[test]
   fn random_classic_is_deterministic_per_seed_and_varies_across_seeds() {
+    load_original_assets();
     for seed in [0u64, 7, 12345] {
       let a = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
       let b = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
@@ -2256,6 +2331,7 @@ mod tests {
   #[test]
   fn every_map_selection_survives_a_battle() {
     let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_original_assets();
     // The wasm build uses `panic = "abort"`, so a panic in a round would kill the whole game.
     assert_eq!(mb_init(0, 0, 2, 2, 2), 1);
     for sel in ALL_SELECTIONS {
@@ -2284,6 +2360,7 @@ mod tests {
   #[test]
   fn menu_flow_selects_classic_map_and_shows_hall_of_fame() {
     let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_original_assets();
     assert_eq!(mb_init(0, 0, 2, 2, 2), 1, "assets (including HALLOFFA.SPY) must decode");
 
     assert_eq!(mb_get_state(), AppState::Title as u32);
@@ -2321,7 +2398,7 @@ mod tests {
     assert_eq!(mb_get_state(), AppState::Shop as u32);
     unsafe {
       let game = GAME.as_ref().unwrap();
-      let battle = LevelMap::from_file_map(MAP_BATTLE.to_vec()).unwrap();
+      let battle = LevelMap::from_file_map(original_file("BATTLE.MNE")).unwrap();
       assert_eq!(tiles(&game.level), tiles(&battle));
       assert_eq!(game.current_biome, CaveBiome::Classic);
     }
@@ -2353,6 +2430,53 @@ mod tests {
     assert_eq!(mb_handle_key(KEY_ANY), AppState::MainMenu as u32);
     unsafe {
       assert_eq!(GAME.as_ref().unwrap().new_score_rank, None);
+    }
+  }
+
+  #[test]
+  fn host_buffers_round_trip_through_alloc_and_register() {
+    // Mirrors what the JS host does: allocate inside the module, fill, then hand ownership back.
+    let name = b"ROUNDTRIP.BIN";
+    let data = [1u8, 2, 3, 4, 5];
+    let (name_ptr, data_ptr) = (mb_alloc(name.len() as u32), mb_alloc(data.len() as u32));
+    unsafe {
+      std::ptr::copy_nonoverlapping(name.as_ptr(), name_ptr, name.len());
+      std::ptr::copy_nonoverlapping(data.as_ptr(), data_ptr, data.len());
+    }
+    assert_eq!(mb_asset_register(name_ptr, name.len() as u32, data_ptr, data.len() as u32), 1);
+    assert_eq!(asset("ROUNDTRIP.BIN"), Some(data.to_vec()));
+    // Registering the same name again replaces the content instead of keeping two entries.
+    register_asset("ROUNDTRIP.BIN", vec![9]);
+    assert_eq!(asset("ROUNDTRIP.BIN"), Some(vec![9]));
+    assert_eq!(asset("NO-SUCH-FILE.BIN"), None);
+  }
+
+  #[test]
+  fn non_utf8_asset_name_is_rejected() {
+    let (name_ptr, data_ptr) = (mb_alloc(2), mb_alloc(1));
+    unsafe {
+      *name_ptr = 0xff;
+      *name_ptr.add(1) = 0xfe;
+    }
+    assert_eq!(mb_asset_register(name_ptr, 2, data_ptr, 1), 0);
+  }
+
+  #[test]
+  fn find_missing_reports_the_first_absent_required_file() {
+    assert_eq!(find_missing(|_| true), None);
+    assert_eq!(find_missing(|name| name != "HALLOFFA.SPY"), Some("HALLOFFA.SPY"));
+    assert_eq!(find_missing(|name| name != "ROCKS.MNE"), Some("ROCKS.MNE"));
+    assert_eq!(find_missing(|_| false), Some("SIKA.SPY"));
+  }
+
+  #[test]
+  fn init_needs_every_required_file() {
+    let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_original_assets();
+    assert_eq!(missing_asset(), None, "all required files are loaded from res/minebomb");
+    // Every name the crate asks the host for must exist in the original package.
+    for name in SCREEN_ASSET_FILES.iter().chain(CLASSIC_MAP_FILES.iter()) {
+      assert!(!original_file(name).is_empty(), "{} is empty", name);
     }
   }
 }

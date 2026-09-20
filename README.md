@@ -166,7 +166,7 @@ remote = "RightControl"
 
 ### 2. 웹 에디션 로컬 실행 (WebAssembly Edition)
 ```powershell
-# WebAssembly 바이너리 빌드
+# WebAssembly 바이너리 빌드 + 원본 게임 파일을 web/data로 복사
 powershell .\scripts\build_web.ps1
 
 # 로컬 웹 서버 실행 (npx serve 또는 python)
@@ -174,6 +174,8 @@ npx serve web
 # 또는 python -m http.server 8080 --directory web
 ```
 브라우저에서 `http://localhost:8080`에 접속하여 플레이합니다.
+
+**원본 게임 파일은 WASM에 들어 있지 않습니다.** 페이지가 실행 시 `web/data/`에서 원본 그대로의 파일(화면·맵·효과음·BGM)을 불러오며, 이 폴더는 git에 포함되지 않습니다. `build_web.ps1`(또는 `node scripts/stage_web_data.mjs`)이 `res/minebomb`의 파일을 **변환 없이 복사**해 채웁니다. 파일이 없으면 페이지가 어떤 파일이 없는지 알려 줍니다. 배경음악은 `web/vendor/chiptune3`(MIT, libopenmpt는 BSD)가 원본 S3M을 직접 재생합니다.
 
 ### 3. 소스코드 빌드 (Rust Toolchain)
 ```powershell

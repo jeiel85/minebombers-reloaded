@@ -27,11 +27,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Test
+        run: |
+          cargo test -p mb-core -p mb-wasm
+          node --test web/test/*.test.mjs
+
       - name: Build WebAssembly Crate
         run: |
           cargo build -p mb-wasm --target wasm32-unknown-unknown --release
           mkdir -p web/pkg
           cp target/wasm32-unknown-unknown/release/mb_wasm.wasm web/pkg/mb_wasm.wasm
+
+      - name: Stage original game files (copied unmodified, not embedded in the wasm)
+        run: node scripts/stage_web_data.mjs
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

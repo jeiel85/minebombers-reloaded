@@ -1907,10 +1907,16 @@ mod tests {
     let world_w3 = World::create(level, &mut players3, false, 50, false).with_survival_mode(true, 3);
     assert_eq!(world_w3.current_wave, 3);
     assert_eq!(world_w3.wave_quota, 20); // 8 + 3*4
-    // Monster in wave 3 has higher HP than wave 1
-    let m1_hp = world_w1.actors[2].max_health;
-    let m3_hp = world_w3.actors[2].max_health;
-    assert!(m3_hp >= m1_hp, "Wave 3 monsters should have scaled health");
+    // Monster kinds are random, so comparing two independently chosen monsters is flaky (a wave 3
+    // slime has less health than a wave 1 furry). Check every monster against its own kind instead.
+    for (world, wave) in [(&world_w1, 1u16), (&world_w3, 3u16)] {
+      let multiplier = 1.0 + 0.15 * (wave - 1) as f32;
+      assert!(world.actors.len() > 2);
+      for monster in &world.actors[2..] {
+        let expected = ((monster.kind.initial_health() as f32) * multiplier).max(5.0) as u16;
+        assert_eq!(monster.max_health, expected, "wave {}, base health {}", wave, monster.kind.initial_health());
+      }
+    }
   }
 
   #[test]
