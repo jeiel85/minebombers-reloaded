@@ -57,7 +57,7 @@ impl Application<'_> {
 
   /// Returns when exiting the game
   fn main_menu_loop(&self, ctx: &mut ApplicationContext, campaign_mode: bool) -> Result<(), anyhow::Error> {
-    let mut settings = GameSettings::load(ctx.game_dir());
+    let mut settings = GameSettings::load(ctx.user_dir());
     settings.options.campaign_mode = campaign_mode;
 
     let mut selected_item = SelectedMenu::NewGame;

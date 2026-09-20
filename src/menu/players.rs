@@ -168,8 +168,8 @@ impl Application<'_> {
     let default_diff = BotDifficulty::from_str(&ctx.config.gameplay.bot_difficulty);
     let mut state = State {
       players: total_players,
-      roster: PlayersRoster::load(ctx.game_dir())?,
-      identities: Identities::load(ctx.game_dir()),
+      roster: PlayersRoster::load(ctx.user_dir())?,
+      identities: Identities::load(ctx.user_dir()),
       // 0 is "Player 1", 4 is "Play button"
       active_player: 0,
       bot_difficulty: [
@@ -262,8 +262,8 @@ impl Application<'_> {
       ctx.present()?;
     };
 
-    state.identities.save(ctx.game_dir())?;
-    state.roster.save(ctx.game_dir())?;
+    state.identities.save(ctx.user_dir())?;
+    state.roster.save(ctx.user_dir())?;
     ctx.animate(Animation::FadeDown, 7)?;
 
     let mut selected = Vec::new();

@@ -117,7 +117,7 @@ impl Application<'_> {
       self.hall_of_fame(ctx, round as u8, &players[0])?;
     } else {
       self.multi_player_end(ctx, &players, settings.options.win)?;
-      update_player_stats(ctx.game_dir(), &mut players, &players_to_roster, settings.options.win)?;
+      update_player_stats(ctx.user_dir(), &mut players, &players_to_roster, settings.options.win)?;
     }
     Ok(())
   }
@@ -151,7 +151,7 @@ impl Application<'_> {
     rounds: u8,
     player: &PlayerComponent,
   ) -> Result<(), anyhow::Error> {
-    let mut scores = Highscores::load(ctx.game_dir())?;
+    let mut scores = Highscores::load(ctx.user_dir())?;
     let pos = scores
       .scores
       .binary_search_by(|score| {
@@ -168,7 +168,7 @@ impl Application<'_> {
         level: rounds,
         cash: player.cash,
       });
-      scores.save(ctx.game_dir())?;
+      scores.save(ctx.user_dir())?;
     }
 
     // FIXME: implement rendering!
