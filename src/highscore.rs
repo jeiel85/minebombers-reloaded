@@ -95,8 +95,29 @@ impl Highscores {
 }
 
 #[test]
-fn test() {
-  let scores = Highscores::load(Path::new("/Users/idubrov/DOS Games/Mb 311.boxer/C.harddisk/mb311")).unwrap();
-  scores.save(Path::new("/tmp/")).unwrap();
-  eprintln!("{:#?}", scores);
+fn test_save_and_load_round_trip() {
+  // Use a private temporary folder: the test must not depend on any machine's paths or leave files behind
+  let dir = std::env::temp_dir().join(format!("mb-highscore-test-{}", std::process::id()));
+  std::fs::create_dir_all(&dir).unwrap();
+
+  let mut scores = Highscores::default();
+  scores.scores[0] = Some(Score { name: "Skhar".to_string(), level: 10, cash: 18500 });
+  scores.scores[9] = Some(Score { name: "Rookie".to_string(), level: 1, cash: 1500 });
+  scores.save(&dir).unwrap();
+  assert_eq!(std::fs::metadata(dir.join("HIGHSCOR.DAT")).unwrap().len(), 260);
+  let loaded = Highscores::load(&dir).unwrap();
+  std::fs::remove_dir_all(&dir).unwrap();
+
+  let first = loaded.scores[0].as_ref().expect("first entry");
+  assert_eq!((first.name.as_str(), first.level, first.cash), ("Skhar", 10, 18500));
+  let last = loaded.scores[9].as_ref().expect("last entry");
+  assert_eq!((last.name.as_str(), last.level, last.cash), ("Rookie", 1, 1500));
+  assert!(loaded.scores[1..9].iter().all(|s| s.is_none()));
+}
+
+#[test]
+fn test_missing_file_gives_an_empty_table() {
+  let dir = std::env::temp_dir().join(format!("mb-highscore-missing-{}", std::process::id()));
+  let loaded = Highscores::load(&dir).unwrap();
+  assert!(loaded.scores.iter().all(|s| s.is_none()));
 }
