@@ -4,7 +4,7 @@
 [![Rust](https://img.shields.io/badge/Language-Rust%202018%2F2021-orange?logo=rust)](https://www.rust-lang.org/)
 [![WebAssembly](https://img.shields.io/badge/Platform-WebAssembly%20%2F%20WASM-purple?logo=webassembly)](https://webassembly.org/)
 [![Windows](https://img.shields.io/badge/Platform-Windows%2064--bit-blue?logo=windows)](https://www.microsoft.com/windows)
-[![License](https://img.shields.io/badge/License-MIT%20%2F%20Freeware-yellow.svg)](#-크레딧--라이선스-credits--acknowledgements)
+[![License](https://img.shields.io/badge/License-Unresolved%20(see%20notes)-lightgrey.svg)](assets/LICENSE-NOTES.md)
 
 > **1995년 고전 MS-DOS 명작 아케이드 게임 *Mine Bombers (v3.11)*의 100% 순수 Rust 네이티브 & WebAssembly 리마스터 엔진**  
 > DOSBox 에뮬레이터 없이 최신 64비트 Windows 및 웹 브라우저에서 60 FPS 하드웨어 가속으로 구동되며, 3단계 **인공지능(AI) 봇 시스템**, **레트로 CRT 셰이더 & 동적 조명**, **게임패드 햅틱 진동 피드백**, **4:3 레터박스 종횡비 보정**, **완전한 키/환경 커스터마이징(`config.toml`)**을 지원합니다.
@@ -208,8 +208,9 @@ Copy-Item target\release\MineBombers.exe .\MineBombers.exe -Force
 
 ## 📜 크레딧 & 라이선스 (Credits & Acknowledgements)
 
-- **Original Game**: *Mine Bombers* (1995–1996) created by **Sami Lehtinen & Antti Lehtinen (Skhar)**.
-- **Reverse Engineering Core**: DOS 바이너리 디코딩 및 타일 렌더링 프레임워크는 **Ivan Dubrov**의 오픈소스 프로젝트 `mb-reloaded`의 리버스 엔지니어링 분석을 기반으로 참고하였습니다.
+- **Original Game**: *Mine Bombers* 3.11 by **Skitso Productions** (Finland). 원작의 저작권은 Skitso Productions에 있으며, 이 저장소는 원작과 제휴하거나 승인받은 프로젝트가 아닙니다.
+- **Engine base**: 게임 엔진의 뼈대(DOS 데이터 디코딩, 타일 렌더링, 월드 시뮬레이션)는 **Ivan Dubrov**의 [`mb-reloaded`](https://github.com/idubrov/mb-reloaded)를 기반으로 합니다. 해당 저장소에는 라이선스가 명시되어 있지 않아 [라이선스를 요청하는 이슈](https://github.com/idubrov/mb-reloaded/issues/1)를 올려 두었습니다.
+- **라이선스 상태**: 이 프로젝트의 코드 라이선스는 **아직 정리되지 않았습니다**. 원작 게임 파일은 이 프로젝트에 포함되지 않으며 사용자가 자기 사본을 준비합니다(다만 git 이력에는 과거 커밋의 원본 파일이 남아 있습니다). 근거와 현황은 [assets/LICENSE-NOTES.md](assets/LICENSE-NOTES.md)에 있으며, 권리자께서 요청하시면 해당 자료를 바로 제거하겠습니다.
 - **Enhanced Remaster Engine**:
   - 3단계 반응형 AI 봇 시스템 (`src/world/bot.rs`)
   - WebAssembly 제로 카피 렌더링 & 웹 오디오/햅틱 브라우저 파이프라인 (`crates/mb-wasm`, `web/`)
