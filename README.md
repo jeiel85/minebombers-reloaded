@@ -8,7 +8,7 @@
 
 | | 상태 |
 |---|---|
-| **Windows** (네이티브) | 실제로 실행해 확인했습니다 |
+| **Windows** (네이티브) | 실제로 실행해 확인했습니다. [릴리스 zip](https://github.com/jeiel85/minebombers-reloaded/releases) 제공(시험용) |
 | **Linux** (네이티브) | CI에서 빌드와 테스트가 통과합니다. **실제 실행은 아직 확인하지 못했습니다.** |
 | **웹** | [라이브 데모](https://jeiel85.github.io/minebombers-reloaded/) (부가 에디션) |
 
@@ -25,13 +25,15 @@
 
 ## 🖥️ 실행 (Windows / Linux)
 
-아직 배포용 릴리스는 없어서 소스에서 빌드합니다. [Rust](https://rustup.rs/) 툴체인이 필요합니다.
+**Windows (릴리스 zip)**: [Releases](https://github.com/jeiel85/minebombers-reloaded/releases)에서 `MineBombers-<버전>-windows-x64.zip`을 받아 풀고 `MineBombers.exe`를 실행합니다. 시험용(pre-release)이며 exe에 코드 서명이 없어 처음에 Windows의 "PC 보호" 창이 뜰 수 있습니다("추가 정보" → "실행"). 함께 올라오는 `.sha256` 파일로 받은 파일을 확인할 수 있습니다.
 
-**Windows**
+소스에서 빌드하려면 [Rust](https://rustup.rs/) 툴체인이 필요합니다.
+
+**Windows (소스)**
 ```powershell
 cargo run --release
 ```
-SDL2 DLL은 저장소에 들어 있습니다. 빌드한 exe를 따로 옮겨 실행하려면 DLL을 exe 옆에 두세요. `Play_MineBombers_PC.bat`도 같은 일을 합니다.
+SDL2 DLL은 저장소에 들어 있습니다. 빌드한 exe를 따로 옮겨 실행하려면 DLL을 exe 옆에 두세요. `Play_MineBombers_PC.bat`도 같은 일을 합니다. 릴리스 zip 자체는 `pwsh scripts/package_windows.ps1`이 만듭니다.
 
 **Linux**
 ```bash
