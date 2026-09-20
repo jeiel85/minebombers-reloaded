@@ -19,6 +19,7 @@ pub fn parse_args() -> Args {
         eprintln!("Mine Bombers 3.11 (Native PC Engine)\n");
         eprintln!("USAGE:");
         eprintln!("    MineBombers [--campaign] [game-path]");
+        eprintln!("\ngame-path is the folder with your own copy of the freeware Mine Bombers 3.11 files.");
         std::process::exit(0);
       }
       arg => {
@@ -47,9 +48,29 @@ pub fn parse_args() -> Args {
   }
 
   if !args.path.is_dir() || !args.path.join("TITLEBE.SPY").is_file() {
-    eprintln!(
-      "'{}' is not a valid game directory (must be a directory with 'TITLEBE.SPY' file).",
-      args.path.display()
+    let problem = if args.path.as_os_str().is_empty() {
+      "No Mine Bombers 3.11 game folder was found.".to_string()
+    } else {
+      format!(
+        "'{}' is not a valid game folder (it must contain 'TITLEBE.SPY').",
+        args.path.display()
+      )
+    };
+    let message = format!(
+      "{}\n\n\
+       The game files are not included with this program. Mine Bombers 3.11 is freeware: download it \
+       (for example from https://archive.org/details/mnb311fw) and unpack it.\n\n\
+       Then either drag the game folder onto MineBombers.exe, run\n    MineBombers <game folder>\n\
+       or copy MineBombers.exe and its DLLs into the game folder.",
+      problem
+    );
+    eprintln!("{}", message);
+    // The executable is a Windows GUI program, so nobody sees stderr; tell the user in a dialog too.
+    let _ = sdl2::messagebox::show_simple_message_box(
+      sdl2::messagebox::MessageBoxFlag::ERROR,
+      "Mine Bombers: game files needed",
+      &message,
+      None,
     );
     std::process::exit(1);
   }

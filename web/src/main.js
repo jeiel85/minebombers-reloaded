@@ -1,5 +1,7 @@
 import { AudioManager } from './audio.js';
-import { GAME_FILES, SFX_FILES, BGM_FILE, loadOriginalFiles } from './assets.js';
+import { GAME_FILES } from './assets.js';
+import { acquireGameFiles, clearStored } from './gamedata.js';
+import { promptForGameFiles } from './gamedata-ui.js';
 import { GamepadManager } from './gamepad.js';
 import { NetplayManager } from './network.js';
 import { TouchController } from './touch.js';
@@ -66,8 +68,16 @@ class MineBombersWeb {
       this.exports = instance.exports;
       this.memory = instance.exports.memory;
 
-      // The original game files are fetched at runtime; the wasm module contains none of them
-      const files = await loadOriginalFiles([...GAME_FILES, ...SFX_FILES, BGM_FILE]);
+      // The user's own copy of the original game; neither this site nor the wasm module contains it
+      const { files, source } = await acquireGameFiles(promptForGameFiles);
+      if (source !== 'staged') {
+        const forget = document.getElementById('btn-forget-data');
+        forget.hidden = false;
+        forget.addEventListener('click', async () => {
+          await clearStored();
+          location.reload();
+        });
+      }
       for (const name of GAME_FILES) {
         this.registerGameFile(name, files.get(name));
       }
@@ -79,7 +89,10 @@ class MineBombersWeb {
 
       // Initialize game into Title screen
       if (this.exports.mb_init(0, 0, 2, 2, 2) !== 1) {
-        throw new Error('The original game files could not be decoded (mb_init failed)');
+        if (source !== 'staged') await clearStored(); // do not keep a copy that does not work
+        throw new Error(
+          'The game files could not be read. Are they from Mine Bombers 3.11? Reload the page to choose them again.'
+        );
       }
 
       document.getElementById('loading').style.display = 'none';

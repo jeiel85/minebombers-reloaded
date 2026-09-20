@@ -11,9 +11,19 @@
 
 ---
 
+## 📦 원작 게임 파일 (필요)
+
+이 저장소와 배포 사이트에는 **원작 Mine Bombers 게임 파일이 들어 있지 않습니다.** [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2)가 RollerCoaster Tycoon 2를 다루는 방식과 같습니다: 이 프로젝트는 엔진이고, 게임 데이터는 사용자가 자기 사본을 준비합니다. 원작 3.11은 무료(프리웨어)입니다.
+
+1. 원작 3.11을 받아 압축을 풉니다 (예: [Internet Archive의 Mine Bombers 3.11](https://archive.org/details/mnb311fw)).
+2. **웹**: 페이지가 요청하면 ZIP, 압축을 푼 폴더, 또는 파일들을 선택합니다. 필요한 약 30개 파일만 이 브라우저에 보관되며 어디로도 전송되지 않습니다. 보관본은 툴바의 "Forget game files"로 지울 수 있습니다.
+3. **Windows 네이티브**: `MineBombers.exe`에 게임 폴더를 끌어다 놓거나, `MineBombers.exe <게임 폴더>`로 실행하거나, `MineBombers.exe`와 DLL을 게임 폴더에 복사합니다.
+
+---
+
 ## 🌐 라이브 데모 (Play Online)
 
-별도 설치 없이 웹 브라우저에서 링크 클릭 한 번으로 오리지널 사운드와 게임패드 진동까지 그대로 즐기실 수 있습니다:
+설치 없이 웹 브라우저에서 오리지널 사운드와 게임패드 진동까지 그대로 즐길 수 있습니다. 다만 [원작 게임 파일이 필요합니다](#-원작-게임-파일-필요) — 처음 한 번 사본을 선택하면 이 브라우저에 보관됩니다:
 
 👉 **[https://jeiel85.github.io/minebombers-reloaded/](https://jeiel85.github.io/minebombers-reloaded/)**
 
@@ -160,13 +170,17 @@ remote = "RightControl"
 ## 🚀 실행 및 빌드 가이드
 
 ### 1. Windows 데스크톱 실행 (Native Edition)
-1. 저장소를 클론하거나 릴리즈 바이너리를 다운로드합니다.
-2. 루트 폴더의 **`MineBombers.exe`**를 실행하면 즉시 플레이 가능합니다!
-   *(필요한 모든 DLL 및 오리지널 에셋 `res/minebomb`이 동봉되어 있습니다.)*
+1. 저장소를 클론하거나 릴리즈 바이너리를 다운로드합니다. (필요한 DLL은 동봉되어 있습니다.)
+2. [원작 게임 파일](#-원작-게임-파일-필요)을 준비합니다. 게임 파일은 동봉되어 있지 않습니다.
+3. **`MineBombers.exe`**에 게임 폴더를 끌어다 놓거나 `MineBombers.exe <게임 폴더>`로 실행합니다. 게임 폴더를 찾지 못하면 안내 창이 뜹니다.
 
 ### 2. 웹 에디션 로컬 실행 (WebAssembly Edition)
 ```powershell
-# WebAssembly 바이너리 빌드 + 원본 게임 파일을 web/data로 복사
+# WebAssembly 바이너리 빌드
+powershell .\scripts\build_web.ps1
+
+# (선택) 내 게임 폴더를 미리 연결하면 페이지가 파일을 묻지 않고 바로 시작합니다
+$env:MB_GAME_DIR = "C:\Games\MineBombers311"
 powershell .\scripts\build_web.ps1
 
 # 로컬 웹 서버 실행 (npx serve 또는 python)
@@ -175,11 +189,12 @@ npx serve web
 ```
 브라우저에서 `http://localhost:8080`에 접속하여 플레이합니다.
 
-**원본 게임 파일은 WASM에 들어 있지 않습니다.** 페이지가 실행 시 `web/data/`에서 원본 그대로의 파일(화면·맵·효과음·BGM)을 불러오며, 이 폴더는 git에 포함되지 않습니다. `build_web.ps1`(또는 `node scripts/stage_web_data.mjs`)이 `res/minebomb`의 파일을 **변환 없이 복사**해 채웁니다. 파일이 없으면 페이지가 어떤 파일이 없는지 알려 줍니다. 배경음악은 `web/vendor/chiptune3`(MIT, libopenmpt는 BSD)가 원본 S3M을 직접 재생합니다.
+**원본 게임 파일은 WASM에도, 배포 사이트에도 들어 있지 않습니다.** 페이지는 사용자가 선택한 사본을 브라우저 안에서 그대로 읽어 게임에 넘깁니다(변환 없음). 효과음은 원본 `.VOC`를 브라우저가 직접 디코딩하고, 배경음악은 `web/vendor/chiptune3`(MIT, libopenmpt는 BSD)가 원본 `.S3M`을 직접 재생합니다. `MB_GAME_DIR`을 지정해 빌드하면 `web/data/`(git 미추적)에 사본이 복사되어 개발 중에는 선택 창이 뜨지 않습니다(`node scripts/stage_web_data.mjs <게임 폴더>`로도 가능).
 
 ### 3. 소스코드 빌드 (Rust Toolchain)
 ```powershell
-# 단위 테스트 실행
+# 단위 테스트 실행 (원본 게임 파일 없이 실행됩니다. 사본이 있으면 MB_GAME_DIR로 지정해
+# `cargo test -p mb-wasm -- --include-ignored`와 `node --test web/test`가 실제 파일도 검사합니다)
 cargo test
 
 # 최적화된 Release 바이너리 컴파일

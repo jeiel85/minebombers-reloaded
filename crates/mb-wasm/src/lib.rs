@@ -2192,17 +2192,50 @@ mod tests {
     HighscoreEntry { name: name.to_string(), level, cash }
   }
 
-  fn original_file(name: &str) -> Vec<u8> {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/minebomb");
-    std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("cannot read original game file {}: {}", name, e))
+  /// Where the developer keeps the original game files, if anywhere: `MB_GAME_DIR`, else `res/minebomb`.
+  fn game_dir() -> Option<std::path::PathBuf> {
+    let dir = std::env::var_os("MB_GAME_DIR")
+      .map(std::path::PathBuf::from)
+      .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/minebomb"));
+    if dir.join("TITLEBE.SPY").is_file() {
+      Some(dir)
+    } else {
+      None
+    }
   }
 
-  /// Registers the original game files the way the web host does, once per test process.
-  fn load_original_assets() {
+  /// A blank 640x480 screen in the .SPY format: a palette followed by four uncompressed bit planes.
+  fn blank_screen() -> Vec<u8> {
+    let mut data = vec![0u8; 768];
+    data.extend(std::iter::repeat(0u8).take(4 * 640 * 480 / 8));
+    data
+  }
+
+  /// The named game file: the original when the developer has it, else a small stand-in in the same
+  /// format. The repository contains no original files, so CI always runs on the stand-ins.
+  fn test_file(name: &str) -> Vec<u8> {
+    if let Some(dir) = game_dir() {
+      return std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("cannot read game file {}: {}", name, e));
+    }
+    if name.ends_with(".SPY") {
+      blank_screen()
+    } else if name.ends_with(".FON") {
+      vec![0u8; 256 * 8]
+    } else if name.ends_with(".MNE") {
+      // A distinct, valid map per name; procedural generation stands in for the hand-made level
+      let seed = name.bytes().fold(7u64, |acc, b| acc.wrapping_mul(31).wrapping_add(u64::from(b)));
+      LevelMap::procedural_map(seed, CaveBiome::Classic, 45, 10).to_file_map()
+    } else {
+      panic!("no stand-in for {}", name)
+    }
+  }
+
+  /// Registers the game files the way the web host does, once per test process.
+  fn load_test_assets() {
     static LOAD: std::sync::Once = std::sync::Once::new();
     LOAD.call_once(|| {
       for name in SCREEN_ASSET_FILES.iter().chain(CLASSIC_MAP_FILES.iter()) {
-        register_asset(name, original_file(name));
+        register_asset(name, test_file(name));
       }
     });
   }
@@ -2246,17 +2279,17 @@ mod tests {
   fn every_classic_map_file_parses() {
     // `get_map` falls back to a procedural map on a parse error, which would hide a corrupt file.
     for name in CLASSIC_MAP_FILES {
-      assert!(LevelMap::from_file_map(original_file(name)).is_ok(), "{} failed to parse", name);
+      assert!(LevelMap::from_file_map(test_file(name)).is_ok(), "{} failed to parse", name);
     }
   }
 
   #[test]
   fn classic_selection_ignores_seed_biome_and_treasures() {
-    load_original_assets();
+    load_test_assets();
     let a = MapSelection::Castle.get_map(1, CaveBiome::Classic, 10);
     let b = MapSelection::Castle.get_map(999, CaveBiome::from_u8(2), 70);
     assert_eq!(tiles(&a), tiles(&b));
-    let expected = LevelMap::from_file_map(original_file("CASTLE.MNE")).unwrap();
+    let expected = LevelMap::from_file_map(test_file("CASTLE.MNE")).unwrap();
     assert_eq!(tiles(&a), tiles(&expected));
   }
 
@@ -2270,7 +2303,7 @@ mod tests {
 
   #[test]
   fn random_classic_is_deterministic_per_seed_and_varies_across_seeds() {
-    load_original_assets();
+    load_test_assets();
     for seed in [0u64, 7, 12345] {
       let a = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
       let b = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
@@ -2331,7 +2364,7 @@ mod tests {
   #[test]
   fn every_map_selection_survives_a_battle() {
     let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    load_original_assets();
+    load_test_assets();
     // The wasm build uses `panic = "abort"`, so a panic in a round would kill the whole game.
     assert_eq!(mb_init(0, 0, 2, 2, 2), 1);
     for sel in ALL_SELECTIONS {
@@ -2360,7 +2393,7 @@ mod tests {
   #[test]
   fn menu_flow_selects_classic_map_and_shows_hall_of_fame() {
     let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    load_original_assets();
+    load_test_assets();
     assert_eq!(mb_init(0, 0, 2, 2, 2), 1, "assets (including HALLOFFA.SPY) must decode");
 
     assert_eq!(mb_get_state(), AppState::Title as u32);
@@ -2398,7 +2431,7 @@ mod tests {
     assert_eq!(mb_get_state(), AppState::Shop as u32);
     unsafe {
       let game = GAME.as_ref().unwrap();
-      let battle = LevelMap::from_file_map(original_file("BATTLE.MNE")).unwrap();
+      let battle = LevelMap::from_file_map(test_file("BATTLE.MNE")).unwrap();
       assert_eq!(tiles(&game.level), tiles(&battle));
       assert_eq!(game.current_biome, CaveBiome::Classic);
     }
@@ -2462,6 +2495,23 @@ mod tests {
   }
 
   #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn original_game_files_are_valid() {
+    let dir = game_dir().expect("original game files not found (set MB_GAME_DIR)");
+    for name in SCREEN_ASSET_FILES.iter().chain(CLASSIC_MAP_FILES.iter()) {
+      let bytes = std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("cannot read {}: {}", name, e));
+      let valid = if name.ends_with(".SPY") {
+        decode_spy(640, 480, &bytes).is_ok()
+      } else if name.ends_with(".FON") {
+        decode_font(&bytes).is_ok()
+      } else {
+        LevelMap::from_file_map(bytes).is_ok()
+      };
+      assert!(valid, "{} is not a valid Mine Bombers 3.11 file", name);
+    }
+  }
+
+  #[test]
   fn find_missing_reports_the_first_absent_required_file() {
     assert_eq!(find_missing(|_| true), None);
     assert_eq!(find_missing(|name| name != "HALLOFFA.SPY"), Some("HALLOFFA.SPY"));
@@ -2472,11 +2522,11 @@ mod tests {
   #[test]
   fn init_needs_every_required_file() {
     let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    load_original_assets();
-    assert_eq!(missing_asset(), None, "all required files are loaded from res/minebomb");
+    load_test_assets();
+    assert_eq!(missing_asset(), None, "all required files are registered");
     // Every name the crate asks the host for must exist in the original package.
     for name in SCREEN_ASSET_FILES.iter().chain(CLASSIC_MAP_FILES.iter()) {
-      assert!(!original_file(name).is_empty(), "{} is empty", name);
+      assert!(!test_file(name).is_empty(), "{} is empty", name);
     }
   }
 }

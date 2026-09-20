@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   BGM_FILE,
   GAME_FILES,
@@ -11,8 +13,12 @@ import {
   loadOriginalFiles,
 } from '../src/assets.js';
 
-const originals = new URL('../../res/minebomb/', import.meta.url);
-const original = (name) => new Uint8Array(readFileSync(new URL(name, originals)));
+// Nothing here needs the original game files. The few tests that check the real thing run only when
+// the developer has a copy (MB_GAME_DIR, or res/minebomb) and are skipped otherwise.
+const realDir = process.env.MB_GAME_DIR || fileURLToPath(new URL('../../res/minebomb/', import.meta.url));
+const hasRealFiles = existsSync(join(realDir, 'TITLEBE.SPY'));
+const needsGameFiles = { skip: !hasRealFiles && 'needs your own Mine Bombers 3.11 files (set MB_GAME_DIR)' };
+const original = (name) => new Uint8Array(readFileSync(join(realDir, name)));
 
 // Quoted names inside `const <name>: [&str; N] = [ ... ];` in the Rust crate
 function rustList(source, name) {
@@ -27,37 +33,34 @@ test('GAME_FILES lists exactly what the wasm module asks the host for', () => {
   assert.deepEqual(GAME_FILES, expected);
 });
 
-test('every file the page or the staging script uses exists in the original package', () => {
-  for (const name of [...GAME_FILES, ...SFX_FILES, BGM_FILE, ...NOTICE_FILES]) {
-    assert.ok(existsSync(new URL(name, originals)), `${name} is missing from res/minebomb`);
-  }
+test('file lists have no duplicates', () => {
+  const all = [...GAME_FILES, ...SFX_FILES, BGM_FILE, ...NOTICE_FILES];
+  assert.equal(new Set(all).size, all.length);
 });
 
-test('decodeVoc reads headerless PCM files', () => {
-  const bytes = original('KILI.VOC');
+test('decodeVoc treats a file without the block prefix as raw 8-bit PCM at 11025 Hz', () => {
+  const bytes = Uint8Array.from([0x80, 0x80, 0x80, 0x80, 0x7f, 0x80, 0x7f, 0x7f]);
   const { pcm, sampleRate } = decodeVoc(bytes);
   assert.equal(sampleRate, 11025);
-  assert.equal(pcm.length, bytes.length);
+  assert.deepEqual([...pcm], [...bytes]);
 });
 
 test('decodeVoc reads the block layout (4-byte prefix, type 1 block, time constant)', () => {
-  // EXPLOS1.VOC starts e8 32 00 00 | 01 e3 32 00 | a6 00: block size 0x32e3, time constant 0xa6
-  const { pcm, sampleRate } = decodeVoc(original('EXPLOS1.VOC'));
-  assert.equal(sampleRate, 11111);
-  assert.equal(pcm.length, 0x32e3 - 2);
+  // prefix | type 1, 24-bit size (samples + 2), time constant 0xa6, codec 0 | samples
+  const samples = [10, 20, 30, 40, 50];
+  const bytes = Uint8Array.from([0xe8, 0x32, 0x00, 0x00, 0x01, samples.length + 2, 0x00, 0x00, 0xa6, 0x00, ...samples]);
+  const { pcm, sampleRate } = decodeVoc(bytes);
+  assert.equal(sampleRate, Math.round(1000000 / (256 - 0xa6))); // 11111 Hz
+  assert.deepEqual([...pcm], samples);
 });
 
-test('every sound effect decodes to audible-length PCM at a rate Web Audio accepts', () => {
-  for (const name of SFX_FILES) {
-    const { pcm, sampleRate } = decodeVoc(original(name));
-    assert.ok(pcm.length > 100, `${name}: ${pcm.length} samples`);
-    assert.ok(sampleRate >= 8000 && sampleRate <= 96000, `${name}: ${sampleRate} Hz`);
-  }
-});
-
-test('the background music is a Scream Tracker 3 module', () => {
-  const bytes = original(BGM_FILE);
-  assert.equal(String.fromCharCode(...bytes.subarray(0x2c, 0x30)), 'SCRM');
+test('decodeVoc reads a 24-bit block size', () => {
+  const samples = new Array(70000).fill(0x90);
+  const size = samples.length + 2;
+  const bytes = new Uint8Array(10 + samples.length);
+  bytes.set([0, 0, 0, 0, 0x01, size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, 0xa6, 0x00]);
+  bytes.fill(0x90, 10);
+  assert.equal(decodeVoc(bytes).pcm.length, 70000);
 });
 
 test('loadOriginalFiles returns the fetched bytes', async () => {
@@ -82,4 +85,25 @@ test('loadOriginalFiles names every file it could not get, in request order', as
       return true;
     }
   );
+});
+
+// ---- checks against the real files, for developers who have them ----
+
+test('every file the page uses exists in a real Mine Bombers 3.11 copy', needsGameFiles, () => {
+  for (const name of [...GAME_FILES, ...SFX_FILES, BGM_FILE]) {
+    assert.ok(existsSync(join(realDir, name)), `${name} is missing from ${realDir}`);
+  }
+});
+
+test('every real sound effect decodes to audible PCM at a rate Web Audio accepts', needsGameFiles, () => {
+  for (const name of SFX_FILES) {
+    const { pcm, sampleRate } = decodeVoc(original(name));
+    assert.ok(pcm.length > 100, `${name}: ${pcm.length} samples`);
+    assert.ok(sampleRate >= 8000 && sampleRate <= 96000, `${name}: ${sampleRate} Hz`);
+  }
+});
+
+test('the real background music is a Scream Tracker 3 module', needsGameFiles, () => {
+  const bytes = original(BGM_FILE);
+  assert.equal(String.fromCharCode(...bytes.subarray(0x2c, 0x30)), 'SCRM');
 });

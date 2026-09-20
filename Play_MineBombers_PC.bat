@@ -20,11 +20,11 @@ echo.
 
 if exist "MineBombers.exe" (
     echo Launching optimized native binary...
-    start "" "MineBombers.exe"
+    start "" "MineBombers.exe" %*
 ) else if exist "target\release\MineBombers.exe" (
     echo Launching optimized native binary...
-    start "" "target\release\MineBombers.exe"
+    start "" "target\release\MineBombers.exe" %*
 ) else (
     echo Compiling and running native engine...
-    cargo run --release
+    cargo run --release -- %*
 )

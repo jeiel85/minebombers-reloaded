@@ -141,6 +141,56 @@
       z-index: 10;
     }
 
+    /* Asks the user for their own copy of the original game files */
+    #gamedata-prompt {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.88);
+      padding: 16px;
+    }
+    #gamedata-prompt[hidden] { display: none; }
+    #gamedata-prompt .gd-box {
+      width: 100%;
+      max-width: 520px;
+      background: #14161c;
+      border: 2px solid #f1c40f;
+      border-radius: 8px;
+      padding: 18px 20px;
+      font-size: 13px;
+      line-height: 1.55;
+      user-select: text;
+    }
+    #gamedata-prompt h2 { color: #f1c40f; font-size: 16px; margin-bottom: 8px; letter-spacing: 1px; }
+    #gamedata-prompt a { color: #5dade2; }
+    #gamedata-prompt p { margin-bottom: 8px; }
+    #gd-drop {
+      border: 2px dashed #555;
+      border-radius: 6px;
+      padding: 16px;
+      margin: 12px 0 8px;
+      text-align: center;
+      color: #bbb;
+    }
+    #gd-drop.over { border-color: #2ecc71; color: #2ecc71; }
+    #gd-drop .gd-buttons { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+    #gd-drop label {
+      background: #1b4d3e;
+      border: 1px solid #2ecc71;
+      color: #2ecc71;
+      border-radius: 4px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #gd-drop input { display: none; }
+    #gd-message { min-height: 20px; color: #bbb; }
+    #gd-message.error { color: #e74c3c; }
+    #gamedata-prompt .gd-note { color: #888; font-size: 11px; margin-top: 6px; }
+
     /* Virtual Touch Controls Styling */
     #touch-controls-container {
       display: none;
@@ -399,6 +449,7 @@
       <button id="btn-crt" class="active">📺 CRT Scanlines</button>
       <button id="btn-mute">🔊 Sound</button>
       <button id="btn-fullscreen">⛶ Fullscreen</button>
+      <button id="btn-forget-data" hidden title="Remove the game files this browser keeps">🗑️ Forget game files</button>
     </div>
 
     <div class="btn-group">
@@ -406,6 +457,23 @@
       <button class="btn-speed active" data-speed="1.0">1.0x</button>
       <button class="btn-speed" data-speed="1.25">1.25x</button>
       <button class="btn-speed" data-speed="1.5">1.5x</button>
+    </div>
+  </div>
+
+  <div id="gamedata-prompt" hidden>
+    <div class="gd-box">
+      <h2>MINE BOMBERS 3.11 게임 파일이 필요합니다</h2>
+      <p>이 사이트에는 원작 게임 파일이 들어 있지 않습니다. 원작은 무료(프리웨어)이니 직접 받은 사본을 한 번만 선택해 주세요.
+        <a href="https://archive.org/details/mnb311fw" target="_blank" rel="noopener noreferrer">원작 3.11 받기 (Internet Archive)</a></p>
+      <div id="gd-drop">
+        ZIP 파일, 압축을 푼 폴더, 또는 파일들을 여기에 끌어다 놓으세요
+        <div class="gd-buttons">
+          <label>📁 폴더 선택<input id="gd-folder" type="file" webkitdirectory></label>
+          <label>🗜️ ZIP / 파일 선택<input id="gd-files" type="file" multiple accept=".zip,.spy,.fon,.mne,.voc,.s3m"></label>
+        </div>
+      </div>
+      <div id="gd-message" role="status"></div>
+      <p class="gd-note">선택한 파일은 이 브라우저 안에서만 처리되고 저장되며 어디로도 전송되지 않습니다. 필요한 약 30개 파일만 보관하고, 위의 "Forget game files" 버튼으로 지울 수 있습니다.</p>
     </div>
   </div>
 

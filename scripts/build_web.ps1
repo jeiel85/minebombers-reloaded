@@ -13,11 +13,16 @@ if ($LASTEXITCODE -ne 0) {
 New-Item -ItemType Directory -Path "web\pkg" -Force | Out-Null
 Copy-Item ".\target\$target\release\mb_wasm.wasm" ".\web\pkg\mb_wasm.wasm" -Force
 
-# The page fetches the original game files at runtime; copy them next to it unmodified
-node .\scripts\stage_web_data.mjs
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[-] Staging the original game files failed!" -ForegroundColor Red
-    exit $LASTEXITCODE
+# Optional: if MB_GAME_DIR points at your own copy of Mine Bombers 3.11, stage it next to the page so
+# it starts without asking for the files. The repository contains no original game files.
+if ($env:MB_GAME_DIR) {
+    node .\scripts\stage_web_data.mjs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[-] Staging the game files from MB_GAME_DIR failed!" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+} else {
+    Write-Host "[*] MB_GAME_DIR is not set: the page will ask for your Mine Bombers 3.11 files." -ForegroundColor Cyan
 }
 
 $wasmSize = (Get-Item ".\web\pkg\mb_wasm.wasm").Length / 1KB

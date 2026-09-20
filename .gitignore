@@ -4,5 +4,5 @@ target/
 .DS_Store
 Thumbs.db
 tools/
-res/minebomb/HIGHSCOR.DAT
+res/minebomb/
 web/data/

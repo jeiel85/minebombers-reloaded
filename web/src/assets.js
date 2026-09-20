@@ -1,8 +1,8 @@
 // Original Mine Bombers game files.
 //
-// The web build does not contain any of them. At start-up the page fetches the unmodified files
-// from ./data/ (staged from res/minebomb by scripts/stage_web_data.mjs) and hands them to the
-// game. Nothing derived from the originals (converted audio, embedded images) is committed.
+// Neither this repository nor the deployed site contains any of them. The page needs the user's own
+// copy (see gamedata.js) and hands the unmodified files to the game. For local development a copy
+// can be staged next to the page with scripts/stage_web_data.mjs and is fetched from ./data/.
 
 export const DATA_URL = './data/';
 
@@ -52,7 +52,8 @@ export class MissingGameDataError extends Error {
   constructor(missing, baseUrl) {
     super(
       `Original Mine Bombers game files not found in ${baseUrl}: ${missing.join(', ')}. ` +
-        'Run "node scripts/stage_web_data.mjs" (see README) to copy them next to the page.'
+        'Pick your Mine Bombers 3.11 files in the page, or stage a local copy with ' +
+        '"node scripts/stage_web_data.mjs <game dir>".'
     );
     this.name = 'MissingGameDataError';
     this.missing = missing;
