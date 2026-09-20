@@ -18,6 +18,8 @@ use std::time::Duration;
 /// across the whole application.
 pub struct ApplicationContext<'canvas, 'textures> {
   pub game_dir: PathBuf,
+  /// Where the engine writes its files; the game folder itself is only read
+  pub user_dir: PathBuf,
   pub events: EventPump,
   pub canvas: &'canvas mut WindowCanvas,
   pub buffer: Texture<'textures>,
@@ -53,7 +55,8 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     let sdl_context = sdl2::init().map_err(SdlError)?;
     let video = sdl_context.video().map_err(SdlError)?;
 
-    let app_cfg = crate::config::AppConfig::load_or_create(&game_dir);
+    let user_dir = crate::userdata::prepare(&game_dir);
+    let app_cfg = crate::config::AppConfig::load_or_create(&user_dir);
     let win_w = if app_cfg.display.width > 0 {
       app_cfg.display.width
     } else {
@@ -128,6 +131,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
 
     let ctx = ApplicationContext {
       game_dir,
+      user_dir,
       canvas: &mut canvas,
       events,
       buffer,
@@ -290,7 +294,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       self.is_fullscreen = true;
       self.config.display.window_mode = "Borderless".to_string();
     }
-    let _ = self.config.save(&self.game_dir);
+    let _ = self.config.save(&self.user_dir);
     Ok(())
   }
 
@@ -313,13 +317,13 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     self.config.display.scale = scale;
     self.config.display.width = new_w;
     self.config.display.height = new_h;
-    let _ = self.config.save(&self.game_dir);
+    let _ = self.config.save(&self.user_dir);
     Ok(())
   }
 
   pub fn toggle_aspect_ratio(&mut self) -> Result<(), anyhow::Error> {
     self.config.display.keep_aspect_ratio = !self.config.display.keep_aspect_ratio;
-    let _ = self.config.save(&self.game_dir);
+    let _ = self.config.save(&self.user_dir);
     Ok(())
   }
 
@@ -408,6 +412,10 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     &self.game_dir
   }
 
+  pub fn user_dir(&self) -> &Path {
+    &self.user_dir
+  }
+
   pub fn texture_creator(&self) -> &'textures TextureCreator<WindowContext> {
     self.texture_creator
   }
@@ -418,7 +426,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       "[GRAPHICS] CRT Scanline & Vignette Filter: {}",
       if self.config.graphics.crt_shader { "ENABLED" } else { "DISABLED" }
     );
-    let _ = self.config.save(&self.game_dir);
+    let _ = self.config.save(&self.user_dir);
     self.config.graphics.crt_shader
   }
 
@@ -428,7 +436,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       "[GRAPHICS] Dynamic Cave Lighting & Lanterns: {}",
       if self.config.graphics.dynamic_lighting { "ENABLED" } else { "DISABLED" }
     );
-    let _ = self.config.save(&self.game_dir);
+    let _ = self.config.save(&self.user_dir);
     self.config.graphics.dynamic_lighting
   }
 

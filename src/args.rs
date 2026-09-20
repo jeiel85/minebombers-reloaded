@@ -1,3 +1,5 @@
+use crate::gamedir::{self, Inputs, Located, Ui, GAME_DIR_ENV};
+use crate::userdata::{self, Platform};
 use std::path::PathBuf;
 
 pub struct Args {
@@ -5,74 +7,92 @@ pub struct Args {
   pub campaign_mode: bool,
 }
 
+const DIALOG_TITLE: &str = "Mine Bombers: game files needed";
+
+/// A message dialog. Windows gets the standard message box, which lays long text out correctly. Elsewhere
+/// SDL's message box is used; on Windows SDL's box sizes itself so badly that it cuts off the last lines.
+#[cfg(windows)]
+fn message_dialog(is_error: bool, text: &str) {
+  let level = if is_error { rfd::MessageLevel::Error } else { rfd::MessageLevel::Info };
+  let _ = rfd::MessageDialog::new()
+    .set_level(level)
+    .set_title(DIALOG_TITLE)
+    .set_description(text)
+    .set_buttons(rfd::MessageButtons::Ok)
+    .show();
+}
+
+#[cfg(not(windows))]
+fn message_dialog(is_error: bool, text: &str) {
+  use sdl2::messagebox::{show_simple_message_box, MessageBoxFlag};
+  let flag = if is_error { MessageBoxFlag::ERROR } else { MessageBoxFlag::INFORMATION };
+  let _ = show_simple_message_box(flag, DIALOG_TITLE, text, None);
+}
+
+/// Native dialogs. The program is a Windows GUI executable, so nobody would see anything printed to
+/// stderr; questions and errors go through dialogs instead.
+struct NativeUi;
+
+impl Ui for NativeUi {
+  fn pick_folder(&self, reason: &str) -> Option<PathBuf> {
+    message_dialog(false, reason);
+    rfd::FileDialog::new()
+      .set_title("Select your Mine Bombers 3.11 folder")
+      .pick_folder()
+  }
+
+  fn show_error(&self, message: &str) {
+    eprintln!("{}", message);
+    message_dialog(true, message);
+  }
+}
+
 pub fn parse_args() -> Args {
-  let mut args = Args {
-    path: Default::default(),
-    campaign_mode: false,
-  };
+  let mut explicit = None;
+  let mut campaign_mode = false;
+  let mut force_choose = false;
   for arg in std::env::args().skip(1) {
     match arg.as_str() {
-      "--campaign" => {
-        args.campaign_mode = true;
-      }
+      "--campaign" => campaign_mode = true,
+      "--choose-game-folder" => force_choose = true,
       "--help" => {
         eprintln!("Mine Bombers 3.11 (Native PC Engine)\n");
         eprintln!("USAGE:");
-        eprintln!("    MineBombers [--campaign] [game-path]");
-        eprintln!("\ngame-path is the folder with your own copy of the freeware Mine Bombers 3.11 files.");
+        eprintln!("    MineBombers [--campaign] [--choose-game-folder] [game-folder]\n");
+        eprintln!("The game files of the original Mine Bombers 3.11 (freeware) are not included.");
+        eprintln!("On the first run a window asks for the folder that has them, and the choice is");
+        eprintln!("remembered. Use --choose-game-folder to pick another folder later, or pass the");
+        eprintln!("folder on the command line or in {} to override it once.", GAME_DIR_ENV);
         std::process::exit(0);
       }
-      arg => {
-        args.path = PathBuf::from(arg);
-      }
-    }
-  }
-  if args.path.as_os_str().is_empty() || !args.path.join("TITLEBE.SPY").is_file() {
-    let cur = std::env::current_dir().unwrap_or_default();
-    let exe_dir = std::env::current_exe()
-      .ok()
-      .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-      .unwrap_or_default();
-
-    if cur.join("res").join("minebomb").join("TITLEBE.SPY").is_file() {
-      args.path = cur.join("res").join("minebomb");
-    } else if exe_dir.join("res").join("minebomb").join("TITLEBE.SPY").is_file() {
-      args.path = exe_dir.join("res").join("minebomb");
-    } else if std::path::Path::new("res/minebomb/TITLEBE.SPY").is_file() {
-      args.path = PathBuf::from("res/minebomb");
-    } else if cur.join("TITLEBE.SPY").is_file() {
-      args.path = cur;
-    } else if exe_dir.join("TITLEBE.SPY").is_file() {
-      args.path = exe_dir;
+      arg => explicit = Some(PathBuf::from(arg)),
     }
   }
 
-  if !args.path.is_dir() || !args.path.join("TITLEBE.SPY").is_file() {
-    let problem = if args.path.as_os_str().is_empty() {
-      "No Mine Bombers 3.11 game folder was found.".to_string()
-    } else {
-      format!(
-        "'{}' is not a valid game folder (it must contain 'TITLEBE.SPY').",
-        args.path.display()
-      )
-    };
-    let message = format!(
-      "{}\n\n\
-       The game files are not included with this program. Mine Bombers 3.11 is freeware: download it \
-       (for example from https://archive.org/details/mnb311fw) and unpack it.\n\n\
-       Then either drag the game folder onto MineBombers.exe, run\n    MineBombers <game folder>\n\
-       or copy MineBombers.exe and its DLLs into the game folder.",
-      problem
-    );
-    eprintln!("{}", message);
-    // The executable is a Windows GUI program, so nobody sees stderr; tell the user in a dialog too.
-    let _ = sdl2::messagebox::show_simple_message_box(
-      sdl2::messagebox::MessageBoxFlag::ERROR,
-      "Mine Bombers: game files needed",
-      &message,
-      None,
-    );
-    std::process::exit(1);
+  let cur = std::env::current_dir().unwrap_or_default();
+  let exe_dir = std::env::current_exe()
+    .ok()
+    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+    .unwrap_or_default();
+  let inputs = Inputs {
+    explicit,
+    from_env: std::env::var_os(GAME_DIR_ENV).filter(|v| !v.is_empty()).map(PathBuf::from),
+    nearby: vec![
+      cur.join("res").join("minebomb"),
+      exe_dir.join("res").join("minebomb"),
+      cur.clone(),
+      exe_dir,
+    ],
+    force_choose,
+  };
+  let user_dir = userdata::user_dir_for(Platform::current(), |name| std::env::var_os(name));
+
+  match gamedir::locate(&inputs, user_dir.as_deref(), &NativeUi) {
+    Located::Found(path) => Args { path, campaign_mode },
+    Located::Cancelled => std::process::exit(0),
+    Located::Invalid(message) => {
+      NativeUi.show_error(&message);
+      std::process::exit(1)
+    }
   }
-  args
 }

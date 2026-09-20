@@ -12,6 +12,7 @@ pub mod config;
 mod context;
 pub mod effects;
 mod error;
+mod gamedir;
 pub mod fonts;
 pub mod gamepad;
 mod glyphs;
@@ -23,6 +24,7 @@ mod menu;
 mod options;
 mod roster;
 mod settings;
+mod userdata;
 pub mod world;
 
 const SCREEN_WIDTH: u32 = 640;

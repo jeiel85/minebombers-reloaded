@@ -226,7 +226,7 @@ impl Application<'_> {
     }
 
     // Save options
-    settings.options.save(ctx.game_dir())?;
+    settings.options.save(ctx.user_dir())?;
     Ok(())
   }
 

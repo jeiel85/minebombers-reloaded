@@ -73,9 +73,9 @@ impl Application<'_> {
     }
 
     // Save all assigned keys to config.toml and legacy cfg
-    keys_config.save(ctx.game_dir())?;
+    keys_config.save(ctx.user_dir())?;
     ctx.config.update_from_keys_config(keys_config);
-    let _ = ctx.config.save(ctx.game_dir());
+    let _ = ctx.config.save(ctx.user_dir());
     ctx.animate(Animation::FadeDown, 7)?;
     Ok(())
   }
