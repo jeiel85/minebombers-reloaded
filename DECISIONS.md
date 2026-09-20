@@ -51,4 +51,4 @@
 - **내용**: `v*` 태그를 푸시하면 `release.yml`이 windows-latest에서 빌드·테스트하고 `scripts/package_windows.ps1`로 zip(exe, SDL2 계열 DLL 8개, README.txt, NOTICE.txt)과 `.sha256`을 만들어 pre-release로 올립니다. 원작 게임 파일은 넣지 않습니다(D1). exe는 정적 CRT(`+crt-static`)로 빌드해 Visual C++ 재배포 패키지가 필요 없습니다.
 - **대안**: 코드 서명(인증서 비용과 발급 절차가 필요함) / 설치 관리자 / 정식(latest) 릴리스.
 - **이유**: 서명 없이도 zip은 SmartScreen 경고 한 번으로 실행되고, 코드 라이선스(D3)가 정리되지 않았으므로 정식 릴리스로 표시하지 않습니다.
-- **한계**: DLL 8개는 저장소에 있던 사본이며 공식 SDL2_mixer 2.8.0 배포본과 대조하지 않았고, 각 라이브러리의 라이선스 원문은 아직 zip에 없습니다(NOTICE.txt에 이름·라이선스·URL만 있음). 서명이 없어 SmartScreen 경고가 남습니다.
+- **한계**: 서명이 없어 SmartScreen 경고가 남습니다. DLL 8개 중 `SDL2.dll`을 뺀 7개는 공식 SDL2_mixer 2.8.0 Windows 패키지와 바이트가 같음을 확인했고, 그 패키지의 라이선스 원문(SDL_mixer, gme, xmp, ogg, opus, opusfile, wavpack)을 `packaging/windows/licenses/`에 그대로 넣어 zip에 동봉합니다(v0.1.0 zip에는 없었고 v0.1.1부터 들어갑니다). `SDL2.dll`(2.30.8)은 공식 패키지와 대조하지 않았습니다. `libgme.dll`은 LGPL-2.1이라 NOTICE.txt에 소스 위치(libsdl-org/game-music-emu, SDL_mixer 2.8.0이 고정한 커밋)를 적었습니다.
