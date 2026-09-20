@@ -1,0 +1,42 @@
+Mine Bombers: Reloaded - notices
+================================
+
+The game
+--------
+Mine Bombers is (c) Skitso Productions (Finland). This project is an unofficial engine port; it is not
+affiliated with or endorsed by Skitso Productions. No original game files are included in this package.
+Players bring their own copy of the freeware release 3.11.
+
+This project's code
+-------------------
+The license of this project's code is NOT settled yet.
+
+The engine is based on Ivan Dubrov's mb-reloaded (https://github.com/idubrov/mb-reloaded), which does not
+state a license; a request for one is open at https://github.com/idubrov/mb-reloaded/issues/1.
+Until that is resolved, this build is published as a pre-release for testing, without a license grant.
+Details: DECISIONS.md and assets/LICENSE-NOTES.md in https://github.com/jeiel85/minebombers-reloaded.
+
+If you are a rights holder and want something removed, please open an issue in that repository.
+
+Third-party libraries shipped as DLLs next to MineBombers.exe
+-------------------------------------------------------------
+These are the Windows x64 builds of SDL2 and SDL2_mixer with the optional audio decoders that SDL2_mixer
+loads. They are shipped as separate DLL files (not linked into the exe), so each can be replaced by another
+build of the same library. Licenses below are the upstream projects' licenses; the full license texts are in
+each project's source (URLs given).
+
+  SDL2.dll            2.30.8   zlib License                          https://libsdl.org/
+  SDL2_mixer.dll      2.8.0    zlib License                          https://github.com/libsdl-org/SDL_mixer
+  libgme.dll                   LGPL-2.1-or-later (Game Music Emu)    https://github.com/libgme/game-music-emu
+  libxmp.dll                   LGPL-2.1-or-later                     https://github.com/libxmp/libxmp
+  libogg-0.dll                 BSD-3-Clause (Xiph.Org)               https://xiph.org/ogg/
+  libopus-0.dll                BSD-3-Clause (Xiph.Org)               https://opus-codec.org/
+  libopusfile-0.dll            BSD-3-Clause (Xiph.Org)               https://opus-codec.org/
+  libwavpack-1.dll    5.6.0    BSD-3-Clause (David Bryant)           https://www.wavpack.com/
+
+Note: these licenses come from the upstream projects' documentation. The DLL files were not re-verified
+against a specific official archive for this release, and the license texts are not bundled yet.
+
+The exe itself is built with the Rust standard library and the 89 crates listed in Cargo.lock of the source
+repository. Each of them is licensed under MIT, Apache-2.0, Zlib, BSD-3-Clause, ISC or Unlicense terms
+(checked with `cargo metadata`). The Microsoft C runtime is linked statically.
