@@ -2,3 +2,6 @@
 # and the hashes recorded in web/vendor/*/SOURCE.md would no longer match.
 web/vendor/** -text
 *.wasm binary
+
+# License texts shipped in the release zip are copied byte for byte from the official SDL2_mixer 2.8.0 Windows package (see NOTICE.txt).
+packaging/windows/licenses/** -text

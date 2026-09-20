@@ -1,4 +1,4 @@
-# Packages the Windows release: MineBombers.exe, the SDL2 DLLs and the notices, as one zip plus its SHA-256.
+# Packages the Windows release: MineBombers.exe, the SDL2 DLLs, their license texts and the notices, as one zip plus its SHA-256.
 #
 #   cargo build --release
 #   pwsh scripts/package_windows.ps1            # writes dist/MineBombers-<version>-windows-x64.zip
@@ -22,6 +22,8 @@ $dlls = @(
     "libopus-0.dll", "libopusfile-0.dll", "libwavpack-1.dll", "libxmp.dll"
 )
 $files = @("target/release/MineBombers.exe") + $dlls + @("packaging/windows/README.txt", "packaging/windows/NOTICE.txt")
+$licenseDir = "packaging/windows/licenses"
+if (-not (Test-Path "$licenseDir/LICENSE.gme.txt")) { throw "Missing $licenseDir (license texts of the bundled DLLs)" }
 foreach ($f in $files) {
     if (-not (Test-Path $f)) { throw "Missing $f (run 'cargo build --release' first)" }
 }
@@ -30,6 +32,7 @@ $stage = Join-Path $OutDir $name
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force $stage | Out-Null
 foreach ($f in $files) { Copy-Item $f $stage }
+Copy-Item $licenseDir (Join-Path $stage "licenses") -Recurse
 
 $zip = Join-Path $OutDir "$name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
