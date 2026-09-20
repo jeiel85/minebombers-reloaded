@@ -5,6 +5,7 @@ import { promptForGameFiles } from './gamedata-ui.js';
 import { GamepadManager } from './gamepad.js';
 import { NetplayManager } from './network.js';
 import { TouchController } from './touch.js';
+import { setupChrome } from './ui.js';
 
 // WASM Key Constants
 const KEY_UP = 1;
@@ -52,6 +53,7 @@ class MineBombersWeb {
     this.setupKeyboard();
     this.setupUI();
     this.setupNetplay();
+    setupChrome();
   }
 
   async init() {
@@ -313,7 +315,8 @@ class MineBombersWeb {
     if (muteBtn) {
       muteBtn.addEventListener('click', () => {
         const isMuted = this.audio.toggleMute();
-        muteBtn.textContent = isMuted ? '🔇 Unmute' : '🔊 Sound';
+        muteBtn.textContent = isMuted ? '🔇' : '🔊';
+        muteBtn.title = muteBtn.ariaLabel = isMuted ? 'Unmute' : 'Sound';
       });
     }
 
