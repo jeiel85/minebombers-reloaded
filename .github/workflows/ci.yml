@@ -1,0 +1,70 @@
+name: CI
+
+# Builds and tests the native engine on Linux and Windows, and the web edition, on every pull request.
+# No original Mine Bombers files are needed: the tests run on stand-ins they generate themselves.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-mixer-dev
+
+      - name: Let Windows find the bundled SDL2 DLLs
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-Content $env:GITHUB_PATH "$PWD"
+          Add-Content $env:GITHUB_PATH "$PWD\lib"
+
+      - name: Build
+        run: cargo build --release --workspace
+
+      - name: Test
+        run: cargo test --workspace
+
+  web:
+    name: Web (wasm + JavaScript)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build the wasm module
+        run: cargo build -p mb-wasm --target wasm32-unknown-unknown --release
+
+      - name: JavaScript tests
+        run: node --test web/test/*.test.mjs
