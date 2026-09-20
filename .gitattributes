@@ -1,0 +1,7 @@
+# Original game files and vendored libraries must keep their exact bytes.
+# With core.autocrlf=true git rewrites line endings in anything it takes for text. That shrinks every
+# .MNE map from 2970 to 2925 bytes (each of its 45 rows ends in CR LF), so the stored copy no longer
+# parses on a machine that does not convert them back (Linux CI).
+res/minebomb/** -text
+web/vendor/** -text
+*.wasm binary
