@@ -4,7 +4,7 @@
 
 use libc::{c_int, c_void};
 use sdl2::audio::AudioFormatNum;
-use sdl2::mixer::{Channel, Chunk};
+use sdl2::mixer::{AudioFormat, Channel, Chunk};
 use std::sync::Arc;
 
 const BUF_LEN: usize = 4096;
@@ -19,18 +19,21 @@ static mut PLACEHOLDER: sdl2_sys::mixer::Mix_Chunk = sdl2_sys::mixer::Mix_Chunk 
   volume: 128,
 };
 
+/// Extra passes of the placeholder chunk after the sound. The mixer may run a pass between `Mix_PlayChannel` and
+/// `Mix_RegisterEffect`: nothing can be heard in it, but it uses up one of the passes. A little slack keeps the end of
+/// a sound from being cut in that case. The extra passes are silent; at 44.1 kHz with 1024 frame buffers, two of them
+/// keep the channel about 46 ms longer.
+const EXTRA_PASSES: u64 = 2;
+
 /// Play sound effect on a given channel with a given playback frequency located at `position`.
+///
+/// The mixer releases the channel by itself when the sound is over.
 pub fn play_sound_sample(channel: Channel, frequency: i32, chunk: Arc<[u8]>, position: f32) -> Result<(), String> {
-  let placeholder = Chunk {
-    raw: &raw mut PLACEHOLDER as *mut _,
-    owned: false,
-  };
-  // FIXME: maybe, stop other channel?
-  let channel = match channel.play(&placeholder, -1) {
-    Ok(channel) => channel,
-    Err(_) => return Ok(()),
-  };
+  if frequency <= 0 {
+    return Err(format!("Invalid playback frequency: {frequency}"));
+  }
   let (mixer_frequency, format, channels) = sdl2::mixer::query_spec()?;
+  let loops = placeholder_loops(chunk.len(), frequency, mixer_frequency, channels, format);
   let effect = Box::new(SampleCallback {
     channels: channels as usize,
     chunk,
@@ -39,6 +42,16 @@ pub fn play_sound_sample(channel: Channel, frequency: i32, chunk: Arc<[u8]>, pos
     target_sample_offset: 0,
     position,
   });
+
+  let placeholder = Chunk {
+    raw: &raw mut PLACEHOLDER as *mut _,
+    owned: false,
+  };
+  // FIXME: maybe, stop other channel?
+  let channel = match channel.play(&placeholder, loops) {
+    Ok(channel) => channel,
+    Err(_) => return Ok(()),
+  };
   let user_ptr = Box::into_raw(effect);
 
   let Channel(chan) = channel;
@@ -59,6 +72,29 @@ pub fn play_sound_sample(channel: Channel, frequency: i32, chunk: Arc<[u8]>, pos
   } else {
     Ok(())
   }
+}
+
+/// Number of repeats (the `loops` argument of `Mix_PlayChannel`, which counts the plays after the first one) that keep
+/// the channel busy until the whole sample has been generated. `play_frequency` must be positive.
+///
+/// The effect writes the sound into the mixer's buffer while the mixer "plays" the silent placeholder chunk, so the
+/// channel has to last as long as the sound. The mixer ends a channel by itself once the placeholder chunk has been
+/// played the requested number of times. Ending it from inside the effect (`Mix_HaltChannel`) is not an option: the
+/// mixer is walking the channel's list of effects at that moment and halting frees the list, so the mixer reads freed
+/// memory as soon as the effect returns.
+fn placeholder_loops(
+  sample_len: usize,
+  play_frequency: i32,
+  mixer_frequency: i32,
+  channels: i32,
+  format: AudioFormat,
+) -> i32 {
+  let bytes_per_frame = (usize::from(format & 0xFF) / 8).max(1) * channels.max(1) as usize;
+  let frames_per_pass = (BUF_LEN / bytes_per_frame).max(1) as u64;
+  // Frames of output needed to play all source samples: ceil(sample_len * mixer_frequency / play_frequency).
+  let frames = (sample_len as u64 * mixer_frequency as u64).div_ceil(play_frequency as u64);
+  let passes = frames.div_ceil(frames_per_pass) + EXTRA_PASSES;
+  (passes - 1).min(i32::MAX as u64) as i32
 }
 
 fn gen_pitch_callback(format: sdl2::mixer::AudioFormat) -> sdl2_sys::mixer::Mix_EffectFunc_t {
@@ -95,7 +131,8 @@ struct SampleCallback {
 }
 
 impl SampleCallback {
-  fn generate_samples<T: AudioFormatNum + IntoSample>(&mut self, _chan: c_int, stream: &mut [T]) -> bool {
+  /// Fills `stream` with the next part of the sound. Once the sound is over, the output is silence.
+  fn generate_samples<T: AudioFormatNum + IntoSample>(&mut self, stream: &mut [T]) {
     let samples = stream.len() / self.channels;
     for sample in 0..samples {
       let output = &mut stream[(sample * self.channels)..][..self.channels];
@@ -129,20 +166,25 @@ impl SampleCallback {
           output[1] = IntoSample::from_f32(sample * self.position);
         }
       } else {
-        // We are done playing! Fill the rest with the silence and return termination flag.
+        // We are done playing! Fill the rest with the silence. The mixer ends the channel by itself.
         for item in &mut stream[sample * self.channels..] {
           *item = T::SILENCE;
         }
-        return true;
+        break;
       }
     }
+    // Keep counting after the end of the sound: the effect is still called until the mixer ends the channel, and
+    // it must not start over from an earlier position.
     self.target_sample_offset += samples;
-    false
   }
 }
 
+/// Effect callback, called by the mixer on its audio thread while it walks the channel's list of effects.
+///
+/// Do not call into SDL_mixer from here (`Mix_HaltChannel` and the like): stopping the channel frees the list of
+/// effects the mixer is walking, see `placeholder_loops`.
 extern "C" fn pitch_effect_cb_template<T: AudioFormatNum + IntoSample>(
-  chan: c_int,
+  _chan: c_int,
   stream: *mut c_void,
   len: c_int,
   udata: *mut c_void,
@@ -154,18 +196,8 @@ extern "C" fn pitch_effect_cb_template<T: AudioFormatNum + IntoSample>(
 
   let len = len as usize;
   let stream = unsafe { std::slice::from_raw_parts_mut(stream as *mut T, len / std::mem::size_of::<T>()) };
-
-  let halt = {
-    // Need to make sure we don't have mutable reference borrow after this block: pointer might get
-    // deallocated when we call `.halt()`.
-    let effect = unsafe { &mut *(udata as *mut SampleCallback) };
-    effect.generate_samples(chan, stream)
-  };
-
-  if halt {
-    // `udata` be de-allocated after this point! Not safe to use.
-    Channel(chan).halt();
-  }
+  let effect = unsafe { &mut *(udata as *mut SampleCallback) };
+  effect.generate_samples(stream);
 }
 
 extern "C" fn pitch_done_cb(_chan: c_int, udata: *mut c_void) {
@@ -218,5 +250,80 @@ impl IntoSample for i32 {
 impl IntoSample for f32 {
   fn from_f32(sample: f32) -> Self {
     sample
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use sdl2::mixer::{AUDIO_F32LSB, AUDIO_S16LSB, AUDIO_U8};
+
+  /// Number of output frames that still hold part of the sample, worked out like `generate_samples` does.
+  fn frames_with_data(sample_len: usize, play_frequency: i32, mixer_frequency: i32) -> usize {
+    (0..)
+      .find(|&frame| (frame as f32 * play_frequency as f32 / mixer_frequency as f32) as usize >= sample_len)
+      .unwrap()
+  }
+
+  #[test]
+  fn placeholder_lasts_as_long_as_the_sound_and_not_much_longer() {
+    // (sample length, playback frequency, mixer frequency, mixer channels, mixer format)
+    let cases = [
+      (400, 11000, 44100, 2, AUDIO_S16LSB),
+      (0, 11000, 44100, 2, AUDIO_S16LSB),
+      (1, 11000, 44100, 2, AUDIO_S16LSB),
+      (1024, 44100, 44100, 2, AUDIO_S16LSB),
+      (1500, 5000, 44100, 2, AUDIO_S16LSB),
+      (20000, 10300, 44100, 2, AUDIO_S16LSB),
+      (5000, 22000, 22050, 1, AUDIO_U8),
+      (3000, 12599, 48000, 2, AUDIO_F32LSB),
+    ];
+    for (len, play, mixer, channels, format) in cases {
+      let frames_per_pass = BUF_LEN / (channels as usize * usize::from(format & 0xFF) / 8);
+      let budget = (placeholder_loops(len, play, mixer, channels, format) as usize + 1) * frames_per_pass;
+      let needed = frames_with_data(len, play, mixer);
+      let case = format!("{len} samples at {play} Hz, mixer {mixer} Hz, {channels} channels, format {format:#x}");
+      // The whole sound fits, with at least one pass to spare...
+      assert!(budget >= needed + frames_per_pass, "the sound would be cut: {}", case);
+      // ...and the channel is not kept busy for longer than the slack asks for.
+      assert!(
+        budget <= needed + (EXTRA_PASSES as usize + 1) * frames_per_pass,
+        "the channel would be kept too long: {}",
+        case
+      );
+    }
+  }
+
+  #[test]
+  fn output_stays_silent_after_the_sound_is_over() {
+    // 100 samples at 11 kHz make about 400 mixer frames at 44.1 kHz, which all fit in the first pass.
+    let mut effect = SampleCallback {
+      chunk: vec![200u8; 100].into(),
+      play_frequency: 11000,
+      position: 0.5,
+      channels: 2,
+      mixer_frequency: 44100,
+      target_sample_offset: 0,
+    };
+    let mut pass = vec![i16::SILENCE; 1024 * 2];
+    effect.generate_samples(&mut pass);
+    assert!(
+      pass[..400 * 2].iter().any(|&s| s != i16::SILENCE),
+      "the sound is missing"
+    );
+    assert!(
+      pass[402 * 2..].iter().all(|&s| s == i16::SILENCE),
+      "the sound does not end"
+    );
+
+    // The mixer keeps calling the effect until it ends the channel; none of those calls may play anything.
+    for _ in 0..3 {
+      pass.fill(1234);
+      effect.generate_samples(&mut pass);
+      assert!(
+        pass.iter().all(|&s| s == i16::SILENCE),
+        "the sound started over after its end"
+      );
+    }
   }
 }
