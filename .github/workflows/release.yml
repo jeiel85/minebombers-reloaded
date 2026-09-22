@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $stage = Get-ChildItem dist -Directory | Select-Object -First 1
-          ./scripts/smoke_test_windows.ps1 -ExeDir $stage.FullName
+          ./scripts/smoke_test.ps1 -ExeDir $stage.FullName
 
       - name: Keep the zip as a workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
