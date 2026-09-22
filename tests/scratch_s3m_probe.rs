@@ -116,13 +116,17 @@ fn probe_variants() {
     ("pan_table", s3m_with_pan_table()),
   ];
 
+  let mut results = Vec::new();
   for (name, bytes) in variants {
     let path = std::env::temp_dir().join(format!("probe_{name}.s3m"));
     std::fs::File::create(&path).unwrap().write_all(&bytes).unwrap();
-    match sdl2::mixer::Music::from_file(&path) {
-      Ok(_music) => println!("PROBE {name}: OK ({} bytes)", bytes.len()),
-      Err(e) => println!("PROBE {name}: FAIL {e} ({} bytes)", bytes.len()),
-    }
+    let line = match sdl2::mixer::Music::from_file(&path) {
+      Ok(_music) => format!("PROBE {name}: OK ({} bytes)", bytes.len()),
+      Err(e) => format!("PROBE {name}: FAIL {e} ({} bytes)", bytes.len()),
+    };
+    results.push(line);
     let _ = std::fs::remove_file(&path);
   }
+  // cargo test hides stdout for a passing test; force it into view by failing on purpose.
+  panic!("\n{}", results.join("\n"));
 }
