@@ -582,11 +582,20 @@ mod tests {
       ("Hard vs Medium", BotDifficulty::Hard, BotDifficulty::Medium),
       ("Medium vs Easy", BotDifficulty::Medium, BotDifficulty::Easy),
     ] {
+      // Alternate which player index (0 or 1) each side gets: player 0's and player 1's spawn corners
+      // are not verified symmetric, and BotDifficulty was otherwise fully confounded with spawn slot
+      // (`a` was always player 0) - any positional edge one corner has would have been silently added
+      // to whichever difficulty happened to be passed as `a`.
       let mut a_wins = 0;
       let mut b_wins = 0;
       let mut draws = 0;
-      for _ in 0..TRIALS {
-        match run_match(level.clone(), a, b, MAX_TICKS) {
+      for i in 0..TRIALS {
+        let result = if i % 2 == 0 {
+          run_match(level.clone(), a, b, MAX_TICKS)
+        } else {
+          run_match(level.clone(), b, a, MAX_TICKS).map(|winner| 1 - winner)
+        };
+        match result {
           Some(0) => a_wins += 1,
           Some(1) => b_wins += 1,
           _ => draws += 1,
@@ -608,7 +617,7 @@ mod tests {
   /// bots together in one match, the combination #16's original playtest request asked for but this
   /// session could not drive interactively (screen-control access was declined). Checks the engine
   /// handles a mixed 4-actor match without crashing or hanging, not difficulty balance specifically -
-  /// `harder_bot_difficulty_wins_more_often` above is the one with a difficulty assertion.
+  /// `measure_bot_difficulty_win_rates` above is the one that measures that.
   #[test]
   #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
   fn four_player_match_with_one_human_slot_and_three_bot_difficulties_completes() {
