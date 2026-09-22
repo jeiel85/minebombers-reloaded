@@ -78,11 +78,21 @@ function Write-StubPpm([string]$Path, [int]$Width, [int]$Height) {
     [System.IO.File]::WriteAllBytes($Path, $all)
 }
 
-function Write-StubS3m([string]$Path) {
-    # Minimal Scream Tracker 3 module libxmp accepts: 96-byte header, order count 1 (-> pattern 0),
-    # pattern count 1, 2 enabled channels, one pattern of 64 empty rows. Verified directly against the
-    # libxmp.dll shipped in this repo (SDL2_mixer's S3M/MOD loader) before writing this script - libxmp
-    # rejects a module with a nonzero order count but zero real patterns, so the empty pattern is required.
+function Write-StubS3m([string]$Path, [int]$InstrumentCount) {
+    # Minimal Scream Tracker 3 module: 96-byte header, order count 1 (-> pattern 0), pattern count 1,
+    # 2 enabled channels, one pattern of 64 empty rows, plus $InstrumentCount empty (type 0) instruments.
+    #
+    # $InstrumentCount has to differ by platform - verified directly against the two DLLs/shared
+    # libraries SDL2_mixer's S3M/MOD loader actually resolves to, by probing several candidates with
+    # sdl2::mixer::Music::from_file and seeing which loaded (see PR history for the probe):
+    #   Windows bundles libxmp.dll:        rejects the file if InstrumentCount > 0, however well-formed
+    #                                       the instrument entries are (libxmp wants a bare 0-instrument
+    #                                       module here) -> pass 0.
+    #   Linux's apt libsdl2-mixer-dev uses ModPlug (linked into SDL2_mixer itself): rejects the file if
+    #                                       InstrumentCount = 0, but accepts an all-zero (type 0, "empty")
+    #                                       instrument entry happily -> pass 1.
+    # There is no single byte layout both accept; this is an actual difference between the two codec
+    # libraries, not a bug to keep chasing.
     $b = New-Object byte[] 0x60
     [System.Text.Encoding]::ASCII.GetBytes("stub").CopyTo($b, 0)
     $b[0x1C] = 0x1A
@@ -99,15 +109,32 @@ function Write-StubS3m([string]$Path) {
     $b[0x35] = 0x00                                  # default pan marker: no extra pan table follows
     $b[0x40] = 0x00                                  # channel 0: left PCM, enabled
     $b[0x41] = 0x01                                  # channel 1: right PCM, enabled
-    # order count = 1, pattern count = 1
-    $b[0x20] = 1; $b[0x24] = 1
+    # order count = 1, instrument count as requested, pattern count = 1
+    $b[0x20] = 1
+    $b[0x22] = [byte]($InstrumentCount -band 0xFF)
+    $b[0x24] = 1
 
     $out = New-Object System.Collections.Generic.List[byte]
     $out.AddRange([byte[]]$b)
     $out.Add(0)                                      # order list: 1 entry, pattern 0
     while ($out.Count % 16 -ne 0) { $out.Add(0) }     # pad to a paragraph boundary
+
+    $instrumentParaOffset = $out.Count
+    for ($i = 0; $i -lt $InstrumentCount; $i++) { $out.Add(0); $out.Add(0) } # instrument parapointer table
+
     $patternParaOffset = $out.Count
     $out.Add(0); $out.Add(0)                          # pattern parapointer table: 1 entry, filled in below
+    while ($out.Count % 16 -ne 0) { $out.Add(0) }
+
+    for ($i = 0; $i -lt $InstrumentCount; $i++) {
+        while ($out.Count % 16 -ne 0) { $out.Add(0) }
+        $para = [uint16]($out.Count / 16)
+        $entryOffset = $instrumentParaOffset + $i * 2
+        $out[$entryOffset] = [byte]($para -band 0xFF)
+        $out[$entryOffset + 1] = [byte](($para -shr 8) -band 0xFF)
+        for ($j = 0; $j -lt 80; $j++) { $out.Add(0) }  # type 0 = empty instrument; rest is unused
+    }
+
     while ($out.Count % 16 -ne 0) { $out.Add(0) }
     $patternOffset = $out.Count
     $para = [uint16]($patternOffset / 16)
@@ -138,8 +165,9 @@ function New-StubGameDir([string]$Dir) {
     )
     foreach ($name in $vocFiles) { Write-StubVoc (Join-Path $Dir "$name.VOC") }
 
-    Write-StubS3m (Join-Path $Dir "HUIPPE.S3M")
-    Write-StubS3m (Join-Path $Dir "OEKU.S3M")
+    $s3mInstrumentCount = if ($onWindows) { 0 } else { 1 } # see Write-StubS3m: libxmp vs ModPlug disagree
+    Write-StubS3m (Join-Path $Dir "HUIPPE.S3M") $s3mInstrumentCount
+    Write-StubS3m (Join-Path $Dir "OEKU.S3M") $s3mInstrumentCount
 
     $ppmFiles = @(
         "SINVOIT", "SINDRAW", "SINLOSE", "PUNVOIT", "PUNDRAW", "PUNLOSE",
