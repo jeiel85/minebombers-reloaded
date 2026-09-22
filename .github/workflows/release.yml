@@ -80,6 +80,12 @@ jobs:
             ./scripts/check_windows_imports.ps1 -Exe (Join-Path $stage.FullName $file) -Bundled $dlls
           }
 
+      - name: Smoke-run the packaged exe
+        shell: pwsh
+        run: |
+          $stage = Get-ChildItem dist -Directory | Select-Object -First 1
+          ./scripts/smoke_test_windows.ps1 -ExeDir $stage.FullName
+
       - name: Keep the zip as a workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
