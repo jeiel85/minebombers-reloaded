@@ -9,7 +9,7 @@
 | | 상태 |
 |---|---|
 | **Windows** (네이티브) | 실제로 실행해 확인했습니다. [릴리스 zip](https://github.com/jeiel85/minebombers-reloaded/releases) 제공(시험용) |
-| **Linux** (네이티브) | CI에서 빌드와 테스트가 통과합니다. **실제 실행은 아직 확인하지 못했습니다.** |
+| **Linux** (네이티브) | CI(ubuntu-latest)에서 빌드·테스트에 더해 실제로 실행해 메뉴까지 뜨는지 확인합니다. 사람이 원작 파일로 직접 플레이해 확인한 적은 아직 없고, 배포용 패키지(tar.gz/AppImage)도 없습니다 — 소스 빌드만 가능합니다. |
 | **웹** | [라이브 데모](https://jeiel85.github.io/minebombers-reloaded/) (부가 에디션) |
 
 ---
