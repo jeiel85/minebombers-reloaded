@@ -51,6 +51,10 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      - name: Smoke-run the built exe
+        shell: pwsh
+        run: ./scripts/smoke_test.ps1 -ExeDir target/release
+
   web:
     name: Web (wasm + JavaScript)
     runs-on: ubuntu-latest

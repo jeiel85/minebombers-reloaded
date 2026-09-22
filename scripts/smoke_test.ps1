@@ -1,13 +1,16 @@
-# Launches the packaged exe against a synthetic stand-in game folder and confirms its window comes up.
+# Launches the built exe against a synthetic stand-in game folder and confirms it actually runs.
+# Cross-platform (Windows and Linux): CI runs it on both via the `native` matrix job / release.yml.
 #
 #   cargo build --release
-#   pwsh scripts/smoke_test_windows.ps1 -ExeDir target/release
+#   pwsh scripts/smoke_test.ps1 -ExeDir target/release
 #
-# This is the one check that actually runs the exe: `check_windows_imports.ps1` only reads the PE import
-# table, which misses DLLs SDL2_mixer loads on demand (libxmp, libopus, libopusfile, libwavpack, libgme -
-# one per music/sample codec). The stand-in files carry no original Mine Bombers content: every field is
-# either the minimum the parser in src/images.rs, src/fonts.rs or src/effects.rs requires, or arbitrary
-# bytes. Getting to the title screen means every bundled codec DLL loaded and decoded something.
+# On Windows this is the one check that actually runs the exe: `check_windows_imports.ps1` only reads
+# the PE import table, which misses DLLs SDL2_mixer loads on demand (libxmp, libopus, libopusfile,
+# libwavpack, libgme - one per music/sample codec). On Linux there is no equivalent static check at all
+# yet (SDL2/SDL2_mixer come from apt, not bundled), so this is the only runtime verification either way.
+# The stand-in files carry no original Mine Bombers content: every field is either the minimum the
+# parser in src/images.rs, src/fonts.rs or src/effects.rs requires, or arbitrary bytes. Reaching the
+# title screen means every codec needed to decode them actually loaded.
 #
 # What "loads" actually means per format (see the parser for each):
 #   .SPY   (src/images.rs decode_spy):  768-byte palette + 4 run-length planes. Byte 0x01 starts a
@@ -20,11 +23,19 @@
 #          one pattern that is just 64 empty rows.
 #   .PPM   (src/images.rs decode_ppm): 128-byte header (from_y/to_y/width at fixed offsets) + a body
 #          where each byte < 0xC0 is one literal palette-index pixel + a trailing 768-byte palette.
+#
+# Windows has a real desktop session, so we wait for the actual window and then confirm it stays up
+# (see the comment further down for why "stays up" and not just "appears"). Linux CI has no display, so
+# this runs SDL on its `dummy` video driver instead - there is no window to inspect, so the check is
+# simply "the process is still running (i.e. still blocked in the menu's event loop) after a grace
+# period", which the same underlying risk (Application::init failing partway through) still falsifies.
 
 param(
     [string]$ExeDir = "target/release",
     [int]$TimeoutSeconds = 20
 )
+
+$onWindows = $IsWindows -or ($null -eq $IsWindows) # $IsWindows only exists on pwsh 6+; Windows PowerShell 5.1 is always Windows
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -139,7 +150,8 @@ function New-StubGameDir([string]$Dir) {
 
 # ---- run the exe against it -----------------------------------------------------------------
 
-$exe = Join-Path $ExeDir "MineBombers.exe"
+$exeName = if ($onWindows) { "MineBombers.exe" } else { "MineBombers" }
+$exe = Join-Path $ExeDir $exeName
 if (-not (Test-Path $exe)) { throw "Missing $exe (run 'cargo build --release' first)" }
 
 $gameDir = Join-Path ([System.IO.Path]::GetTempPath()) "mb-smoke-gamedir-$([guid]::NewGuid())"
@@ -150,51 +162,70 @@ New-Item -ItemType Directory -Force $userDir | Out-Null
 $env:MINEBOMBERS_GAME_DIR = $gameDir
 $env:MINEBOMBERS_USER_DIR = $userDir
 $env:SDL_AUDIODRIVER = "dummy"
+if (-not $onWindows) {
+    $env:SDL_VIDEODRIVER = "dummy" # CI has no display; Windows runners have a real desktop session
+}
 
 Write-Host "Stand-in game folder: $gameDir"
 Write-Host "Starting $exe ..."
 $proc = Start-Process -FilePath $exe -WorkingDirectory (Resolve-Path $ExeDir) -PassThru
 
 try {
-    # The window is created (with the right title) before `Application::init` loads a single asset - see
-    # src/context.rs `with_context`. So seeing the window is not enough: a codec DLL missing from the
-    # stand-in run would make `Application::init` fail right after, and the window can still be on screen
-    # for a moment while the process unwinds. What actually proves every asset (title screen, font, both
-    # S3M tracks, every sample) loaded is that the window is *still* up after a grace period with no sign
-    # of the process tearing down - by then it is blocked on `wait_key_pressed()` in the main menu loop.
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    $sawWindow = $false
-    while ((Get-Date) -lt $deadline) {
-        $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-        if (-not $p) {
-            throw "MineBombers.exe exited before showing a window (exit code $($proc.ExitCode)). A DLL the stand-in run needs may be missing - see dist for the packaged DLL set."
+    if ($onWindows) {
+        # The window is created (with the right title) before `Application::init` loads a single asset -
+        # see src/context.rs `with_context`. So seeing the window is not enough: a codec DLL missing from
+        # the stand-in run would make `Application::init` fail right after, and the window can still be on
+        # screen for a moment while the process unwinds. What actually proves every asset (title screen,
+        # font, both S3M tracks, every sample) loaded is that the window is *still* up after a grace period
+        # with no sign of tearing down - by then it is blocked on `wait_key_pressed()` in the menu loop.
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        $sawWindow = $false
+        while ((Get-Date) -lt $deadline) {
+            $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+            if (-not $p) {
+                throw "$exeName exited before showing a window (exit code $($proc.ExitCode)). A DLL the stand-in run needs may be missing."
+            }
+            if ($p.MainWindowHandle -ne 0 -and $p.MainWindowTitle) {
+                $sawWindow = $true
+                break
+            }
+            Start-Sleep -Milliseconds 200
         }
-        if ($p.MainWindowHandle -ne 0 -and $p.MainWindowTitle) {
-            $sawWindow = $true
-            break
+        if (-not $sawWindow) {
+            throw "$exeName did not show a window within $TimeoutSeconds s (still running, no MainWindowHandle)."
         }
-        Start-Sleep -Milliseconds 200
-    }
-    if (-not $sawWindow) {
-        throw "MineBombers.exe did not show a window within $TimeoutSeconds s (still running, no MainWindowHandle)."
-    }
 
-    $graceMs = 2500
-    $graceDeadline = (Get-Date).AddMilliseconds($graceMs)
-    while ((Get-Date) -lt $graceDeadline) {
-        Start-Sleep -Milliseconds 200
-        $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-        if (-not $p) {
-            throw "MineBombers.exe showed a window but then exited (exit code $($proc.ExitCode)) before $graceMs ms had passed - Application::init failed loading one of the stand-in assets. A bundled codec DLL (libgme/libogg/libopus/libopusfile/libwavpack/libxmp) may be missing or broken."
+        $graceMs = 2500
+        $graceDeadline = (Get-Date).AddMilliseconds($graceMs)
+        while ((Get-Date) -lt $graceDeadline) {
+            Start-Sleep -Milliseconds 200
+            $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+            if (-not $p) {
+                throw "$exeName showed a window but then exited (exit code $($proc.ExitCode)) before $graceMs ms had passed - Application::init failed loading one of the stand-in assets. A codec DLL (libgme/libogg/libopus/libopusfile/libwavpack/libxmp) may be missing or broken."
+            }
+            if ($p.MainWindowHandle -eq 0) {
+                throw "$exeName's window disappeared during the $graceMs ms grace period (process still running, exit pending)."
+            }
         }
-        if ($p.MainWindowHandle -eq 0) {
-            throw "MineBombers.exe's window disappeared during the $graceMs ms grace period (process still running, exit pending)."
-        }
-    }
 
-    Write-Host "Window stayed up for ${graceMs}ms after appearing - Application::init loaded every stand-in asset. Loaded DLLs:"
-    (Get-Process -Id $proc.Id).Modules | Where-Object { $_.ModuleName -match '\.dll$' } | ForEach-Object { Write-Host "  $($_.ModuleName)" }
-    Write-Host "Smoke test OK: the packaged exe starts, loads every bundled DLL and reaches the title screen."
+        Write-Host "Window stayed up for ${graceMs}ms after appearing - Application::init loaded every stand-in asset. Loaded DLLs:"
+        (Get-Process -Id $proc.Id).Modules | Where-Object { $_.ModuleName -match '\.dll$' } | ForEach-Object { Write-Host "  $($_.ModuleName)" }
+    } else {
+        # No display, so SDL runs on the `dummy` video driver and there is no window to inspect. The same
+        # risk (Application::init failing partway through the stand-in assets) still shows up as an early
+        # exit, so "still running after a grace period" (blocked on wait_key_pressed) is the whole check.
+        $graceMs = 2500
+        $graceDeadline = (Get-Date).AddMilliseconds($graceMs)
+        while ((Get-Date) -lt $graceDeadline) {
+            Start-Sleep -Milliseconds 200
+            $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+            if (-not $p) {
+                throw "$exeName exited (exit code $($proc.ExitCode)) before $graceMs ms had passed - Application::init failed loading one of the stand-in assets, or a shared library SDL2_mixer needs on demand is missing."
+            }
+        }
+        Write-Host "Process stayed alive for ${graceMs}ms (SDL_VIDEODRIVER=dummy) - Application::init loaded every stand-in asset and is blocked in the menu's event loop."
+    }
+    Write-Host "Smoke test OK: the exe starts, loads every codec it needs and reaches the title screen."
 } finally {
     $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
     if ($p) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
