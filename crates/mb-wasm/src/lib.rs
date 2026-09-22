@@ -221,6 +221,17 @@ fn default_highscores() -> Vec<HighscoreEntry> {
 
 static mut FRAMEBUFFER: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4] = [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4];
 
+/// Obtained through `&raw mut`, never `&mut FRAMEBUFFER` directly, so the static item's name is never
+/// referenced with `&`/`&mut` (Rust 2024 edition compatibility - see
+/// https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html). `unsafe fn`, not a
+/// safe wrapper: the `'static` lifetime lets a caller squirrel the reference away and call this again
+/// while still holding it, aliasing two `&mut` to the same memory - callers must not do that. Sound in
+/// this file because wasm32 is single-threaded and every call site uses the reference briefly, within
+/// one exported function, and never calls back into another exported function while holding it.
+unsafe fn framebuffer() -> &'static mut [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4] {
+  unsafe { &mut *(&raw mut FRAMEBUFFER) }
+}
+
 // Key constants matching web frontend
 pub const KEY_UP: u32 = 1;
 pub const KEY_DOWN: u32 = 2;
@@ -512,16 +523,27 @@ pub struct WebGame {
 
 static mut GAME: Option<WebGame> = None;
 
+/// Obtained through `&raw mut`/`&raw const`, never `&mut GAME`/`&GAME` directly (Rust 2024 edition
+/// compatibility, see the note on `framebuffer()` above). `GAME = Some(...)` itself is a plain write
+/// through the static and is left as-is - it never forms a reference, so the lint never flagged it.
+unsafe fn game() -> Option<&'static mut WebGame> {
+  unsafe { (*(&raw mut GAME)).as_mut() }
+}
+
+unsafe fn game_ref() -> Option<&'static WebGame> {
+  unsafe { (*(&raw const GAME)).as_ref() }
+}
+
 impl WebGame {
   pub fn copy_rgb_to_fb(image: &[u8]) {
     unsafe {
       for (i, chunk) in image.chunks_exact(3).enumerate() {
         if i < SCREEN_WIDTH * SCREEN_HEIGHT {
           let d_idx = i * 4;
-          FRAMEBUFFER[d_idx] = chunk[0];
-          FRAMEBUFFER[d_idx + 1] = chunk[1];
-          FRAMEBUFFER[d_idx + 2] = chunk[2];
-          FRAMEBUFFER[d_idx + 3] = 255;
+          framebuffer()[d_idx] = chunk[0];
+          framebuffer()[d_idx + 1] = chunk[1];
+          framebuffer()[d_idx + 2] = chunk[2];
+          framebuffer()[d_idx + 3] = 255;
         }
       }
     }
@@ -531,10 +553,10 @@ impl WebGame {
     if px >= 0 && px < SCREEN_WIDTH as i32 && py >= 0 && py < SCREEN_HEIGHT as i32 {
       let idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
       unsafe {
-        FRAMEBUFFER[idx] = r;
-        FRAMEBUFFER[idx + 1] = g;
-        FRAMEBUFFER[idx + 2] = b;
-        FRAMEBUFFER[idx + 3] = 255;
+        framebuffer()[idx] = r;
+        framebuffer()[idx + 1] = g;
+        framebuffer()[idx + 2] = b;
+        framebuffer()[idx + 3] = 255;
       }
     }
   }
@@ -560,10 +582,10 @@ impl WebGame {
             continue;
           }
           let idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
-          FRAMEBUFFER[idx] = r;
-          FRAMEBUFFER[idx + 1] = g;
-          FRAMEBUFFER[idx + 2] = b;
-          FRAMEBUFFER[idx + 3] = 255;
+          framebuffer()[idx] = r;
+          framebuffer()[idx + 1] = g;
+          framebuffer()[idx + 2] = b;
+          framebuffer()[idx + 3] = 255;
         }
       }
     }
@@ -596,10 +618,10 @@ impl WebGame {
           let alpha = self.font[s_idx + 3];
           if alpha > 0 {
             let d_idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
-            FRAMEBUFFER[d_idx] = cr;
-            FRAMEBUFFER[d_idx + 1] = cg;
-            FRAMEBUFFER[d_idx + 2] = cb;
-            FRAMEBUFFER[d_idx + 3] = 255;
+            framebuffer()[d_idx] = cr;
+            framebuffer()[d_idx + 1] = cg;
+            framebuffer()[d_idx + 2] = cb;
+            framebuffer()[d_idx + 3] = 255;
           }
         }
       }
@@ -638,10 +660,10 @@ impl WebGame {
           }
 
           let d_idx = ((py as usize) * SCREEN_WIDTH + (px as usize)) * 4;
-          FRAMEBUFFER[d_idx] = r;
-          FRAMEBUFFER[d_idx + 1] = g;
-          FRAMEBUFFER[d_idx + 2] = b;
-          FRAMEBUFFER[d_idx + 3] = 255;
+          framebuffer()[d_idx] = r;
+          framebuffer()[d_idx + 1] = g;
+          framebuffer()[d_idx + 2] = b;
+          framebuffer()[d_idx + 3] = 255;
         }
       }
     }
@@ -1402,7 +1424,7 @@ impl WebGame {
 
   fn render_full(&self) {
     unsafe {
-      FRAMEBUFFER.fill(0);
+      framebuffer().fill(0);
     }
 
     for cursor in Cursor::all() {
@@ -1684,7 +1706,7 @@ pub extern "C" fn mb_init(
 #[no_mangle]
 pub extern "C" fn mb_render_title() -> u32 {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       game.state = AppState::Title;
       game.render_current_state();
       1
@@ -1697,7 +1719,7 @@ pub extern "C" fn mb_render_title() -> u32 {
 #[no_mangle]
 pub extern "C" fn mb_render() -> u32 {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       game.render_current_state();
       1
     } else {
@@ -1709,7 +1731,7 @@ pub extern "C" fn mb_render() -> u32 {
 #[no_mangle]
 pub extern "C" fn mb_get_state() -> u32 {
   unsafe {
-    if let Some(ref game) = GAME {
+    if let Some(game) = game_ref() {
       game.state as u32
     } else {
       0
@@ -1720,7 +1742,7 @@ pub extern "C" fn mb_get_state() -> u32 {
 #[no_mangle]
 pub extern "C" fn mb_handle_key(key: u32) -> u32 {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       game.handle_key(key);
       game.state as u32
     } else {
@@ -1732,7 +1754,7 @@ pub extern "C" fn mb_handle_key(key: u32) -> u32 {
 #[no_mangle]
 pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
   unsafe {
-    let game = match GAME.as_mut() {
+    let game = match game() {
       Some(g) => g,
       None => return 0,
     };
@@ -1884,7 +1906,7 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
     }
 
     if is_flash {
-      FRAMEBUFFER.fill(255);
+      framebuffer().fill(255);
       for p_idx in 0..game.players.len() {
         if !game.players[p_idx].is_bot {
           game.rumble_queue.push(RumbleEvent {
@@ -1997,13 +2019,13 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
 
 #[no_mangle]
 pub extern "C" fn mb_get_framebuffer() -> *const u8 {
-  unsafe { FRAMEBUFFER.as_ptr() }
+  unsafe { framebuffer().as_ptr() }
 }
 
 #[no_mangle]
 pub extern "C" fn mb_get_audio_event(out_ptr: *mut i32) -> i32 {
   unsafe {
-    let game = match GAME.as_mut() {
+    let game = match game() {
       Some(g) => g,
       None => return 0,
     };
@@ -2021,7 +2043,7 @@ pub extern "C" fn mb_get_audio_event(out_ptr: *mut i32) -> i32 {
 #[no_mangle]
 pub extern "C" fn mb_get_rumble_event(out_ptr: *mut f32) -> i32 {
   unsafe {
-    let game = match GAME.as_mut() {
+    let game = match game() {
       Some(g) => g,
       None => return 0,
     };
@@ -2039,7 +2061,7 @@ pub extern "C" fn mb_get_rumble_event(out_ptr: *mut f32) -> i32 {
 #[no_mangle]
 pub extern "C" fn mb_set_player_item(player_idx: u32, item_idx: u32, count: u32) {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       let p_idx = (player_idx as usize).min(3);
       if let Ok(equipment) = (item_idx as u8).try_into() {
         game.players[p_idx].inventory[equipment] = count as u16;
@@ -2054,7 +2076,7 @@ pub extern "C" fn mb_set_player_item(player_idx: u32, item_idx: u32, count: u32)
 #[no_mangle]
 pub extern "C" fn mb_get_player_item(player_idx: u32, item_idx: u32) -> u32 {
   unsafe {
-    if let Some(ref game) = GAME {
+    if let Some(game) = game_ref() {
       let p_idx = (player_idx as usize).min(3);
       if let Ok(equipment) = (item_idx as u8).try_into() {
         return game.players[p_idx].inventory[equipment] as u32;
@@ -2067,7 +2089,7 @@ pub extern "C" fn mb_get_player_item(player_idx: u32, item_idx: u32) -> u32 {
 #[no_mangle]
 pub extern "C" fn mb_set_player_cash(player_idx: u32, cash: u32) {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       let p_idx = (player_idx as usize).min(3);
       game.players[p_idx].cash = cash;
     }
@@ -2077,7 +2099,7 @@ pub extern "C" fn mb_set_player_cash(player_idx: u32, cash: u32) {
 #[no_mangle]
 pub extern "C" fn mb_get_player_cash(player_idx: u32) -> u32 {
   unsafe {
-    if let Some(ref game) = GAME {
+    if let Some(game) = game_ref() {
       let p_idx = (player_idx as usize).min(3);
       return game.players[p_idx].cash;
     }
@@ -2088,7 +2110,7 @@ pub extern "C" fn mb_get_player_cash(player_idx: u32) -> u32 {
 #[no_mangle]
 pub extern "C" fn mb_clear_player_items(player_idx: u32) {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       let p_idx = (player_idx as usize).min(3);
       for eq in Equipment::all_equipment() {
         game.players[p_idx].inventory[eq] = 0;
@@ -2101,7 +2123,7 @@ pub extern "C" fn mb_clear_player_items(player_idx: u32) {
 #[no_mangle]
 pub extern "C" fn mb_equip_starter_pack(player_idx: u32) {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       let p_idx = (player_idx as usize).min(3);
       equip_starter_pack(&mut game.players[p_idx]);
     }
@@ -2111,7 +2133,7 @@ pub extern "C" fn mb_equip_starter_pack(player_idx: u32) {
 #[no_mangle]
 pub extern "C" fn mb_set_bot_difficulty(player_idx: u32, diff: u32) {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       let idx = (player_idx as usize).min(3);
       match diff {
         0 => {
@@ -2140,7 +2162,7 @@ pub extern "C" fn mb_set_bot_difficulty(player_idx: u32, diff: u32) {
 #[no_mangle]
 pub extern "C" fn mb_reset_map_selection() {
   unsafe {
-    if let Some(ref mut game) = GAME {
+    if let Some(game) = game() {
       game.map_selection = MapSelection::Procedural;
     }
   }
@@ -2361,6 +2383,30 @@ mod tests {
   /// lock instead of racing each other on the parallel test runner.
   static GAME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+  /// Reads the framebuffer back through the exact pointer JS gets from `mb_get_framebuffer`, the way a
+  /// real caller would, rather than reaching into `FRAMEBUFFER` directly. Regression test for the
+  /// `static mut` -> `framebuffer()` accessor rewrite: every write site sets alpha to 255 and nothing
+  /// else ever does, so a corrupted alpha byte would mean two accessor calls aliased the same memory.
+  #[test]
+  fn framebuffer_round_trips_through_its_pointer_after_a_render() {
+    let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_test_assets();
+    assert_eq!(mb_init(0, 0, 2, 2, 2), 1, "assets must decode");
+
+    let len = SCREEN_WIDTH * SCREEN_HEIGHT * 4;
+    let pixels = unsafe { std::slice::from_raw_parts(mb_get_framebuffer(), len) };
+
+    assert!(pixels.iter().any(|&b| b != 0), "title screen render left the framebuffer all zero");
+    for (i, &alpha) in pixels.iter().enumerate().skip(3).step_by(4) {
+      assert!(
+        alpha == 0 || alpha == 255,
+        "byte {} (alpha) is {}, but every write site sets 0 or 255",
+        i,
+        alpha
+      );
+    }
+  }
+
   #[test]
   fn every_map_selection_survives_a_battle() {
     let _guard = GAME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -2370,7 +2416,7 @@ mod tests {
     for sel in ALL_SELECTIONS {
       // NEW GAME resets rounds, cash, inventory and the world, so one init serves every selection.
       unsafe {
-        let game = GAME.as_mut().unwrap();
+        let game = game().unwrap();
         game.map_selection = sel;
         game.state = AppState::MainMenu;
         game.selected_menu = 0;
@@ -2407,30 +2453,30 @@ mod tests {
     mb_handle_key(KEY_UP);
     mb_handle_key(KEY_RIGHT);
     unsafe {
-      let game = GAME.as_ref().unwrap();
+      let game = game_ref().unwrap();
       assert_eq!(game.selected_option, GameOption::LoadLevels);
       assert_eq!(game.map_selection, MapSelection::Battle);
     }
     // Enter on the row also advances, left steps back, ESC leaves without resetting it
     mb_handle_key(KEY_BOMB);
     unsafe {
-      assert_eq!(GAME.as_ref().unwrap().map_selection, MapSelection::Castle);
+      assert_eq!(game_ref().unwrap().map_selection, MapSelection::Castle);
     }
     mb_handle_key(KEY_LEFT);
     mb_handle_key(KEY_ESC);
     assert_eq!(mb_get_state(), AppState::MainMenu as u32);
     unsafe {
-      assert_eq!(GAME.as_ref().unwrap().map_selection, MapSelection::Battle);
+      assert_eq!(game_ref().unwrap().map_selection, MapSelection::Battle);
     }
 
     // NEW GAME must load the selected classic map, not a procedural one
     unsafe {
-      GAME.as_mut().unwrap().selected_menu = 0;
+      game().unwrap().selected_menu = 0;
     }
     mb_handle_key(KEY_BOMB);
     assert_eq!(mb_get_state(), AppState::Shop as u32);
     unsafe {
-      let game = GAME.as_ref().unwrap();
+      let game = game_ref().unwrap();
       let battle = LevelMap::from_file_map(test_file("BATTLE.MNE")).unwrap();
       assert_eq!(tiles(&game.level), tiles(&battle));
       assert_eq!(game.current_biome, CaveBiome::Classic);
@@ -2439,12 +2485,12 @@ mod tests {
     // Netplay start forces the procedural generator again
     mb_reset_map_selection();
     unsafe {
-      assert_eq!(GAME.as_ref().unwrap().map_selection, MapSelection::Procedural);
+      assert_eq!(game_ref().unwrap().map_selection, MapSelection::Procedural);
     }
 
     // Hall of Fame: only single-player matches are recorded
     unsafe {
-      let game = GAME.as_mut().unwrap();
+      let game = game().unwrap();
       game.options.players = 2;
       assert!(!game.record_single_player_result());
       assert_eq!(game.highscores, default_highscores());
@@ -2462,7 +2508,7 @@ mod tests {
     }
     assert_eq!(mb_handle_key(KEY_ANY), AppState::MainMenu as u32);
     unsafe {
-      assert_eq!(GAME.as_ref().unwrap().new_score_rank, None);
+      assert_eq!(game_ref().unwrap().new_score_rank, None);
     }
   }
 
