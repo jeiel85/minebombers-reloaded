@@ -68,6 +68,8 @@ pub struct World<'p> {
   pub wave_killed: u16,
   /// Timer ticks until next reinforcement spawn check
   pub wave_spawn_timer: u16,
+  /// Per-bot AI memory (plan, progress tracking). One entry per player; non-bot slots go unused.
+  pub bots: Vec<bot::BotState>,
 }
 
 /// Request to play sound effect at a given frequency and location
@@ -103,7 +105,8 @@ impl<'p> World<'p> {
     bomb_damage: u8,
     campaign_mode: bool,
   ) -> Self {
-    let mut actors = spawn_actors(&mut level, players.len(), campaign_mode);
+    let player_count = players.len();
+    let mut actors = spawn_actors(&mut level, player_count, campaign_mode);
 
     // Initialize players health and drilling power
     for (player_idx, player) in players.iter_mut().enumerate() {
@@ -144,6 +147,7 @@ impl<'p> World<'p> {
       wave_quota: 0,
       wave_killed: 0,
       wave_spawn_timer: 0,
+      bots: vec![bot::BotState::default(); player_count],
     }
   }
 
@@ -1490,7 +1494,7 @@ fn item_placement_level(item: Equipment, direction: Direction, player: usize) ->
   }
 }
 
-fn is_remote_for(value: MapValue, player: EntityIndex) -> bool {
+pub(crate) fn is_remote_for(value: MapValue, player: EntityIndex) -> bool {
   match value {
     MapValue::SmallRadioBlue | MapValue::BigRadioBlue if player == 0 => true,
     MapValue::SmallRadioRed | MapValue::BigRadioRed if player == 1 => true,
