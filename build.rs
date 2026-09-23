@@ -59,6 +59,13 @@ fn copy_runtime_dlls(manifest_dir: &str) {
         let Some(name) = source.file_name() else { continue };
         let target = exe_dir.join(name);
 
+        // Watch the copy as well as the original. Cargo treats a path it is told to watch as changed
+        // when the file is missing, so deleting one of these copies - or never having had it, in a
+        // build tree from before this script existed - re-runs this and puts it back. Without this
+        // the script only re-runs when `lib/` itself changes, and a build tree whose DLLs went away
+        // stays broken until `cargo clean`.
+        println!("cargo:rerun-if-changed={}", target.display());
+
         // Skip an identical copy: the DLLs never change between builds, and rewriting them would
         // fail while a previously built copy of the game is running.
         if let (Ok(from), Ok(to)) = (source.metadata(), target.metadata()) {
