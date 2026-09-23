@@ -539,6 +539,48 @@ mod tests {
     None
   }
 
+  /// Same as `run_match`, but equips both sides via `auto_buy_for_bot` (the function a real game
+  /// actually calls for a CPU player in the shop) with `starting_cash` each, instead of the equal
+  /// loadout `equip_for_a_fair_fight` gives every difficulty. `auto_buy_for_bot` itself scales
+  /// noticeably by difficulty (Hard: 3 armor / 15 bombs / 8 dynamite / 6 grenades / 3 big bombs / 4
+  /// mines; Medium: 2 armor / 10 bombs / 5 dynamite / 4 grenades, no big bombs/mines; Easy: 1 armor /
+  /// 6 bombs, no dynamite/grenades/big bombs/mines at all) - so unlike `run_match`, any skew here is
+  /// difficulty acting through *equipment*, which `measure_bot_difficulty_win_rates` deliberately
+  /// excludes to isolate decision quality. See that test's doc comment for why both numbers matter.
+  fn run_match_with_real_shop_equipment(
+    level: LevelMap,
+    diff_a: BotDifficulty,
+    diff_b: BotDifficulty,
+    starting_cash: u32,
+    max_ticks: u32,
+  ) -> Option<usize> {
+    let options = Options::default();
+    let prices = crate::menu::shop::Prices::new(options.free_market);
+    let mut players = [
+      PlayerComponent::new("A".to_string(), Default::default(), &options, true, diff_a),
+      PlayerComponent::new("B".to_string(), Default::default(), &options, true, diff_b),
+    ];
+    for p in players.iter_mut() {
+      p.cash = starting_cash;
+      crate::menu::shop::auto_buy_for_bot(p, &prices);
+    }
+    let mut world = World::create(level, &mut players, false, 50, false);
+
+    for _ in 0..max_ticks {
+      world.tick();
+      let a_dead = world.actors[0].is_dead;
+      let b_dead = world.actors[1].is_dead;
+      if a_dead && b_dead {
+        return None;
+      } else if a_dead {
+        return Some(1);
+      } else if b_dead {
+        return Some(0);
+      }
+    }
+    None
+  }
+
   /// Simulates real matches with the actual bot AI (no mocking) and reports each difficulty pairing's
   /// win rate, instead of trusting that the code having three enum variants with different numbers
   /// means they play meaningfully differently. This is a measurement tool, not a pass/fail balance
@@ -566,14 +608,21 @@ mod tests {
   ///    (57.6%), Medium beat Hard 105/250 (58%), Easy beat Medium 134/250 (53.6%) - restricting vision
   ///    made the *restricted* side stronger, and Hard, now the only side that always beelines straight
   ///    at the nearest enemy from anywhere on the map, became the weakest of the three.
+  ///
   /// Read together, both point at eager pursuit/early engagement being a liability under the current
   /// combat mechanics (self-damage exposure, predictable straight-line approach through undug terrain),
   /// not an advantage - a `Hard` that wins more may need to come from being harder to kill or
-  /// better-equipped when a fight does happen, not from finding the fight faster. This is a design
-  /// decision past what this session could responsibly guess its way to further (see issue tracker for
-  /// a dedicated follow-up with both data points); this test is the tool for whoever does that work next
-  /// to check their change actually moved the number, instead of re-discovering the same noise problem
-  /// below.
+  /// better-equipped when a fight does happen, not from finding the fight faster.
+  ///
+  /// **That "better-equipped" guess turned out to be exactly right, and was already shipped**:
+  /// `measure_bot_difficulty_win_rates_with_real_shop_equipment` below runs the same measurement
+  /// without the equal-loadout constraint (using the shop's actual per-difficulty auto-buy instead)
+  /// and finds a large, correctly-ordered gap (Hard beats Easy ~64%, not ~50%). So: decision quality
+  /// alone genuinely does not separate the three difficulties (the two failed attempts above and this
+  /// test's own baseline are solid evidence of that), but real games were never decision-quality-alone;
+  /// equipment is not optional there, and equipment already carries the difference. This test is still
+  /// worth keeping and re-running after any `update_single_bot` change: it is the one that would catch
+  /// a change making worse-equipped play *also* worse (compounding rather than compensating).
   ///
   /// n=250, not 60: at n=60 this looked fixed (e.g. one run: strong=35 weak=25 for Hard vs Easy, a
   /// believable-looking 58%), but that was mostly sampling noise - a second n=60 run of the *identical*
@@ -625,6 +674,78 @@ mod tests {
       }
       if a_wins == 0 || b_wins == 0 {
         broken.push(format!("{label}: one side never won a single match ({a_wins} vs {b_wins})"));
+      }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
+  }
+
+  /// `measure_bot_difficulty_win_rates` above deliberately equalizes equipment to isolate decision
+  /// quality, and found decision quality alone does not meaningfully separate the three difficulties
+  /// (see its doc comment). But a real game does not equalize equipment - the shop's `auto_buy_for_bot`
+  /// (see its own doc comment in `menu::shop`) gives Hard noticeably more armor, bombs, dynamite,
+  /// grenades, big bombs and mines than Easy. This measures win rate with THAT equipment instead, to
+  /// check whether difficulty separation that two behavior-only tuning attempts failed to produce
+  /// (issue tracker has both) is already there via equipment and the earlier test simply couldn't see
+  /// it by construction.
+  ///
+  /// `starting_cash` matters a lot here - too little and every difficulty affords roughly the same
+  /// few items regardless of their different budgets/priorities, which would just reproduce the
+  /// equalized-equipment result for the wrong reason. Uses 2650 (the in-game CASH option's maximum,
+  /// also what a returning player's config tends to settle at - see `Options::save`) so every
+  /// difficulty's *priorities* actually diverge, not just get cut off early by a shared budget limit.
+  ///
+  /// Result at n=250: **it was there all along.** Hard beat Easy 157/245 resolved (64.1%), Hard beat
+  /// Medium 133/247 (53.8%), Medium beat Easy 146/250 (58.4%) - correctly ordered (Hard > Medium >
+  /// Easy) in every pairing, and the Hard/Easy gap in particular is not subtle. The two behavior-only
+  /// tuning attempts on `measure_bot_difficulty_win_rates` (see its doc comment) were chasing a
+  /// difference that was never going to show up there by construction, since that test's whole point
+  /// is to hold equipment constant. Real difficulty separation was already shipped, via
+  /// `auto_buy_for_bot`'s per-difficulty purchase caps - it just wasn't being measured by anything
+  /// until this test existed. Asserts `a_wins > b_wins` (the harder side simply wins more, not a fixed
+  /// percentage - that's noisier and not the point) as a real regression check: unlike the
+  /// equipment-equalized test above, this one has a mechanism with a large, reliable effect, so a
+  /// change that flattens it is a real regression, not sampling noise.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn measure_bot_difficulty_win_rates_with_real_shop_equipment() {
+    const TRIALS: u32 = 250;
+    const MAX_TICKS: u32 = 60 * 180;
+    const STARTING_CASH: u32 = 2650;
+    let level = real_classic_map("BATTLE.MNE");
+
+    let mut broken = Vec::new();
+    for (label, a, b) in [
+      ("Hard vs Easy", BotDifficulty::Hard, BotDifficulty::Easy),
+      ("Hard vs Medium", BotDifficulty::Hard, BotDifficulty::Medium),
+      ("Medium vs Easy", BotDifficulty::Medium, BotDifficulty::Easy),
+    ] {
+      let mut a_wins = 0;
+      let mut b_wins = 0;
+      let mut draws = 0;
+      for i in 0..TRIALS {
+        let result = if i % 2 == 0 {
+          run_match_with_real_shop_equipment(level.clone(), a, b, STARTING_CASH, MAX_TICKS)
+        } else {
+          run_match_with_real_shop_equipment(level.clone(), b, a, STARTING_CASH, MAX_TICKS)
+            .map(|winner| 1 - winner)
+        };
+        match result {
+          Some(0) => a_wins += 1,
+          Some(1) => b_wins += 1,
+          _ => draws += 1,
+        }
+      }
+      println!("{label}: {a:?}={a_wins} {b:?}={b_wins} draws={draws} (of {TRIALS})");
+      if draws * 4 > TRIALS {
+        broken.push(format!("{label}: {draws}/{TRIALS} matches never resolved"));
+      }
+      if a_wins == 0 || b_wins == 0 {
+        broken.push(format!("{label}: one side never won a single match ({a_wins} vs {b_wins})"));
+      }
+      // `a` is always the harder side in each tuple above - a real regression check, not just a
+      // sanity one, since this test's mechanism (equipment) has shown a large, reliable effect.
+      if a_wins <= b_wins {
+        broken.push(format!("{label}: harder side did not win more ({a_wins} vs {b_wins})"));
       }
     }
     assert!(broken.is_empty(), "{}", broken.join("\n"));

@@ -520,7 +520,10 @@ fn adjust_price(price: u32, percentage: u32) -> u32 {
   ((price - 1) * percentage + 50) / 100 + 1
 }
 
-fn auto_buy_for_bot(player: &mut PlayerComponent, prices: &Prices) {
+/// `pub(crate)` (not private) so `world::bot`'s difficulty-balance measurement can equip bots the
+/// same way a real game does, instead of the artificial equal loadout `equip_for_a_fair_fight` gives
+/// every difficulty - see that test module for why the distinction matters.
+pub(crate) fn auto_buy_for_bot(player: &mut PlayerComponent, prices: &Prices) {
   use crate::world::bot::BotDifficulty;
   let max_armor = match player.bot_difficulty {
     BotDifficulty::Hard => 3,
