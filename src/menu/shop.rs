@@ -570,8 +570,31 @@ pub(crate) fn auto_buy_for_bot(player: &mut PlayerComponent, prices: &Prices) {
     }
   }
 
+  // The cheap specials the AI knows how to use (see `BotParams::special_weapons`). They are listed
+  // after the staples on purpose: an extinguisher is worth having, but not instead of bombs.
+  if player.bot_difficulty != BotDifficulty::Easy {
+    // Puts out a fuse up to six tiles away - what the bot reaches for when a blast covers it and
+    // there is nowhere to run.
+    if player.inventory[Equipment::Extinguisher] == 0 && player.cash >= prices[Equipment::Extinguisher] {
+      player.cash -= prices[Equipment::Extinguisher];
+      player.inventory[Equipment::Extinguisher] += 1;
+    }
+  }
+
   // Hard bot buys Big Bombs & Remote Bombs if affordable
   if player.bot_difficulty == BotDifficulty::Hard {
+    // Radio bombs are armed rather than fused, so a Hard bot can leave one in a chaser's path and
+    // set it off from a safe distance. At 15 each they are the cheapest thing in the shop.
+    while player.cash >= prices[Equipment::SmallRadio] && player.inventory[Equipment::SmallRadio] < 3 {
+      player.cash -= prices[Equipment::SmallRadio];
+      player.inventory[Equipment::SmallRadio] += 1;
+    }
+    // A blast down the whole row and column it lands on, for 35.
+    while player.cash >= prices[Equipment::SmallCrucifix] && player.inventory[Equipment::SmallCrucifix] < 2 {
+      player.cash -= prices[Equipment::SmallCrucifix];
+      player.inventory[Equipment::SmallCrucifix] += 1;
+    }
+
     while player.cash >= prices[Equipment::BigBomb] && player.inventory[Equipment::BigBomb] < 3 {
       player.cash -= prices[Equipment::BigBomb];
       player.inventory[Equipment::BigBomb] += 1;

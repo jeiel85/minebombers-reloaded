@@ -111,6 +111,25 @@ const RANGED_COOLDOWN: u32 = 25;
 /// target and the blast reaches one tile past it, so anything nearer catches the bot too.
 const RANGED_MIN_DISTANCE: u16 = 3;
 
+/// Which of the shop's exotic items a bot knows how to use. Every one of them can kill the bot that
+/// used it, so this is a skill, not just an inventory check: knowing that a freeze bomb freezes its
+/// own thrower, or that a crucifix blast runs down the whole row *and* column it was dropped on, is
+/// the difference between a weapon and a mistake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpecialWeapons {
+  /// Bombs and nothing else.
+  None,
+  /// The ones that cannot backfire when used correctly: a clone, a super drill, a flamethrower cone
+  /// that only burns forwards, an extinguisher for a bomb there is no room to run from.
+  ///
+  /// Moving the flamethrower out of this tier and up to Hard-only was tried and measured as no
+  /// improvement: equal-equipment Hard vs Medium went 120-107 (shared) to 111-107 (Hard only), both
+  /// within noise of even, because Hard was using it too. Kept shared, as the simpler rule.
+  Safe,
+  /// Everything, including the ones that need the bot to get itself well clear first.
+  All,
+}
+
 /// How well a bot plays the shared decision loop. See the module docs for why difficulty is expressed
 /// this way instead of as separate behavior per level.
 #[derive(Debug, Clone, Copy)]
@@ -155,6 +174,8 @@ struct BotParams {
   enemy_value: u32,
   /// Maximum distance to fire a grenade / drill drone.
   ranged_range: u16,
+  /// Which exotic shop items the bot can use.
+  special_weapons: SpecialWeapons,
   /// Whether the bot weighs an enemy by how the fight would go: press the attack while ahead on
   /// health, go back to mining while behind. Fighting an armed opponent is a coin flip at the best
   /// of times, so picking *when* to take it is the one thing left that separates a strong bot from
@@ -185,6 +206,7 @@ impl BotParams {
         mistake_pct: 22,
         ignore_danger_pct: 30,
         enemy_value: 50,
+        special_weapons: SpecialWeapons::None,
         situational_aggression: false,
         ranged_range: 0,
       },
@@ -205,6 +227,7 @@ impl BotParams {
         mistake_pct: 7,
         ignore_danger_pct: 5,
         enemy_value: 100,
+        special_weapons: SpecialWeapons::Safe,
         situational_aggression: false,
         ranged_range: 7,
       },
@@ -227,6 +250,7 @@ impl BotParams {
         mistake_pct: 0,
         ignore_danger_pct: 0,
         enemy_value: 150,
+        special_weapons: SpecialWeapons::All,
         situational_aggression: true,
         ranged_range: 10,
       },
@@ -589,6 +613,17 @@ impl BotController {
         state.clear_plan();
         return BotAction::step(dir);
       }
+      // Nowhere to run. An extinguisher puts the fuse out from up to six tiles away
+      // (`activate_extinguisher`), which beats standing in the blast.
+      if params.special_weapons != SpecialWeapons::None && world.players[bot_idx].inventory[Equipment::Extinguisher] > 0
+      {
+        if let Some(dir) = Self::direction_of_nearest_live_bomb(world, cursor) {
+          return BotAction {
+            select: Some(Equipment::Extinguisher),
+            keys: vec![dir_to_key(dir), Key::Bomb],
+          };
+        }
+      }
     }
 
     // 2. FIGHT.
@@ -644,7 +679,12 @@ impl BotController {
       Self::replan(world, bot_idx, cursor, danger, drilling, params, state);
     }
 
-    // 8. FOLLOW: walk, dig, or blast the next waypoint open.
+    // 8. EQUIP: a clone to fight and mine alongside us, a super drill for the rock in the way.
+    if let Some(action) = Self::utility_action(world, bot_idx, drilling, state.path.first().copied(), params) {
+      return action;
+    }
+
+    // 9. FOLLOW: walk, dig, or blast the next waypoint open.
     if let Some(&next) = state.path.first() {
       if let Some(dir) = direction_to_adjacent(cursor, next) {
         if params.bomb_digging
@@ -661,7 +701,7 @@ impl BotController {
       state.clear_plan();
     }
 
-    // 9. Nothing reachable is worth anything: keep digging rather than stand still.
+    // 10. Nothing reachable is worth anything: keep digging rather than stand still.
     Self::unstick(world, bot_idx, cursor, danger, drilling, params, &mut rng)
   }
 
@@ -766,6 +806,13 @@ impl BotController {
 
     let on_bombable_tile = world.maps.level[cursor].is_passable();
 
+    // The exotic shop items, when this bot knows how to use them and the situation fits.
+    if params.special_weapons != SpecialWeapons::None && on_bombable_tile {
+      if let Some(action) = Self::special_attack(world, bot_idx, cursor, target, manhattan, danger, params, state) {
+        return Some(action);
+      }
+    }
+
     // Point blank: the enemy stands inside the blast of a bomb dropped at our feet.
     if manhattan <= 1 && state.bomb_cooldown == 0 && on_bombable_tile {
       if let Some(weapon) = Self::melee_weapon(world, bot_idx) {
@@ -833,6 +880,192 @@ impl BotController {
     }
 
     None
+  }
+
+  /// The exotic weapons, in order of how safe they are to use. Each one is gated on the bot being
+  /// able to get out of its own way: the freeze bomb freezes its thrower, the crucifix blast runs
+  /// down the whole row *and* column it was dropped on, the black hole drags everything within nine
+  /// tiles into itself, and the atomic bomb clears twelve. Without these checks they are all just
+  /// slower ways for a bot to kill itself - which is what `measure_self_destruction` is for.
+  #[allow(clippy::too_many_arguments)]
+  fn special_attack(
+    world: &World,
+    bot_idx: usize,
+    cursor: Cursor,
+    target: Cursor,
+    manhattan: u16,
+    danger: &DangerMap,
+    params: &BotParams,
+    state: &mut BotState,
+  ) -> Option<BotAction> {
+    let inventory = &world.players[bot_idx].inventory;
+    let aligned = cursor.row == target.row || cursor.col == target.col;
+
+    // Flamethrower: a cone that only ever spreads forwards and sideways, never back at the shooter
+    // (`FlamethrowerExpansion::can_expand` refuses the reverse direction), so it needs no retreat at
+    // all. It also burns straight through rock, which is why it is worth using at close range where
+    // a clear line is unlikely.
+    if inventory[Equipment::Flamethrower] > 0 && aligned && manhattan <= 7 && state.bomb_cooldown == 0 {
+      if let Some(face) = Self::dir_towards(cursor, target) {
+        state.bomb_cooldown = RANGED_COOLDOWN;
+        return Some(BotAction {
+          select: Some(Equipment::Flamethrower),
+          keys: vec![dir_to_key(face), Key::Bomb],
+        });
+      }
+    }
+
+    if state.bomb_cooldown > 0 {
+      return None;
+    }
+
+    // Radio bombs are armed rather than fused: drop one in the path of someone chasing us and set it
+    // off later from a safe distance (`remote_is_worth_firing` handles the trigger).
+    if params.use_remote && (2..=5).contains(&manhattan) {
+      for radio in [Equipment::LargeRadio, Equipment::SmallRadio] {
+        if inventory[radio] > 0 {
+          state.bomb_cooldown = BOMB_COOLDOWN;
+          return Some(BotAction {
+            select: Some(radio),
+            keys: vec![Key::Bomb],
+          });
+        }
+      }
+    }
+
+    if params.special_weapons != SpecialWeapons::All {
+      return None;
+    }
+
+    // Freeze bomb: 180 ticks of a motionless opponent is worth more than any single blast, but the
+    // 5-tile radius catches the thrower too, so this needs real distance before the 90-tick fuse.
+    if inventory[Equipment::FreezeBomb] > 0 && manhattan <= 5 {
+      if let Some(dir) = Self::retreat_direction(world, cursor, danger, params, Equipment::FreezeBomb) {
+        state.bomb_cooldown = BOMB_COOLDOWN;
+        state.clear_plan();
+        return Some(BotAction {
+          select: Some(Equipment::FreezeBomb),
+          keys: vec![Key::Bomb, dir_to_key(dir)],
+        });
+      }
+    }
+
+    // Crucifix: the blast travels the full row and column from where it lands, so "far enough away"
+    // means off both of them - stepping back along the corridor is not an escape.
+    for crucifix in [Equipment::LargeCrucifix, Equipment::SmallCrucifix] {
+      let range = if crucifix == Equipment::SmallCrucifix {
+        15
+      } else {
+        MAP_COLS
+      };
+      if inventory[crucifix] > 0 && aligned && manhattan <= range {
+        if let Some(dir) = Self::off_the_cross_direction(world, cursor, danger, params) {
+          state.bomb_cooldown = BOMB_COOLDOWN;
+          state.clear_plan();
+          return Some(BotAction {
+            select: Some(crucifix),
+            keys: vec![Key::Bomb, dir_to_key(dir)],
+          });
+        }
+      }
+    }
+
+    // The two that flatten a neighbourhood. Held back for an enemy that is actually close, since
+    // both need a long run afterwards and the bot gives up its position to make it.
+    for big in [Equipment::BlackHole, Equipment::AtomicBomb] {
+      if inventory[big] > 0 && manhattan <= 6 {
+        if let Some(dir) = Self::retreat_direction(world, cursor, danger, params, big) {
+          state.bomb_cooldown = BOMB_COOLDOWN;
+          state.clear_plan();
+          return Some(BotAction {
+            select: Some(big),
+            keys: vec![Key::Bomb, dir_to_key(dir)],
+          });
+        }
+      }
+    }
+
+    None
+  }
+
+  /// First step towards a reachable tile that shares neither its row nor its column with `cursor` -
+  /// i.e. somewhere a crucifix blast dropped here will not reach.
+  fn off_the_cross_direction(
+    world: &World,
+    cursor: Cursor,
+    danger: &DangerMap,
+    params: &BotParams,
+  ) -> Option<Direction> {
+    Self::walk_search(world, cursor, params.escape_steps.max(6), |cell, _| {
+      cell.row != cursor.row && cell.col != cursor.col && danger.at(cell) == SAFE
+    })
+  }
+
+  /// Items that help without being aimed at anyone: a clone that mines and fights for us, and the
+  /// super drill for the rock in the way. Neither can hurt the bot, so neither needs a retreat.
+  fn utility_action(
+    world: &World,
+    bot_idx: usize,
+    drilling: u32,
+    next_tile: Option<Cursor>,
+    params: &BotParams,
+  ) -> Option<BotAction> {
+    if params.special_weapons == SpecialWeapons::None {
+      return None;
+    }
+    let inventory = &world.players[bot_idx].inventory;
+
+    // A clone hunts the other players and banks the gold it digs up into *our* purse (see
+    // `interact_map`), and never turns on the player it belongs to (`monster.rs`). Free ally.
+    if inventory[Equipment::Clone] > 0 && !Self::has_live_clone(world, bot_idx) {
+      return Some(BotAction {
+        select: Some(Equipment::Clone),
+        keys: vec![Key::Bomb],
+      });
+    }
+
+    // Super drill: +300 drilling for about 180 ticks. Worth spending on rock that would otherwise
+    // cost a big chunk of that, and pointless while one is already running.
+    if inventory[Equipment::SuperDrill] > 0 && world.actors[bot_idx].super_drill_count == 0 {
+      if let Some(next) = next_tile {
+        if dig_ticks(world, next, drilling) > 150 {
+          return Some(BotAction {
+            select: Some(Equipment::SuperDrill),
+            keys: vec![Key::Bomb],
+          });
+        }
+      }
+    }
+
+    None
+  }
+
+  /// Direction of the nearest live explosive within extinguisher range, along a row or column.
+  fn direction_of_nearest_live_bomb(world: &World, cursor: Cursor) -> Option<Direction> {
+    for distance in 1..=6i16 {
+      for dir in Direction::all() {
+        let (delta_row, delta_col) = match dir {
+          Direction::Up => (-distance, 0),
+          Direction::Down => (distance, 0),
+          Direction::Left => (0, -distance),
+          Direction::Right => (0, distance),
+        };
+        let Some(cell) = cursor.offset(delta_row, delta_col) else {
+          continue;
+        };
+        if world.maps.level[cell].is_bomb() && world.maps.timer[cell] > 0 {
+          return Some(dir);
+        }
+      }
+    }
+    None
+  }
+
+  fn has_live_clone(world: &World, bot_idx: usize) -> bool {
+    world.actors.iter().any(|actor| {
+      !actor.is_dead
+        && matches!(actor.kind, crate::world::actor::ActorKind::Clone(player) if player as usize == bot_idx)
+    })
   }
 
   /// Bomb to drop at point blank range. A small bomb covers only the four neighbouring tiles, which
@@ -1248,9 +1481,16 @@ fn direction_to_adjacent(from: Cursor, to: Cursor) -> Option<Direction> {
 fn blast_clearance(weapon: Equipment) -> u16 {
   match weapon {
     Equipment::SmallBomb | Equipment::Mine | Equipment::Grenade | Equipment::DrillDrone => 1,
-    Equipment::BigBomb | Equipment::Barrel | Equipment::ExplosivePlastic => 2,
+    Equipment::SmallRadio => 1,
+    Equipment::BigBomb | Equipment::Barrel | Equipment::ExplosivePlastic | Equipment::LargeRadio => 2,
     Equipment::Dynamite | Equipment::Digger | Equipment::Plastic => 3,
-    Equipment::Napalm | Equipment::AtomicBomb => 6,
+    // Freezes every actor within 5 tiles, the thrower included (`explode_freeze_bomb`).
+    Equipment::FreezeBomb => 5,
+    // Pulls everything within 9 tiles into itself for a minute before collapsing (`tick_black_hole`).
+    Equipment::BlackHole => 10,
+    Equipment::Napalm => 6,
+    // A 12-tile radius, and the centre takes double damage (`explode_entity`).
+    Equipment::AtomicBomb => 13,
     _ => 3,
   }
 }
@@ -1406,6 +1646,15 @@ mod tests {
     // differentiator never fires and Easy is compared unfairly favorably.
     p.inventory[Equipment::Grenade] = 5;
     p.inventory[Equipment::DrillDrone] = 3;
+    // Same reasoning for the exotic items: `BotParams::special_weapons` decides who can use them,
+    // so every difficulty has to be holding them for that to be what the measurement sees.
+    p.inventory[Equipment::Flamethrower] = 2;
+    p.inventory[Equipment::Clone] = 1;
+    p.inventory[Equipment::SuperDrill] = 1;
+    p.inventory[Equipment::Extinguisher] = 1;
+    p.inventory[Equipment::SmallRadio] = 3;
+    p.inventory[Equipment::SmallCrucifix] = 2;
+    p.inventory[Equipment::FreezeBomb] = 1;
   }
 
   fn bot_players(diff_a: BotDifficulty, diff_b: BotDifficulty, options: &Options) -> [PlayerComponent; 2] {
@@ -1731,6 +1980,12 @@ mod tests {
   /// one to separate - it sat at 98-109 until `situational_aggression` gave Hard a reason to break
   /// off a fight it was losing.
   ///
+  /// With the exotic weapons added (`BotParams::special_weapons`) the same measurement reads Hard
+  /// 164-63 Easy, Hard 120-107 Medium, Medium 168-36 Easy. Note what moved: both gaps against Easy
+  /// widened, while Hard's edge over Medium narrowed to roughly even here - a clone, a super drill
+  /// and an extinguisher are simply efficient, and Medium gets all three. The gap that matters for a
+  /// player did not narrow; see the shop-equipment test below, where Hard beats Medium 89-15.
+  ///
   /// n=250, not 60: at n=60 the noise is larger than the effect (two runs of *identical* code came
   /// back 58% and 38% for the same pairing). Takes a few minutes.
   ///
@@ -1786,8 +2041,8 @@ mod tests {
   /// its purchases by difficulty), instead of the equalized loadout above. Both numbers matter: this
   /// one is what a player actually faces, the equalized one isolates the AI itself.
   ///
-  /// Measured at n=250 (resolved matches): Hard beat Easy 133-18, Hard beat Medium 81-13, Medium beat
-  /// Easy 125-29. Equipment and decision quality compound, so the gaps are much wider here than in the
+  /// Measured at n=250 (resolved matches): Hard beat Easy 153-9, Hard beat Medium 89-15, Medium beat
+  /// Easy 129-27. Equipment and decision quality compound, so the gaps are much wider here than in the
   /// equalized test - which is the intended shape: picking HARD in the menu should feel like a
   /// different opponent, not like the same bot with a different label.
   #[test]
