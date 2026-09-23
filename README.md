@@ -33,7 +33,7 @@
 ```powershell
 cargo run --release
 ```
-SDL2 DLL은 저장소에 들어 있어 `cargo run --release`가 바로 동작합니다. 빌드한 exe를 따로 옮겨 실행하려면 DLL을 exe 옆에 두세요. 릴리스 zip 자체는 `pwsh scripts/package_windows.ps1`이 만듭니다.
+SDL2 DLL은 저장소에 들어 있고, 빌드할 때 `build.rs`가 `lib/`의 DLL을 exe 옆(`target/debug`, `target/release`)으로 복사합니다. 그래서 `cargo run --release`는 물론 빌드된 exe를 직접 실행하는 것도 그대로 동작합니다. exe를 다른 곳으로 옮길 때는 같은 폴더의 DLL도 함께 옮기세요. 릴리스 zip 자체는 `pwsh scripts/package_windows.ps1`이 만듭니다.
 
 **Linux**
 ```bash
