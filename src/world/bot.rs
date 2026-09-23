@@ -551,11 +551,29 @@ mod tests {
   /// Grenade/DrillDrone at a wall right next to it, since neither check blocked the "aligned and in
   /// range" shot before this), and preferring `SmallBomb` over `BigBomb`/`Dynamite` in the melee
   /// drop-and-flee tactic (a one-tile retreat cannot clear a radius-2/3+ blast, so "better bomb" was
-  /// mostly self-damage). Actually giving `Hard` a reliable edge looks like it needs real tuning work
-  /// (tried moving `close_combat_dist` for Hard from 3 to 2 to match Medium; that made Hard *worse*
-  /// against Easy, 23/60 - reverted), which is a design decision past what this session could respons-
-  /// ibly guess its way to further; this test is the tool for whoever does that work next to check their
-  /// change actually moved the number, instead of re-discovering the same noise problem below.
+  /// mostly self-damage). Actually giving `Hard` a reliable edge looks like it needs real tuning work,
+  /// not a parameter nudge - two different, principled attempts both failed to produce it (both
+  /// reverted, neither left in the code):
+  /// 1. Moving `close_combat_dist` for Hard from 3 to 2 to match Medium (reasoning: SmallBomb's
+  ///    radius-1 blast doesn't reach a target 3 tiles away, so Hard's close-combat branch was rarely
+  ///    usable at its own claimed range). Made Hard *worse* against Easy, 23/60 at n=60.
+  /// 2. Giving Easy/Medium a limited "vision range" on `find_nearest_enemy`/`find_nearest_treasure`
+  ///    (both were, and still are, a plain nearest-of-everything scan with no distance cap at all,
+  ///    identical for every difficulty - reasoning: an all-seeing bot that reacts every tick and one
+  ///    that reacts every 4 ticks converge on the same known target regardless, so the *quality* of
+  ///    that omniscience swamped every other difference). Kept Hard unlimited, gave Medium 24 tiles and
+  ///    Easy 12. Result at n=250 was the opposite of the intent and not subtle: Easy beat Hard 106/250
+  ///    (57.6%), Medium beat Hard 105/250 (58%), Easy beat Medium 134/250 (53.6%) - restricting vision
+  ///    made the *restricted* side stronger, and Hard, now the only side that always beelines straight
+  ///    at the nearest enemy from anywhere on the map, became the weakest of the three.
+  /// Read together, both point at eager pursuit/early engagement being a liability under the current
+  /// combat mechanics (self-damage exposure, predictable straight-line approach through undug terrain),
+  /// not an advantage - a `Hard` that wins more may need to come from being harder to kill or
+  /// better-equipped when a fight does happen, not from finding the fight faster. This is a design
+  /// decision past what this session could responsibly guess its way to further (see issue tracker for
+  /// a dedicated follow-up with both data points); this test is the tool for whoever does that work next
+  /// to check their change actually moved the number, instead of re-discovering the same noise problem
+  /// below.
   ///
   /// n=250, not 60: at n=60 this looked fixed (e.g. one run: strong=35 weak=25 for Hard vs Easy, a
   /// believable-looking 58%), but that was mostly sampling noise - a second n=60 run of the *identical*
