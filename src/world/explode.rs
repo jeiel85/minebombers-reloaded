@@ -613,7 +613,7 @@ pub const EXPLODABLE_ENTITY: MapValueSet = bitmap!([
 ]);
 
 /// Cross pattern of barrel explosion (these are offsets to row and column).
-const BIG_BOMB_PATTERN: [(i16, i16); 12] = [
+pub(crate) const BIG_BOMB_PATTERN: [(i16, i16); 12] = [
   (-1, 0),
   (1, 0),
   (0, -1),
@@ -629,10 +629,10 @@ const BIG_BOMB_PATTERN: [(i16, i16); 12] = [
 ];
 
 /// Cross pattern of small bomb explosion (these are offsets to row and column).
-const SMALL_BOMB_PATTERN: [(i16, i16); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+pub(crate) const SMALL_BOMB_PATTERN: [(i16, i16); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
 
 /// Cross pattern of barrel explosion (these are offsets to row and column).
-const DYNAMITE_PATTERN: [(i16, i16); 36] = [
+pub(crate) const DYNAMITE_PATTERN: [(i16, i16); 36] = [
   (-1, 0),
   (1, 0),
   (0, -1),
