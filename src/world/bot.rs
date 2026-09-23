@@ -690,6 +690,144 @@ mod tests {
     assert_eq!(BotDifficulty::from_str("hard"), BotDifficulty::Hard);
     assert_eq!(BotDifficulty::from_str("unknown"), BotDifficulty::Medium);
   }
+
+  /// Diagnostic (not a regression test): reproduces a fresh match exactly as `play_game` sets one
+  /// up - a human slot that never acts, and a bot with the empty starting inventory a new game
+  /// actually has (no `equip_for_a_fair_fight`, unlike every other test in this file) - to check
+  /// whether the bot ever leaves its spawn tile. Prints its position every 30 ticks.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn fresh_game_start_bot_moves_from_spawn() {
+    let level = real_classic_map("BATTLE.MNE");
+    let options = Options::default();
+    let mut players = [
+      PlayerComponent::new("Human".to_string(), Default::default(), &options, false, BotDifficulty::Medium),
+      PlayerComponent::new("Bot".to_string(), Default::default(), &options, true, BotDifficulty::Medium),
+    ];
+    // Deliberately NOT calling equip_for_a_fair_fight: a fresh match starts with empty inventory.
+    let mut world = World::create(level, &mut players, false, 50, false);
+    let spawn_cursor = world.actors[1].pos.cursor();
+    println!(
+      "spawn: cursor={:?} is_dead={} drilling={} health={}",
+      spawn_cursor, world.actors[1].is_dead, world.actors[1].drilling, world.actors[1].health
+    );
+    for tick in 1..=600u32 {
+      world.tick();
+      if tick % 30 == 0 {
+        println!(
+          "tick {}: cursor={:?} is_dead={} alive_players={} end_round_counter={}",
+          tick, world.actors[1].pos.cursor(), world.actors[1].is_dead, world.alive_players(), world.end_round_counter
+        );
+      }
+      if world.actors[1].pos.cursor() != spawn_cursor {
+        println!("moved at tick {}: cursor={:?}", tick, world.actors[1].pos.cursor());
+        return;
+      }
+      if world.is_end_of_round() {
+        println!("round ended at tick {} without the bot ever moving", tick);
+        break;
+      }
+    }
+    panic!("bot never left spawn tile {:?} in 600 ticks", spawn_cursor);
+  }
+
+  /// Same as `fresh_game_start_bot_moves_from_spawn`, but using the actual map generation path a
+  /// real (non-campaign) New Game uses - `LevelMap::random_map` + `generate_entrances` - instead of
+  /// a fixed classic map, across many random maps. Checks whether some unlucky spawn (e.g. fully
+  /// enclosed by rock, or an entrance-generation bug) can trap the bot in a way BATTLE.MNE doesn't.
+  #[test]
+  fn fresh_game_start_bot_moves_from_spawn_random_maps() {
+    let options = Options::default();
+    let mut stuck = Vec::new();
+    for seed in 0..200u32 {
+      let mut level = crate::world::map::LevelMap::random_map(75);
+      level.generate_entrances(2);
+      let mut players = [
+        PlayerComponent::new("Human".to_string(), Default::default(), &options, false, BotDifficulty::Medium),
+        PlayerComponent::new("Bot".to_string(), Default::default(), &options, true, BotDifficulty::Medium),
+      ];
+      let mut world = World::create(level, &mut players, false, 50, false);
+      let spawn_cursor = world.actors[1].pos.cursor();
+      let mut moved = false;
+      for _ in 1..=300u32 {
+        world.tick();
+        if world.actors[1].pos.cursor() != spawn_cursor {
+          moved = true;
+          break;
+        }
+        if world.is_end_of_round() {
+          break;
+        }
+      }
+      if !moved {
+        stuck.push((seed, spawn_cursor, world.actors[1].is_dead));
+      }
+    }
+    if !stuck.is_empty() {
+      panic!("bot never moved from spawn in {}/200 random maps: {:?}", stuck.len(), stuck);
+    }
+  }
+
+  /// Diagnostic for a bug found in live play (see issue tracker: bot permanently freezes mid-round):
+  /// a live GUI session found the bot moving briefly then freezing at one tile for 1800+ consecutive
+  /// ticks (30+ real seconds at normal speed) near the top map border, while staying alive and the
+  /// tick loop kept running normally (ruled out via a stderr-logging debug build - not a
+  /// rendering/vsync/pacing issue). `fresh_game_start_bot_moves_from_spawn_random_maps` only checks
+  /// for movement in the first 300 ticks, so it can't see a freeze that starts later.
+  ///
+  /// This runs longer and tracks the longest run of unchanged position after the first move, across
+  /// many random maps, to try to reproduce and pinpoint the freeze. At 80 trials x 2000 ticks it did
+  /// NOT reproduce the severe (1800+ tick) freeze - worst case seen was 57 ticks, also near row 1 -
+  /// so whatever triggers the long freeze is either rarer than ~1/80, or depends on something this
+  /// setup doesn't have: the live session's human player had moved a few tiles before going idle,
+  /// while here the human never acts at all, and the bot's HUNT step targets the human's *current*
+  /// position each tick. Ignored by default because of the ~65s runtime and because it isn't a
+  /// reliable repro yet; kept as a starting point for whoever picks up the real investigation
+  /// (probably needs to inspect `update_single_bot`'s HUNT/WANDER choice frozen at a border tile with
+  /// a *moving* enemy, not assert on an aggregate threshold like this).
+  #[test]
+  #[ignore = "slow (~65s) and does not yet reliably reproduce the live freeze - see doc comment"]
+  fn bot_does_not_freeze_after_initial_movement() {
+    let options = Options::default();
+    const TICKS: u32 = 2000;
+    const STUCK_THRESHOLD: u32 = 400;
+    let mut worst: Option<(u32, Cursor, u32)> = None;
+    for _ in 0..80u32 {
+      let mut level = crate::world::map::LevelMap::random_map(75);
+      level.generate_entrances(2);
+      let mut players = [
+        PlayerComponent::new("Human".to_string(), Default::default(), &options, false, BotDifficulty::Medium),
+        PlayerComponent::new("Bot".to_string(), Default::default(), &options, true, BotDifficulty::Medium),
+      ];
+      let mut world = World::create(level, &mut players, false, 50, false);
+      let mut last_cursor = world.actors[1].pos.cursor();
+      let mut stuck_since_tick = 0u32;
+      for tick in 1..=TICKS {
+        world.tick();
+        let cursor = world.actors[1].pos.cursor();
+        if cursor == last_cursor {
+          let streak = tick - stuck_since_tick;
+          if worst.is_none_or(|(best, ..)| streak > best) {
+            worst = Some((streak, cursor, stuck_since_tick));
+          }
+        } else {
+          last_cursor = cursor;
+          stuck_since_tick = tick;
+        }
+        if world.is_end_of_round() || world.actors[1].is_dead {
+          break;
+        }
+      }
+    }
+    if let Some((streak, cursor, since_tick)) = worst {
+      println!("worst stuck streak: {} ticks at {:?}, starting tick {}", streak, cursor, since_tick);
+      assert!(
+        streak < STUCK_THRESHOLD,
+        "bot froze at {:?} for {} consecutive ticks (starting tick {}) - reproduces the live-session freeze",
+        cursor, streak, since_tick
+      );
+    }
+  }
 }
 
 
