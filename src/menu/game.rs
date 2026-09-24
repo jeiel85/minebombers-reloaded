@@ -323,6 +323,8 @@ impl Application<'_> {
     let base_tick_ms = 20.0 * 100.0 / speed_pct;
 
     let mut active_explosions: Vec<(u16, u16, u8)> = Vec::new();
+    // Whether the light mask was built for the previous frame, so a paused screen can reuse it
+    let mut light_mask_fresh = false;
 
     let exit_reason = 'round: loop {
       world.tick();
@@ -472,8 +474,9 @@ impl Application<'_> {
         }
         if paused {
           ctx.show_osd(&self.font, "PAUSED - PRESS ANY KEY", None)?;
-          // Keep the light mask of the last frame on the paused screen
-          ctx.lighting_active = ctx.config.graphics.dynamic_lighting;
+          // Keep the light mask of the last frame on the paused screen. If lighting was only just
+          // turned on (F7 in this same batch of events), there is no mask for this frame yet.
+          ctx.lighting_active = light_mask_fresh && ctx.config.graphics.dynamic_lighting;
           ctx.present()?;
           // Time spent paused does not count towards the round time
           let start = Instant::now();
@@ -597,6 +600,7 @@ impl Application<'_> {
         *frames > 0
       });
 
+      light_mask_fresh = false;
       if ctx.config.graphics.dynamic_lighting {
         let mut lanterns = Vec::with_capacity(world.actors.len());
         for actor in &world.actors {
@@ -604,7 +608,7 @@ impl Application<'_> {
             lanterns.push((actor.pos.x, actor.pos.y));
           }
         }
-        let _ = ctx.apply_dynamic_lighting(&lanterns, &expl_lights);
+        light_mask_fresh = ctx.apply_dynamic_lighting(&lanterns, &expl_lights).is_ok();
       }
 
       if world.flash {
