@@ -12,7 +12,7 @@ use sdl2::surface::Surface;
 use sdl2::video::WindowContext;
 use sdl2::EventPump;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Application environment resources packaged into one structs. Provides helper functions used
 /// across the whole application.
@@ -32,6 +32,19 @@ pub struct ApplicationContext<'canvas, 'textures> {
   pub lantern_light: Texture<'textures>,
   pub explosion_light: Texture<'textures>,
   pub lighting_active: bool,
+  /// Short on-screen message (game speed, toggles, pause), drawn over the frame at present time so
+  /// it never touches `buffer`, which the game only redraws where something changed.
+  osd: Texture<'textures>,
+  osd_visible: OsdVisible,
+}
+
+/// How long the on-screen message stays up
+#[derive(Clone, Copy)]
+enum OsdVisible {
+  Hidden,
+  Until(Instant),
+  /// Until `hide_osd`
+  Sticky,
 }
 
 pub enum Animation {
@@ -122,6 +135,9 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     let lantern_light = create_radial_light(&texture_creator, 128, (230, 205, 140))?;
     let explosion_light = create_radial_light(&texture_creator, 256, (255, 190, 90))?;
 
+    let mut osd = texture_creator.create_texture_target(PixelFormatEnum::RGBA32, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+    osd.set_blend_mode(BlendMode::Blend);
+
     // Initialize audio
     sdl2::mixer::open_audio(44100, AUDIO_S16LSB, 2, 1024).map_err(SdlError)?;
 
@@ -144,6 +160,8 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       lantern_light,
       explosion_light,
       lighting_active: false,
+      osd,
+      osd_visible: OsdVisible::Hidden,
     };
     cb(ctx)?;
     Ok(())
@@ -274,6 +292,15 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       self.lighting_active = false;
     }
 
+    let osd_on = match self.osd_visible {
+      OsdVisible::Hidden => false,
+      OsdVisible::Until(until) => Instant::now() < until,
+      OsdVisible::Sticky => true,
+    };
+    if osd_on {
+      self.canvas.copy(&self.osd, None, Some(target)).map_err(SdlError)?;
+    }
+
     // Apply retro CRT scanline & vignette filter if enabled
     if self.config.graphics.crt_shader {
       self.canvas.copy(&self.crt_texture, None, Some(target)).map_err(SdlError)?;
@@ -281,6 +308,35 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
 
     self.canvas.present();
     Ok(())
+  }
+
+  /// Show `text` centered just below the top status bar (the next frames presented with
+  /// `present`/`present_shake` draw it). `duration` of `None` keeps it up until `hide_osd`.
+  pub fn show_osd(&mut self, font: &Font, text: &str, duration: Option<Duration>) -> Result<(), anyhow::Error> {
+    const TOP: i32 = 44;
+    let width = 8 * text.chars().count() as u32 + 16;
+    let left = (SCREEN_WIDTH as i32 - width as i32) / 2;
+    let mut result = Ok(());
+    self.canvas.with_texture_canvas(&mut self.osd, |canvas| {
+      canvas.set_draw_color(Color::RGBA(0, 0, 0, 0));
+      canvas.clear();
+      canvas.set_blend_mode(BlendMode::None);
+      canvas.set_draw_color(Color::RGBA(0, 0, 0, 190));
+      result = canvas
+        .fill_rect(Rect::new(left, TOP, width, 16))
+        .map_err(|e| anyhow::Error::from(SdlError(e)))
+        .and_then(|()| font.render(canvas, left + 8, TOP + 4, Color::RGB(255, 230, 90), text));
+    })?;
+    result?;
+    self.osd_visible = match duration {
+      Some(duration) => OsdVisible::Until(Instant::now() + duration),
+      None => OsdVisible::Sticky,
+    };
+    Ok(())
+  }
+
+  pub fn hide_osd(&mut self) {
+    self.osd_visible = OsdVisible::Hidden;
   }
 
   pub fn toggle_fullscreen(&mut self) -> Result<(), anyhow::Error> {
