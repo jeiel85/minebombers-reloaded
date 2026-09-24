@@ -3,5 +3,5 @@
 web/vendor/** -text
 *.wasm binary
 
-# License texts shipped in the release zip are copied byte for byte from the official SDL2_mixer 2.8.0 Windows package (see NOTICE.txt).
+# License texts shipped in the release zip are copied byte for byte from the official SDL2 2.30.8 and SDL2_mixer 2.8.0 releases (see NOTICE.txt).
 packaging/windows/licenses/** -text

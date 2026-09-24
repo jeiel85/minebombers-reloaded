@@ -24,7 +24,7 @@ The DLLs are shipped as separate files (not linked into the exe), so each one ca
 build of the same library. The full license texts are in the "licenses" folder of this package.
 
   File                 Library                       License                       Text in "licenses"
-  SDL2.dll             SDL 2.30.8                    zlib                          (see below)
+  SDL2.dll             SDL 2.30.8                    zlib                          LICENSE.SDL2.txt, README-SDL.txt
   SDL2_mixer.dll       SDL_mixer 2.8.0               zlib                          LICENSE.SDL_mixer.txt
   libgme.dll           Game Music Emu                LGPL-2.1                      LICENSE.gme.txt
   libxmp.dll           Extended Module Player        MIT                           LICENSE.xmp.txt
@@ -38,8 +38,12 @@ package SDL2_mixer-2.8.0-win32-x64.zip (1,004,128 bytes, SHA-256
 e470282ae88abe5b01acfc3c46cd63b064fd7ef51ba1a3ea0bdf7624347e6549) from
 https://github.com/libsdl-org/SDL_mixer/releases/tag/release-2.8.0, and the license texts in "licenses" are
 copied unchanged from that package (LICENSE.SDL_mixer.txt is the package's README.txt). SDL2.dll is not part of
-that package; it has not been compared with the official SDL2-2.30.8-win32-x64.zip. It is licensed under the
-same zlib terms as LICENSE.SDL_mixer.txt (Simple DirectMedia Layer, https://libsdl.org/).
+that package; it is byte-for-byte identical to the file in the official package SDL2-2.30.8-win32-x64.zip
+(604,480 bytes, SHA-256 d660583c3d8b7de1b1be316320e6c7f70df58ad909e25e0b928b759e8c36afd2) from
+https://github.com/libsdl-org/SDL/releases/tag/release-2.30.8. README-SDL.txt is copied unchanged from that
+package, which asks for it to be distributed with the runtime. The package itself has no license text, so
+LICENSE.SDL2.txt is LICENSE.txt copied unchanged from the SDL source at the same tag (release-2.30.8, commit
+79ec168f3c1e2fe27335cb8886439f7ef676fb49).
 
 LGPL-2.1 (Game Music Emu, libgme.dll). The library is used unmodified as a separate DLL that you can replace
 with your own build. Its source code is at https://github.com/libsdl-org/game-music-emu (branch v0.6.3-SDL,

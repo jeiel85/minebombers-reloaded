@@ -73,9 +73,10 @@ Checked in September 2026:
 
 - `web/vendor/chiptune3/` (chiptune3 0.8.9, MIT; its compiled libopenmpt is BSD) is vendored unmodified.
   Source, hashes and license are in `web/vendor/chiptune3/SOURCE.md` and its `LICENSE`.
-- The DLLs and import libraries in the repository root and in `lib/` (SDL2, SDL2_mixer, libgme, libxmp,
-  libogg, libopus, libopusfile, libwavpack) are committed without their license texts. Their licenses
-  have not been reviewed yet.
+- The DLLs in the repository root and in `lib/` (SDL2, SDL2_mixer, libgme, libxmp, libogg, libopus,
+  libopusfile, libwavpack) are byte-for-byte identical to the official SDL2 2.30.8 and SDL2_mixer 2.8.0
+  Windows packages. Their license texts are in `packaging/windows/licenses/` and ship in the release zip;
+  provenance and hashes are in `packaging/windows/NOTICE.txt`.
 
 ## 4. Icon and placeholder art
 
