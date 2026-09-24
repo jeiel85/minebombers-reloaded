@@ -338,6 +338,7 @@ impl Application<'_> {
         let mut display_toggle_aspect = false;
         let mut toggle_crt = false;
         let mut toggle_dynamic_lighting = false;
+        let mut osd: Option<String> = None;
 
         for event in ctx.poll_events() {
           match event {
@@ -359,20 +360,24 @@ impl Application<'_> {
               keymod,
               ..
             } => {
+              let bound_to_player = world
+                .players
+                .iter()
+                .any(|player| !player.is_bot && Key::all_keys().any(|key| player.keys[key] == Some(scancode)));
               match scancode {
                 Scancode::Escape | Scancode::F10 => break 'round RoundEnd::AbortToMenu,
                 // Speed control hotkeys
                 Scancode::LeftBracket | Scancode::Minus | Scancode::KpMinus => {
                   speed_multiplier = (speed_multiplier - 0.25).max(0.25);
-                  println!("[MINEBOMBERS] Game speed: {:.2}x", speed_multiplier);
+                  osd = Some(format!("SPEED {:.2}x", speed_multiplier));
                 }
                 Scancode::RightBracket | Scancode::Equals | Scancode::KpPlus => {
                   speed_multiplier = (speed_multiplier + 0.25).min(3.0);
-                  println!("[MINEBOMBERS] Game speed: {:.2}x", speed_multiplier);
+                  osd = Some(format!("SPEED {:.2}x", speed_multiplier));
                 }
                 Scancode::Backspace | Scancode::Num0 | Scancode::Kp0 => {
                   speed_multiplier = 1.0;
-                  println!("[MINEBOMBERS] Game speed reset: 1.00x");
+                  osd = Some(format!("SPEED {:.2}x", speed_multiplier));
                 }
                 // Display mode hotkeys
                 Scancode::F11 => {
@@ -401,8 +406,11 @@ impl Application<'_> {
                 {
                   display_toggle_fullscreen = true;
                 }
-                // FIXME: some better scancode?
                 Scancode::Pause => {
+                  paused = true;
+                }
+                // Many keyboards have no Pause key; `P` pauses too unless a player uses it
+                Scancode::P if !bound_to_player => {
                   paused = true;
                 }
                 Scancode::F5 => {
@@ -412,6 +420,7 @@ impl Application<'_> {
                     sdl2::mixer::Music::resume();
                   }
                   music_on = !music_on;
+                  osd = Some(format!("MUSIC {}", on_off(music_on)));
                 }
                 _ => {}
               }
@@ -450,18 +459,27 @@ impl Application<'_> {
         }
         if display_toggle_aspect {
           let _ = ctx.toggle_aspect_ratio();
+          osd = Some(if ctx.config.display.keep_aspect_ratio { "KEEP 4:3" } else { "STRETCH TO WINDOW" }.to_owned());
         }
         if toggle_crt {
-          let _ = ctx.toggle_crt();
+          osd = Some(format!("CRT FILTER {}", on_off(ctx.toggle_crt())));
         }
         if toggle_dynamic_lighting {
-          let _ = ctx.toggle_dynamic_lighting();
+          osd = Some(format!("CAVE LIGHTING {}", on_off(ctx.toggle_dynamic_lighting())));
+        }
+        if let Some(text) = osd {
+          ctx.show_osd(&self.font, &text, Some(Duration::from_millis(1500)))?;
         }
         if paused {
-          // If we were paused, add to a
+          ctx.show_osd(&self.font, "PAUSED - PRESS ANY KEY", None)?;
+          // Keep the light mask of the last frame on the paused screen
+          ctx.lighting_active = ctx.config.graphics.dynamic_lighting;
+          ctx.present()?;
+          // Time spent paused does not count towards the round time
           let start = Instant::now();
           ctx.wait_key_pressed();
           paused_time += start.elapsed();
+          ctx.hide_osd();
         }
       }
 
@@ -640,6 +658,8 @@ impl Application<'_> {
       std::thread::sleep(std::time::Duration::from_millis(frame_delay_ms));
     };
 
+    // A speed or toggle message from the last second of the round must not linger on the next screen
+    ctx.hide_osd();
     sdl2::mixer::Music::halt();
     ctx.animate(Animation::FadeDown, 7)?;
 
@@ -967,6 +987,14 @@ impl Application<'_> {
     // FIXME: move to world?
     maps.fog[cursor].reveal();
     Ok(())
+  }
+}
+
+fn on_off(on: bool) -> &'static str {
+  if on {
+    "ON"
+  } else {
+    "OFF"
   }
 }
 
