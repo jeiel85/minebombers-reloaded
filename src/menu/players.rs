@@ -12,7 +12,6 @@ use sdl2::keyboard::Scancode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
-use std::time::Duration;
 
 const RIGHT_PANEL_X: i32 = 376;
 const RIGHT_PANEL_Y: i32 = 22;
@@ -193,7 +192,11 @@ impl Application<'_> {
     let exit = loop {
       let last_active_player = state.active_player;
 
-      match ctx.wait_input_event() {
+      let input = ctx.wait_input_event();
+      // A message below belongs to the screen it was shown on. Clear it on the next key, before that key
+      // can open the name menu or leave for the shop, so it does not show up over them.
+      ctx.hide_osd();
+      match input {
         InputEvent::TextInput(text) => {
           if text.eq_ignore_ascii_case("b") || text.eq_ignore_ascii_case("d") || text == "\t" {
             // Filter out text events for hotkeys so name editor is not opened and no duplicate cycle occurs
@@ -213,12 +216,12 @@ impl Application<'_> {
               Scancode::F3 => ctx.set_window_scale(3),
               _ => ctx.toggle_aspect_ratio(),
             };
-            // Drawn by the `present` below. This menu only redraws on a key press, so the message stays
-            // on screen until the first key pressed after it expires.
+            // Drawn by the `present` below and kept until the next key: this menu only redraws on a key
+            // press, so a timed message could not disappear on its own anyway.
             if display_change_failed(result) {
-              ctx.show_osd(&self.font, "DISPLAY CHANGE FAILED", Some(Duration::from_millis(1500)))?;
+              ctx.show_osd(&self.font, "DISPLAY CHANGE FAILED", None)?;
             } else if ctx.last_config_save_failed() {
-              ctx.show_osd(&self.font, "SETTINGS NOT SAVED", Some(Duration::from_millis(1500)))?;
+              ctx.show_osd(&self.font, "SETTINGS NOT SAVED", None)?;
             }
           }
           Scancode::Tab | Scancode::B | Scancode::D => {
