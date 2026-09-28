@@ -36,6 +36,8 @@ pub struct ApplicationContext<'canvas, 'textures> {
   /// it never touches `buffer`, which the game only redraws where something changed.
   osd: Texture<'textures>,
   osd_visible: OsdVisible,
+  /// Whether the last write of `config.toml` failed (see `save_config`)
+  config_save_failed: bool,
 }
 
 /// How long the on-screen message stays up
@@ -45,6 +47,20 @@ enum OsdVisible {
   Until(Instant),
   /// Until `hide_osd`
   Sticky,
+}
+
+/// Input: the result of `toggle_fullscreen`, `set_window_scale` or `toggle_aspect_ratio`.
+/// Output: `true` when the change failed (it is logged here), so the caller can say so on screen.
+/// Why: in-game and in the player menu a failed display change is not worth aborting over, but it used
+/// to be dropped with `let _` and left no trace at all.
+pub fn display_change_failed(result: Result<(), anyhow::Error>) -> bool {
+  match result {
+    Ok(()) => false,
+    Err(err) => {
+      eprintln!("Warning: could not change the display mode ({:#}).", err);
+      true
+    }
+  }
 }
 
 pub enum Animation {
@@ -162,6 +178,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       lighting_active: false,
       osd,
       osd_visible: OsdVisible::Hidden,
+      config_save_failed: false,
     };
     cb(ctx)?;
     Ok(())
@@ -339,6 +356,33 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     self.osd_visible = OsdVisible::Hidden;
   }
 
+  /// Input: `self.config`, written to `config.toml` in the user folder.
+  /// Output: none; `last_config_save_failed` tells whether the write failed.
+  /// Why not return the error: the new setting already applies for this session, so no menu should
+  /// abort over a file it could not write. It used to be dropped with `let _`, which left no trace when
+  /// the setting came back on the next run; now it is logged, and callers can show it on screen (the
+  /// Windows build has no console, so the log alone reaches nobody there).
+  fn save_config(&mut self) {
+    self.config_save_failed = match self.config.save(&self.user_dir) {
+      Ok(()) => false,
+      Err(err) => {
+        eprintln!(
+          "Warning: could not save the settings to '{}' ({:#}).",
+          self.user_dir.display(),
+          err
+        );
+        true
+      }
+    };
+  }
+
+  /// Output: whether the most recent settings change failed to reach `config.toml`.
+  /// Why "most recent" and not sticky: a caller checks it right after its own toggle, so a failure from
+  /// an older change (maybe in another menu) must not be reported against this one.
+  pub fn last_config_save_failed(&self) -> bool {
+    self.config_save_failed
+  }
+
   pub fn toggle_fullscreen(&mut self) -> Result<(), anyhow::Error> {
     let window = self.canvas.window_mut();
     if self.is_fullscreen {
@@ -350,7 +394,7 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
       self.is_fullscreen = true;
       self.config.display.window_mode = "Borderless".to_string();
     }
-    let _ = self.config.save(&self.user_dir);
+    self.save_config();
     Ok(())
   }
 
@@ -373,13 +417,13 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     self.config.display.scale = scale;
     self.config.display.width = new_w;
     self.config.display.height = new_h;
-    let _ = self.config.save(&self.user_dir);
+    self.save_config();
     Ok(())
   }
 
   pub fn toggle_aspect_ratio(&mut self) -> Result<(), anyhow::Error> {
     self.config.display.keep_aspect_ratio = !self.config.display.keep_aspect_ratio;
-    let _ = self.config.save(&self.user_dir);
+    self.save_config();
     Ok(())
   }
 
@@ -478,21 +522,13 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
 
   pub fn toggle_crt(&mut self) -> bool {
     self.config.graphics.crt_shader = !self.config.graphics.crt_shader;
-    println!(
-      "[GRAPHICS] CRT Scanline & Vignette Filter: {}",
-      if self.config.graphics.crt_shader { "ENABLED" } else { "DISABLED" }
-    );
-    let _ = self.config.save(&self.user_dir);
+    self.save_config();
     self.config.graphics.crt_shader
   }
 
   pub fn toggle_dynamic_lighting(&mut self) -> bool {
     self.config.graphics.dynamic_lighting = !self.config.graphics.dynamic_lighting;
-    println!(
-      "[GRAPHICS] Dynamic Cave Lighting & Lanterns: {}",
-      if self.config.graphics.dynamic_lighting { "ENABLED" } else { "DISABLED" }
-    );
-    let _ = self.config.save(&self.user_dir);
+    self.save_config();
     self.config.graphics.dynamic_lighting
   }
 

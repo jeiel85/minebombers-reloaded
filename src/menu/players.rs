@@ -1,7 +1,7 @@
 //! Player selection menu.
 //!
 //! Note that this screen in particular behaves a bit differently from the original one.
-use crate::context::{Animation, ApplicationContext, InputEvent};
+use crate::context::{display_change_failed, Animation, ApplicationContext, InputEvent};
 use crate::error::ApplicationError::SdlError;
 use crate::glyphs::Glyph;
 use crate::identities::Identities;
@@ -12,6 +12,7 @@ use sdl2::keyboard::Scancode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
+use std::time::Duration;
 
 const RIGHT_PANEL_X: i32 = 376;
 const RIGHT_PANEL_Y: i32 = 22;
@@ -204,20 +205,21 @@ impl Application<'_> {
           }
         }
         InputEvent::KeyPress(scancode, _keycode) => match scancode {
-          Scancode::F11 => {
-            let _ = ctx.toggle_fullscreen();
-          }
-          Scancode::F1 => {
-            let _ = ctx.set_window_scale(1);
-          }
-          Scancode::F2 => {
-            let _ = ctx.set_window_scale(2);
-          }
-          Scancode::F3 => {
-            let _ = ctx.set_window_scale(3);
-          }
-          Scancode::F4 => {
-            let _ = ctx.toggle_aspect_ratio();
+          Scancode::F11 | Scancode::F1 | Scancode::F2 | Scancode::F3 | Scancode::F4 => {
+            let result = match scancode {
+              Scancode::F11 => ctx.toggle_fullscreen(),
+              Scancode::F1 => ctx.set_window_scale(1),
+              Scancode::F2 => ctx.set_window_scale(2),
+              Scancode::F3 => ctx.set_window_scale(3),
+              _ => ctx.toggle_aspect_ratio(),
+            };
+            // Drawn by the `present` below. This menu only redraws on a key press, so the message stays
+            // on screen until the first key pressed after it expires.
+            if display_change_failed(result) {
+              ctx.show_osd(&self.font, "DISPLAY CHANGE FAILED", Some(Duration::from_millis(1500)))?;
+            } else if ctx.last_config_save_failed() {
+              ctx.show_osd(&self.font, "SETTINGS NOT SAVED", Some(Duration::from_millis(1500)))?;
+            }
           }
           Scancode::Tab | Scancode::B | Scancode::D => {
             state.cycle_difficulty();

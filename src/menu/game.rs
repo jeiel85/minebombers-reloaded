@@ -1,4 +1,4 @@
-use crate::context::{Animation, ApplicationContext};
+use crate::context::{display_change_failed, Animation, ApplicationContext};
 use crate::effects::SoundEffect;
 use crate::error::ApplicationError::SdlError;
 use crate::glyphs::{AnimationPhase, Border, Digging, Glyph};
@@ -453,14 +453,15 @@ impl Application<'_> {
             world.player_action(player, key);
           }
         }
+        let mut display_failed = false;
         if display_toggle_fullscreen {
-          let _ = ctx.toggle_fullscreen();
+          display_failed |= display_change_failed(ctx.toggle_fullscreen());
         }
         if let Some(s) = display_set_scale {
-          let _ = ctx.set_window_scale(s);
+          display_failed |= display_change_failed(ctx.set_window_scale(s));
         }
         if display_toggle_aspect {
-          let _ = ctx.toggle_aspect_ratio();
+          display_failed |= display_change_failed(ctx.toggle_aspect_ratio());
           osd = Some(if ctx.config.display.keep_aspect_ratio { "KEEP 4:3" } else { "STRETCH TO WINDOW" }.to_owned());
         }
         if toggle_crt {
@@ -468,6 +469,20 @@ impl Application<'_> {
         }
         if toggle_dynamic_lighting {
           osd = Some(format!("CAVE LIGHTING {}", on_off(ctx.toggle_dynamic_lighting())));
+        }
+        let settings_changed = display_toggle_fullscreen
+          || display_set_scale.is_some()
+          || display_toggle_aspect
+          || toggle_crt
+          || toggle_dynamic_lighting;
+        if display_failed {
+          osd = Some("DISPLAY CHANGE FAILED".to_owned());
+        } else if settings_changed && ctx.last_config_save_failed() {
+          // The change applies for now but comes back on the next run, so say it was not saved
+          osd = Some(match osd {
+            Some(text) => format!("{} - NOT SAVED", text),
+            None => "SETTINGS NOT SAVED".to_owned(),
+          });
         }
         if let Some(text) = osd {
           ctx.show_osd(&self.font, &text, Some(Duration::from_millis(1500)))?;
