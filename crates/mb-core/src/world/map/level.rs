@@ -180,6 +180,14 @@ impl LevelMap {
       })?;
 
     let exit_count = Cursor::all().filter(|cur| map[*cur] == MapValue::Exit).count();
+    if exit_count == 0 {
+      // A campaign round ends at the exit, so a map without one cannot be played (and picking one of
+      // zero exits below would panic).
+      return Err(CannotLoadSinglePlayer {
+        path,
+        source: anyhow::anyhow!("the map has no exit"),
+      });
+    }
     let mut rng = rand::thread_rng();
     let selected = rng.gen_range(0..exit_count);
     let mut idx = 0;
@@ -1244,5 +1252,37 @@ mod tests {
     assert_eq!(map[MAP_ROWS - 2][MAP_COLS - 2], MapValue::Passage);
     assert_eq!(map[1][MAP_COLS - 2], MapValue::Passage);
     assert_eq!(map[MAP_ROWS - 2][1], MapValue::Passage);
+  }
+
+  /// Writes `map` as `LEVEL1.MNL` into a fresh directory and returns that directory.
+  fn campaign_dir_with(map: &LevelMap, name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("mb-core-campaign-{}-{}", name, std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("LEVEL1.MNL"), map.to_file_map()).unwrap();
+    dir
+  }
+
+  #[test]
+  fn campaign_level_without_exit_is_a_load_error_not_a_panic() {
+    let dir = campaign_dir_with(&LevelMap::empty(), "no-exit");
+    let result = LevelMap::prepare_campaign_level(&dir, 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn campaign_level_keeps_exactly_one_of_its_exits() {
+    let mut map = LevelMap::empty();
+    map[5][5] = MapValue::Exit;
+    map[10][20] = MapValue::Exit;
+    map[30][40] = MapValue::Exit;
+    let dir = campaign_dir_with(&map, "three-exits");
+    let result = LevelMap::prepare_campaign_level(&dir, 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+    let map = match result {
+      Ok(LevelInfo::File { map, .. }) => map,
+      _ => panic!("campaign level should load"),
+    };
+    assert_eq!(Cursor::all().filter(|cur| map[*cur] == MapValue::Exit).count(), 1);
   }
 }
