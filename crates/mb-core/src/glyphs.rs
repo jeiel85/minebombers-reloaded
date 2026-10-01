@@ -136,6 +136,12 @@ impl Glyph {
       h: (bottom - top + 1) as u32,
     }
   }
+
+  /// Get the dimensions of the glyph (width and height)
+  pub fn dimensions(self) -> (u32, u32) {
+    let rect = self.rect();
+    (rect.w, rect.h)
+  }
 }
 
 pub const EQUIPMENT_GLYPHS: [(i16, i16); Equipment::TOTAL] = [

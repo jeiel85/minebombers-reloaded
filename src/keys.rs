@@ -1,7 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use num_enum::TryFromPrimitive;
+pub use mb_core::keys::Key;
 use sdl2::keyboard::Scancode;
-use std::convert::TryInto;
 use std::path::Path;
 
 #[derive(Default, Clone, Copy)]
@@ -13,28 +12,6 @@ pub struct KeyBindings {
 pub struct KeysConfig {
   /// Only 4 players for now
   pub keys: [KeyBindings; 4],
-}
-
-/// Key binding types. Note that this enum is ordered the same way we save them to the configuration
-/// file and also the redefine menu.
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq, TryFromPrimitive, Debug)]
-pub enum Key {
-  Left,
-  Right,
-  Up,
-  Down,
-  Stop,
-  Bomb,
-  Choose,
-  Remote,
-}
-
-impl Key {
-  /// Iterate through the list of all key bindings
-  pub fn all_keys() -> impl Iterator<Item = Key> {
-    (0..8).map(|v| v.try_into().unwrap())
-  }
 }
 
 impl std::ops::Index<Key> for KeyBindings {
@@ -51,19 +28,26 @@ impl std::ops::IndexMut<Key> for KeyBindings {
   }
 }
 
-impl std::fmt::Display for Key {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    let text = match self {
-      Key::Left => "Left",
-      Key::Right => "Right",
-      Key::Up => "Up",
-      Key::Down => "Down",
-      Key::Stop => "Stop",
-      Key::Bomb => "Bomb/Buy",
-      Key::Choose => "Choose/Sell",
-      Key::Remote => "Remote",
-    };
-    f.write_str(text)
+impl KeyBindings {
+  /// The same bindings in the form the game world stores them (`PlayerComponent::keys`): raw SDL
+  /// scancodes, 0 for an unbound key.
+  pub fn to_player_keys(&self) -> mb_core::keys::KeyBindings {
+    let mut raw_codes = [0; 8];
+    for key in Key::all_keys() {
+      raw_codes[key as usize] = self[key].map(|scancode| scancode as u32).unwrap_or(0);
+    }
+    mb_core::keys::KeyBindings { raw_codes }
+  }
+}
+
+/// Reading the SDL scancode back out of a player's `mb_core::keys::KeyBindings`.
+pub trait ScancodeBindings {
+  fn scancode(&self, key: Key) -> Option<Scancode>;
+}
+
+impl ScancodeBindings for mb_core::keys::KeyBindings {
+  fn scancode(&self, key: Key) -> Option<Scancode> {
+    Scancode::from_i32(self.raw_codes[key as usize] as i32)
   }
 }
 
@@ -278,3 +262,23 @@ const MAPPING: [Scancode; 0x54] = [
   Scancode::Kp0,
   Scancode::KpDecimal,
 ];
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn player_keys_give_back_the_scancodes_they_were_built_from() {
+    let mut bindings = KeyBindings::default();
+    bindings[Key::Left] = Some(Scancode::A);
+    bindings[Key::Bomb] = Some(Scancode::RShift);
+    bindings[Key::Remote] = Some(Scancode::Kp0);
+
+    let player_keys = bindings.to_player_keys();
+    for key in Key::all_keys() {
+      assert_eq!(player_keys.scancode(key), bindings[key], "{}", key);
+    }
+    // An unbound key must never match a real key press.
+    assert_eq!(player_keys.scancode(Key::Stop), None);
+  }
+}

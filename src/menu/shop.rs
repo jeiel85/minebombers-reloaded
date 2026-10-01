@@ -1,14 +1,14 @@
 use crate::context::{Animation, ApplicationContext};
 use crate::error::ApplicationError::SdlError;
 use crate::glyphs::Glyph;
-use crate::keys::Key;
+use crate::keys::{Key, ScancodeBindings};
 use crate::menu::preview::generate_preview;
 use crate::options::Options;
 use crate::world::equipment::Equipment;
 use crate::world::map::LevelMap;
 use crate::world::player::PlayerComponent;
 use crate::Application;
-use rand::Rng;
+use mb_core::shop::{auto_buy_for_bot, Prices};
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -20,11 +20,6 @@ use std::convert::TryFrom;
 pub enum ShopResult {
   ExitGame,
   Continue,
-}
-
-#[derive(Default)]
-pub struct Prices {
-  prices: [u32; Equipment::TOTAL],
 }
 
 struct PlayerState<'a> {
@@ -59,38 +54,6 @@ struct State<'a> {
   remaining_rounds: u16,
   left: Option<PlayerState<'a>>,
   right: PlayerState<'a>,
-}
-
-impl Prices {
-  pub fn new(free_market: bool) -> Prices {
-    // free market?
-    let percentage = if free_market {
-      let mut rng = rand::thread_rng();
-      130u32 - rng.gen_range(0..60)
-    } else {
-      100u32
-    };
-
-    let mut prices = Prices::default();
-    for equipment in Equipment::all_equipment() {
-      prices[equipment] = adjust_price(equipment.base_price(), percentage);
-    }
-    prices
-  }
-}
-
-impl std::ops::Index<Equipment> for Prices {
-  type Output = u32;
-
-  fn index(&self, index: Equipment) -> &u32 {
-    &self.prices[index as usize]
-  }
-}
-
-impl std::ops::IndexMut<Equipment> for Prices {
-  fn index_mut(&mut self, index: Equipment) -> &mut u32 {
-    &mut self.prices[index as usize]
-  }
 }
 
 impl Application<'_> {
@@ -245,7 +208,7 @@ impl Application<'_> {
     }
 
     let cash = shared_cash.as_mut().unwrap_or(&mut state.entity.cash);
-    if Some(scan) == state.entity.keys[Key::Bomb] {
+    if Some(scan) == state.entity.keys.scancode(Key::Bomb) {
       if let Some(selection) = state.selection {
         if *cash >= prices[selection] {
           *cash -= prices[selection];
@@ -255,7 +218,7 @@ impl Application<'_> {
       } else {
         state.ready = true;
       }
-    } else if Some(scan) == state.entity.keys[Key::Choose] {
+    } else if Some(scan) == state.entity.keys.scancode(Key::Choose) {
       if let Some(selection) = state.selection {
         if selling && state.entity.inventory[selection] > 0 {
           // Only return 70% of the cost
@@ -263,7 +226,7 @@ impl Application<'_> {
           state.entity.inventory[selection] -= 1;
         }
       }
-    } else if Some(scan) == state.entity.keys[Key::Right] {
+    } else if Some(scan) == state.entity.keys.scancode(Key::Right) {
       if state.page == 0 {
         let new_slot = (last_slot + 1).min(27);
         state.selection = if new_slot < 27 {
@@ -283,7 +246,7 @@ impl Application<'_> {
           None
         };
       }
-    } else if Some(scan) == state.entity.keys[Key::Left] {
+    } else if Some(scan) == state.entity.keys.scancode(Key::Left) {
       if state.page == 0 {
         let new_slot = last_slot.saturating_sub(1);
         state.selection = if new_slot < 27 {
@@ -303,7 +266,7 @@ impl Application<'_> {
           None
         };
       }
-    } else if Some(scan) == state.entity.keys[Key::Down] {
+    } else if Some(scan) == state.entity.keys.scancode(Key::Down) {
       if state.page == 0 {
         let new_slot = (last_slot + 4).min(27);
         state.selection = if new_slot < 27 {
@@ -314,7 +277,7 @@ impl Application<'_> {
       } else {
         state.selection = None; // On Page 1, Down jumps straight to LEAVE
       }
-    } else if Some(scan) == state.entity.keys[Key::Up] {
+    } else if Some(scan) == state.entity.keys.scancode(Key::Up) {
       if state.page == 0 {
         let new_slot = if last_slot >= 4 { last_slot - 4 } else { last_slot };
         state.selection = if new_slot < 27 {
@@ -514,110 +477,5 @@ impl Application<'_> {
     self.font.render(canvas, pos_x, pos_y, palette[5], &text)?;
     Ok(())
   }
-}
-
-fn adjust_price(price: u32, percentage: u32) -> u32 {
-  ((price - 1) * percentage + 50) / 100 + 1
-}
-
-/// `pub(crate)` (not private) so `world::bot`'s difficulty-balance measurement can equip bots the
-/// same way a real game does, instead of the artificial equal loadout `equip_for_a_fair_fight` gives
-/// every difficulty - see that test module for why the distinction matters.
-pub(crate) fn auto_buy_for_bot(player: &mut PlayerComponent, prices: &Prices) {
-  use crate::world::bot::BotDifficulty;
-  let max_armor = match player.bot_difficulty {
-    BotDifficulty::Hard => 3,
-    BotDifficulty::Medium => 2,
-    BotDifficulty::Easy => 1,
-  };
-  // Buy armor
-  while player.cash >= prices[Equipment::Armor] && player.inventory[Equipment::Armor] < max_armor {
-    player.cash -= prices[Equipment::Armor];
-    player.inventory[Equipment::Armor] += 1;
-  }
-
-  // Buy pickaxe or drill
-  if player.inventory[Equipment::Drill] == 0 && player.cash >= prices[Equipment::Drill] {
-    player.cash -= prices[Equipment::Drill];
-    player.inventory[Equipment::Drill] += 1;
-  } else if player.inventory[Equipment::LargePickaxe] == 0 && player.cash >= prices[Equipment::LargePickaxe] {
-    player.cash -= prices[Equipment::LargePickaxe];
-    player.inventory[Equipment::LargePickaxe] += 1;
-  }
-
-  // Buy bombs based on difficulty
-  let max_bombs = match player.bot_difficulty {
-    BotDifficulty::Hard => 15,
-    BotDifficulty::Medium => 10,
-    BotDifficulty::Easy => 6,
-  };
-  while player.cash >= prices[Equipment::SmallBomb] && player.inventory[Equipment::SmallBomb] < max_bombs {
-    player.cash -= prices[Equipment::SmallBomb];
-    player.inventory[Equipment::SmallBomb] += 1;
-  }
-
-  // Dynamite & Grenades (not for Easy bots)
-  if player.bot_difficulty != BotDifficulty::Easy {
-    let max_dynamite = if player.bot_difficulty == BotDifficulty::Hard { 8 } else { 5 };
-    while player.cash >= prices[Equipment::Dynamite] && player.inventory[Equipment::Dynamite] < max_dynamite {
-      player.cash -= prices[Equipment::Dynamite];
-      player.inventory[Equipment::Dynamite] += 1;
-    }
-    let max_grenades = if player.bot_difficulty == BotDifficulty::Hard { 6 } else { 4 };
-    while player.cash >= prices[Equipment::Grenade] && player.inventory[Equipment::Grenade] < max_grenades {
-      player.cash -= prices[Equipment::Grenade];
-      player.inventory[Equipment::Grenade] += 1;
-    }
-  }
-
-  // The cheap specials the AI knows how to use (see `BotParams::special_weapons`). They are listed
-  // after the staples on purpose: an extinguisher is worth having, but not instead of bombs.
-  if player.bot_difficulty != BotDifficulty::Easy {
-    // Puts out a fuse up to six tiles away - what the bot reaches for when a blast covers it and
-    // there is nowhere to run.
-    if player.inventory[Equipment::Extinguisher] == 0 && player.cash >= prices[Equipment::Extinguisher] {
-      player.cash -= prices[Equipment::Extinguisher];
-      player.inventory[Equipment::Extinguisher] += 1;
-    }
-  }
-
-  // Hard bot buys Big Bombs & Remote Bombs if affordable
-  if player.bot_difficulty == BotDifficulty::Hard {
-    // Radio bombs are armed rather than fused, so a Hard bot can leave one in a chaser's path and
-    // set it off from a safe distance. At 15 each they are the cheapest thing in the shop.
-    while player.cash >= prices[Equipment::SmallRadio] && player.inventory[Equipment::SmallRadio] < 3 {
-      player.cash -= prices[Equipment::SmallRadio];
-      player.inventory[Equipment::SmallRadio] += 1;
-    }
-    // A blast down the whole row and column it lands on, for 35.
-    while player.cash >= prices[Equipment::SmallCrucifix] && player.inventory[Equipment::SmallCrucifix] < 2 {
-      player.cash -= prices[Equipment::SmallCrucifix];
-      player.inventory[Equipment::SmallCrucifix] += 1;
-    }
-
-    while player.cash >= prices[Equipment::BigBomb] && player.inventory[Equipment::BigBomb] < 3 {
-      player.cash -= prices[Equipment::BigBomb];
-      player.inventory[Equipment::BigBomb] += 1;
-    }
-    while player.cash >= prices[Equipment::Mine] && player.inventory[Equipment::Mine] < 4 {
-      player.cash -= prices[Equipment::Mine];
-      player.inventory[Equipment::Mine] += 1;
-    }
-
-    if player.cash >= prices[Equipment::FreezeBomb] + 300 {
-      player.cash -= prices[Equipment::FreezeBomb];
-      player.inventory[Equipment::FreezeBomb] += 1;
-    }
-    if player.cash >= prices[Equipment::DrillDrone] + 300 {
-      player.cash -= prices[Equipment::DrillDrone];
-      player.inventory[Equipment::DrillDrone] += 1;
-    }
-    if player.cash >= prices[Equipment::BlackHole] + 500 {
-      player.cash -= prices[Equipment::BlackHole];
-      player.inventory[Equipment::BlackHole] += 1;
-    }
-  }
-
-  player.selection = Equipment::SmallBomb;
 }
 

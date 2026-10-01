@@ -8,5 +8,6 @@ pub mod keys;
 pub mod options;
 pub mod roster;
 pub mod settings;
+pub mod shop;
 pub mod sound;
 pub mod world;

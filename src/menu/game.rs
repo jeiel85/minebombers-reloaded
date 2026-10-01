@@ -3,7 +3,7 @@ use crate::effects::SoundEffect;
 use crate::error::ApplicationError::SdlError;
 use crate::glyphs::{AnimationPhase, Border, Digging, Glyph};
 use crate::highscore::{Highscores, Score};
-use crate::keys::Key;
+use crate::keys::{Key, ScancodeBindings};
 use crate::menu::shop::ShopResult;
 use crate::options::WinCondition;
 use crate::roster::PlayersRoster;
@@ -51,7 +51,7 @@ impl Application<'_> {
     for (idx, selected) in selected.into_iter().enumerate() {
       players.push(PlayerComponent::new(
         selected.name,
-        settings.keys.keys[idx],
+        settings.keys.keys[idx].to_player_keys(),
         &settings.options,
         selected.is_bot,
         selected.bot_difficulty,
@@ -365,7 +365,7 @@ impl Application<'_> {
               let bound_to_player = world
                 .players
                 .iter()
-                .any(|player| !player.is_bot && Key::all_keys().any(|key| player.keys[key] == Some(scancode)));
+                .any(|player| !player.is_bot && Key::all_keys().any(|key| player.keys.scancode(key) == Some(scancode)));
               match scancode {
                 Scancode::Escape | Scancode::F10 => break 'round RoundEnd::AbortToMenu,
                 // Speed control hotkeys
@@ -434,7 +434,7 @@ impl Application<'_> {
                 }
                 let keys = world.players[player].keys;
                 for key in Key::all_keys() {
-                  if keys[key] == Some(scancode) {
+                  if keys.scancode(key) == Some(scancode) {
                     world.player_action(player, key);
                   }
                 }
