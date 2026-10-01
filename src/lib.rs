@@ -7,7 +7,7 @@ use sdl2::mixer::Music;
 use std::path::Path;
 
 mod args;
-pub mod bitmap;
+pub use mb_core::bitmap;
 pub mod config;
 mod context;
 pub mod effects;
@@ -16,16 +16,17 @@ mod gamedir;
 pub mod fonts;
 pub mod gamepad;
 mod glyphs;
-mod highscore;
-mod identities;
+use mb_core::highscore;
+use mb_core::identities;
 pub mod images;
 mod keys;
 mod menu;
-mod options;
-mod roster;
+use mb_core::options;
+use mb_core::roster;
 mod settings;
 mod userdata;
-pub mod world;
+// The game rules and simulation are shared with the web edition and live in `mb-core`.
+pub use mb_core::world;
 
 const SCREEN_WIDTH: u32 = 640;
 const SCREEN_HEIGHT: u32 = 480;

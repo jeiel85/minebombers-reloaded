@@ -169,6 +169,8 @@ npx serve web
 
 ## 🛠️ 개발
 
+게임 규칙과 시뮬레이션(월드, 봇, 상점 가격과 봇 장비 구매, 맵, 옵션, 기록 파일)은 `crates/mb-core` 한 곳에 있고, 네이티브 게임(`src/`, SDL2)과 웹 에디션(`crates/mb-wasm`)이 함께 씁니다. 규칙을 고치면 두 판에 같이 반영됩니다.
+
 ```bash
 cargo test --workspace                          # 원작 게임 파일 없이 실행됩니다
 node --test web/test/*.test.mjs
@@ -191,4 +193,4 @@ CI는 Windows와 Linux에서 네이티브 엔진을, 그리고 웹 에디션을 
 - **Original Game**: *Mine Bombers* 3.11 by **Skitso Productions** (Finland). 원작의 저작권은 Skitso Productions에 있으며, 이 저장소는 원작과 제휴하거나 승인받은 프로젝트가 아닙니다.
 - **Engine base**: 게임 엔진의 뼈대(DOS 데이터 디코딩, 타일 렌더링, 월드 시뮬레이션)는 **Ivan Dubrov**의 [`mb-reloaded`](https://github.com/idubrov/mb-reloaded)를 기반으로 합니다. 해당 저장소에는 라이선스가 명시되어 있지 않아 [라이선스를 요청하는 이슈](https://github.com/idubrov/mb-reloaded/issues/1)를 올려 두었습니다.
 - **라이선스 상태**: 이 프로젝트의 코드 라이선스는 **아직 정리되지 않았습니다**. 원작 게임 파일은 이 프로젝트에 포함되지 않으며 사용자가 자기 사본을 준비합니다(이전 저장소의 이력에 있던 원본 파일은 이력을 재작성해 모두 제거했습니다). 근거와 현황은 [assets/LICENSE-NOTES.md](assets/LICENSE-NOTES.md)에 있으며, 권리자께서 요청하시면 해당 자료를 바로 제거하겠습니다.
-- **이 저장소에서 새로 만든 부분**: AI 봇(`src/world/bot.rs`), 설정 파일(`src/config.rs`), 폴더 선택과 사용자 폴더(`src/gamedir.rs`, `src/userdata.rs`), 웹 에디션(`crates/mb-wasm`, `web/`), 앱 아이콘(직접 그린 폭탄 그림)
+- **이 저장소에서 새로 만든 부분**: AI 봇(`crates/mb-core/src/world/bot.rs`), 설정 파일(`src/config.rs`), 폴더 선택과 사용자 폴더(`src/gamedir.rs`, `src/userdata.rs`), 웹 에디션(`crates/mb-wasm`, `web/`), 앱 아이콘(직접 그린 폭탄 그림)

@@ -223,6 +223,7 @@ version = "0.1.3"
 dependencies = [
  "anyhow",
  "byteorder",
+ "mb-core",
  "mb-sdl2-effects",
  "num_enum",
  "rand",

@@ -13,21 +13,7 @@ pub struct SampleLoadingFailed {
   source: anyhow::Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SoundEffect {
-  Kili,
-  Picaxe,
-  Explos1,
-  Explos2,
-  Explos3,
-  Explos4,
-  Explos5,
-  Aargh,
-  Karjaisu,
-  Pikkupom,
-  Urethan,
-  Applause,
-}
+pub use mb_core::effects::SoundEffect;
 
 /// VOC files are unsigned, eight bits, 1 channel, frequency defined at the playback time (typically 11000).
 /// We use `Arc` here so we can give references to these samples to sound effects without worrying

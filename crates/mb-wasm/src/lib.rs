@@ -2,6 +2,7 @@ use mb_core::glyphs::{AnimationPhase, Glyph};
 use mb_core::images::{decode_font, decode_spy, Color, DecodedImage};
 use mb_core::keys::Key;
 use mb_core::options::{Options, WinCondition};
+use mb_core::shop::{auto_buy_for_bot, Prices};
 use mb_core::sound::SoundEffect;
 use mb_core::world::bot::BotDifficulty;
 use mb_core::world::equipment::Equipment;
@@ -308,34 +309,6 @@ impl GameOption {
 }
 
 #[derive(Clone, Copy)]
-pub struct Prices {
-  pub prices: [u32; Equipment::TOTAL],
-}
-
-impl Default for Prices {
-  fn default() -> Self {
-    Self::new()
-  }
-}
-
-impl Prices {
-  pub fn new() -> Prices {
-    let mut prices = [0u32; Equipment::TOTAL];
-    for eq in Equipment::all_equipment() {
-      prices[eq as usize] = eq.base_price();
-    }
-    Prices { prices }
-  }
-}
-
-impl std::ops::Index<Equipment> for Prices {
-  type Output = u32;
-  fn index(&self, index: Equipment) -> &u32 {
-    &self.prices[index as usize]
-  }
-}
-
-#[derive(Clone, Copy)]
 pub struct PlayerShopState {
   pub selection: Option<Equipment>,
   pub ready: bool,
@@ -385,74 +358,6 @@ pub struct RumbleEvent {
   pub player_idx: i32,
   pub intensity: f32,
   pub duration_ms: f32,
-}
-
-fn auto_buy_for_bot(player: &mut PlayerComponent, prices: &Prices) {
-  let max_armor = match player.bot_difficulty {
-    BotDifficulty::Hard => 3,
-    BotDifficulty::Medium => 2,
-    BotDifficulty::Easy => 1,
-  };
-  while player.cash >= prices[Equipment::Armor] && player.inventory[Equipment::Armor] < max_armor {
-    player.cash -= prices[Equipment::Armor];
-    player.inventory[Equipment::Armor] += 1;
-  }
-
-  if player.inventory[Equipment::Drill] == 0 && player.cash >= prices[Equipment::Drill] {
-    player.cash -= prices[Equipment::Drill];
-    player.inventory[Equipment::Drill] += 1;
-  } else if player.inventory[Equipment::LargePickaxe] == 0 && player.cash >= prices[Equipment::LargePickaxe] {
-    player.cash -= prices[Equipment::LargePickaxe];
-    player.inventory[Equipment::LargePickaxe] += 1;
-  }
-
-  let max_bombs = match player.bot_difficulty {
-    BotDifficulty::Hard => 15,
-    BotDifficulty::Medium => 10,
-    BotDifficulty::Easy => 6,
-  };
-  while player.cash >= prices[Equipment::SmallBomb] && player.inventory[Equipment::SmallBomb] < max_bombs {
-    player.cash -= prices[Equipment::SmallBomb];
-    player.inventory[Equipment::SmallBomb] += 1;
-  }
-
-  if player.bot_difficulty != BotDifficulty::Easy {
-    let max_dynamite = if player.bot_difficulty == BotDifficulty::Hard { 8 } else { 5 };
-    while player.cash >= prices[Equipment::Dynamite] && player.inventory[Equipment::Dynamite] < max_dynamite {
-      player.cash -= prices[Equipment::Dynamite];
-      player.inventory[Equipment::Dynamite] += 1;
-    }
-    let max_grenades = if player.bot_difficulty == BotDifficulty::Hard { 6 } else { 4 };
-    while player.cash >= prices[Equipment::Grenade] && player.inventory[Equipment::Grenade] < max_grenades {
-      player.cash -= prices[Equipment::Grenade];
-      player.inventory[Equipment::Grenade] += 1;
-    }
-  }
-
-  if player.bot_difficulty == BotDifficulty::Hard {
-    while player.cash >= prices[Equipment::BigBomb] && player.inventory[Equipment::BigBomb] < 3 {
-      player.cash -= prices[Equipment::BigBomb];
-      player.inventory[Equipment::BigBomb] += 1;
-    }
-    while player.cash >= prices[Equipment::Mine] && player.inventory[Equipment::Mine] < 4 {
-      player.cash -= prices[Equipment::Mine];
-      player.inventory[Equipment::Mine] += 1;
-    }
-    if player.cash >= prices[Equipment::FreezeBomb] + 300 {
-      player.cash -= prices[Equipment::FreezeBomb];
-      player.inventory[Equipment::FreezeBomb] += 1;
-    }
-    if player.cash >= prices[Equipment::DrillDrone] + 300 {
-      player.cash -= prices[Equipment::DrillDrone];
-      player.inventory[Equipment::DrillDrone] += 1;
-    }
-    if player.cash >= prices[Equipment::BlackHole] + 500 {
-      player.cash -= prices[Equipment::BlackHole];
-      player.inventory[Equipment::BlackHole] += 1;
-    }
-  }
-
-  player.selection = Equipment::SmallBomb;
 }
 
 pub fn equip_starter_pack(player: &mut PlayerComponent) {
@@ -1650,7 +1555,7 @@ pub extern "C" fn mb_init(
     PlayerComponent::new("PLAYER 4".to_string(), Default::default(), &opts, is_bot4, bot_diff4),
   ];
 
-  let prices = Prices::new();
+  let prices = Prices::new(false);
   for p in players.iter_mut() {
     if p.is_bot {
       auto_buy_for_bot(p, &prices);

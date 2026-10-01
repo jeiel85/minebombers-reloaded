@@ -1612,6 +1612,701 @@ fn dir_to_key(dir: Direction) -> Key {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::options::Options;
+  use crate::world::map::LevelMap;
+  use crate::world::player::PlayerComponent;
+  use crate::world::position::Position;
+
+  /// Where the developer keeps the original game files, if anywhere: `MB_GAME_DIR`, else `res/minebomb`
+  /// at the repository root (same convention as `crates/mb-wasm/src/lib.rs`'s `game_dir()`).
+  fn game_dir() -> Option<std::path::PathBuf> {
+    let dir = std::env::var_os("MB_GAME_DIR")
+      .map(std::path::PathBuf::from)
+      .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/minebomb"));
+    if dir.join("TITLEBE.SPY").is_file() {
+      Some(dir)
+    } else {
+      None
+    }
+  }
+
+  fn real_classic_map(name: &str) -> LevelMap {
+    let dir = game_dir().expect("original game files not found (set MB_GAME_DIR or keep them in res/minebomb)");
+    let data = std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("cannot read {}: {}", name, e));
+    LevelMap::from_file_map(data).unwrap_or_else(|_| panic!("{} is not a valid map file", name))
+  }
+
+  fn equip_for_a_fair_fight(p: &mut PlayerComponent) {
+    p.inventory[Equipment::SmallBomb] = 30;
+    p.inventory[Equipment::Dynamite] = 5;
+    p.inventory[Equipment::BigBomb] = 3;
+    p.inventory[Equipment::SmallPickaxe] = 2;
+    // Ranged options only Medium/Hard use (see `BotParams::use_ranged`) - without these, that
+    // differentiator never fires and Easy is compared unfairly favorably.
+    p.inventory[Equipment::Grenade] = 5;
+    p.inventory[Equipment::DrillDrone] = 3;
+    // Same reasoning for the exotic items: `BotParams::special_weapons` decides who can use them,
+    // so every difficulty has to be holding them for that to be what the measurement sees.
+    p.inventory[Equipment::Flamethrower] = 2;
+    p.inventory[Equipment::Clone] = 1;
+    p.inventory[Equipment::SuperDrill] = 1;
+    p.inventory[Equipment::Extinguisher] = 1;
+    p.inventory[Equipment::SmallRadio] = 3;
+    p.inventory[Equipment::SmallCrucifix] = 2;
+    p.inventory[Equipment::FreezeBomb] = 1;
+  }
+
+  fn bot_players(diff_a: BotDifficulty, diff_b: BotDifficulty, options: &Options) -> [PlayerComponent; 2] {
+    [
+      PlayerComponent::new("A".to_string(), Default::default(), options, true, diff_a),
+      PlayerComponent::new("B".to_string(), Default::default(), options, true, diff_b),
+    ]
+  }
+
+  /// One idle human-shaped slot plus one bot, the shape of a real 2-player game against the computer.
+  fn human_and_bot(difficulty: BotDifficulty, options: &Options) -> [PlayerComponent; 2] {
+    [
+      PlayerComponent::new("Human".to_string(), Default::default(), options, false, difficulty),
+      PlayerComponent::new("Bot".to_string(), Default::default(), options, true, difficulty),
+    ]
+  }
+
+  /// Runs one bot-vs-bot match to a decision (someone dies) or `max_ticks`, and returns the winner's
+  /// index (0 or 1), or `None` for a draw/timeout. Both bots get identical equipment, so any skew in
+  /// outcomes comes only from `BotDifficulty`, not from one side having better gear.
+  fn run_match(level: LevelMap, diff_a: BotDifficulty, diff_b: BotDifficulty, max_ticks: u32) -> Option<usize> {
+    let options = Options::default();
+    let mut players = bot_players(diff_a, diff_b, &options);
+    for p in players.iter_mut() {
+      equip_for_a_fair_fight(p);
+    }
+    let mut world = World::create(level, &mut players, false, 50, false);
+
+    for _ in 0..max_ticks {
+      world.tick();
+      let a_dead = world.actors[0].is_dead;
+      let b_dead = world.actors[1].is_dead;
+      if a_dead && b_dead {
+        return None;
+      } else if a_dead {
+        return Some(1);
+      } else if b_dead {
+        return Some(0);
+      }
+    }
+    None
+  }
+
+  /// Same as `run_match`, but equips both sides via `auto_buy_for_bot` (the function a real game
+  /// actually calls for a CPU player in the shop) with `starting_cash` each, instead of the equal
+  /// loadout `equip_for_a_fair_fight` gives every difficulty. `auto_buy_for_bot` itself scales
+  /// noticeably by difficulty (Hard: 3 armor / 15 bombs / 8 dynamite / 6 grenades / 3 big bombs / 4
+  /// mines; Medium: 2 armor / 10 bombs / 5 dynamite / 4 grenades, no big bombs/mines; Easy: 1 armor /
+  /// 6 bombs, no dynamite/grenades/big bombs/mines at all), so this measures decision quality *and*
+  /// equipment together, the way a real match does.
+  fn run_match_with_real_shop_equipment(
+    level: LevelMap,
+    diff_a: BotDifficulty,
+    diff_b: BotDifficulty,
+    starting_cash: u32,
+    max_ticks: u32,
+  ) -> Option<usize> {
+    let options = Options::default();
+    let prices = crate::shop::Prices::new(options.free_market);
+    let mut players = bot_players(diff_a, diff_b, &options);
+    for p in players.iter_mut() {
+      p.cash = starting_cash;
+      crate::shop::auto_buy_for_bot(p, &prices);
+    }
+    let mut world = World::create(level, &mut players, false, 50, false);
+
+    for _ in 0..max_ticks {
+      world.tick();
+      let a_dead = world.actors[0].is_dead;
+      let b_dead = world.actors[1].is_dead;
+      if a_dead && b_dead {
+        return None;
+      } else if a_dead {
+        return Some(1);
+      } else if b_dead {
+        return Some(0);
+      }
+    }
+    None
+  }
+
+  /// A solid block of `fill`, so a test can control exactly how much digging stands between the bot
+  /// and whatever else it puts on the map.
+  fn filled_map(fill: MapValue) -> LevelMap {
+    let mut level = LevelMap::empty();
+    for cursor in Cursor::all_without_borders() {
+      level[cursor] = fill;
+    }
+    level
+  }
+
+  /// Puts the bot (player 1) at `cursor` and clears that tile, whatever the spawn randomization did,
+  /// and parks the idle human in the far corner so it is never the more attractive target.
+  fn place_bot(world: &mut World, cursor: Cursor) {
+    world.maps.level[cursor] = MapValue::Passage;
+    world.maps.hits[cursor] = 0;
+    world.actors[1].pos = Position::from(cursor);
+    world.actors[0].pos = Position::from(Cursor::new(40, 60));
+  }
+
+  /// The bot has to *dig* to play this game at all - the gold is inside the rock. This is the single
+  /// most important behavior in the file, and the one the first version of this AI could not do:
+  /// `can_step` only accepted already-passable tiles, so a treasure walled in by sand was invisible
+  /// to every branch of the decision tree.
+  #[test]
+  fn bot_digs_through_rock_to_reach_buried_treasure() {
+    let options = Options::default();
+    for difficulty in [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard] {
+      let mut reached = 0;
+      for _ in 0..5 {
+        let mut players = human_and_bot(difficulty, &options);
+        let mut world = World::create(filled_map(MapValue::Sand1), &mut players, false, 50, false);
+        let start = Cursor::new(20, 20);
+        place_bot(&mut world, start);
+        let gold = Cursor::new(20, 26);
+        world.maps.level[gold] = MapValue::GoldBar;
+        world.maps.hits[gold] = 0;
+
+        for _ in 0..1500 {
+          world.tick();
+          if world.actors[1].accumulated_cash > 0 {
+            break;
+          }
+        }
+        if world.actors[1].accumulated_cash > 0 {
+          reached += 1;
+        }
+      }
+      assert!(
+        reached >= 4,
+        "{:?} bot only dug its way to the buried gold in {}/5 runs",
+        difficulty,
+        reached
+      );
+    }
+  }
+
+  /// A bot standing next to a live bomb has to leave the blast. The blast pattern is exact (fixed
+  /// offsets, see `explode_pattern`), so there is a correct answer here and `DangerMap` knows it.
+  #[test]
+  fn bot_steps_out_of_a_live_blast() {
+    let options = Options::default();
+    for difficulty in [BotDifficulty::Medium, BotDifficulty::Hard] {
+      let mut survived = 0;
+      for _ in 0..10 {
+        let mut players = human_and_bot(difficulty, &options);
+        let mut world = World::create(LevelMap::empty(), &mut players, false, 50, false);
+        place_bot(&mut world, Cursor::new(20, 20));
+
+        // A dynamite stick one tile away: radius 3, so a single step sideways is not enough.
+        let bomb = Cursor::new(20, 21);
+        world.maps.level[bomb] = MapValue::Dynamite1;
+        world.maps.timer[bomb] = 80;
+        world.maps.hits[bomb] = 20;
+
+        for _ in 0..160 {
+          world.tick();
+        }
+        if !world.actors[1].is_dead {
+          survived += 1;
+        }
+      }
+      assert!(
+        survived >= 9,
+        "{:?} bot survived only {}/10 dynamite sticks dropped next to it",
+        difficulty,
+        survived
+      );
+    }
+  }
+
+  /// Issue #20: a bot was seen alive and completely motionless for 1800+ ticks. Every fallback in
+  /// `decide` now ends in a movement action - there is no "stand still" branch left - so a bot sealed
+  /// into a one-tile pocket digs its way out instead of freezing.
+  #[test]
+  fn walled_in_bot_digs_its_way_out() {
+    let options = Options::default();
+    for difficulty in [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard] {
+      let mut players = human_and_bot(difficulty, &options);
+      let mut world = World::create(filled_map(MapValue::LightGravel), &mut players, false, 50, false);
+      let start = Cursor::new(20, 20);
+      place_bot(&mut world, start);
+
+      let mut escaped = false;
+      for _ in 0..900 {
+        world.tick();
+        if world.actors[1].pos.cursor() != start {
+          escaped = true;
+          break;
+        }
+      }
+      assert!(escaped, "{:?} bot never dug out of its one-tile pocket", difficulty);
+    }
+  }
+
+  /// Same shape as `fresh_game_start_bot_moves_from_spawn_random_maps`, but over the whole round and
+  /// tracking the longest stretch in which the bot achieved *nothing*: its tile did not change and
+  /// none of the surrounding rock lost any `hits`. That is the issue #20 condition. Standing on one
+  /// tile is not by itself a fault - hand-digging solid stone without a pickaxe legitimately takes
+  /// 2000 ticks, and an earlier version of this test failed intermittently because it counted that
+  /// as a freeze.
+  #[test]
+  fn bot_makes_progress_throughout_the_round() {
+    let options = Options::default();
+    const TICKS: u32 = 1500;
+    const STALL_THRESHOLD: u32 = 300;
+    let mut worst: Option<(u32, Cursor)> = None;
+    for _ in 0..20u32 {
+      let mut level = crate::world::map::LevelMap::random_map(75);
+      level.generate_entrances(2);
+      let mut players = human_and_bot(BotDifficulty::Medium, &options);
+      let mut world = World::create(level, &mut players, false, 50, false);
+      // Position plus the toughness of everything around it: digging lowers the second even when the
+      // first cannot change yet.
+      let progress_marker = |world: &World| {
+        let cursor = world.actors[1].pos.cursor();
+        let hits: i64 = Direction::all()
+          .map(|dir| i64::from(world.maps.hits[cursor.to(dir)]))
+          .sum();
+        (cursor.row, cursor.col, hits)
+      };
+      let mut last = progress_marker(&world);
+      let mut unchanged_since = 0u32;
+      for tick in 1..=TICKS {
+        world.tick();
+        let marker = progress_marker(&world);
+        if marker == last {
+          let streak = tick - unchanged_since;
+          if worst.is_none_or(|(best, _)| streak > best) {
+            worst = Some((streak, world.actors[1].pos.cursor()));
+          }
+        } else {
+          last = marker;
+          unchanged_since = tick;
+        }
+        if world.is_end_of_round() || world.actors[1].is_dead {
+          break;
+        }
+      }
+    }
+    if let Some((streak, cursor)) = worst {
+      assert!(
+        streak < STALL_THRESHOLD,
+        "bot did nothing at all for {} consecutive ticks at {:?} - neither moving nor digging, which          is the issue #20 freeze",
+        streak,
+        cursor
+      );
+    }
+  }
+
+  /// How much of the game each difficulty actually plays, on the maps a real New Game generates.
+  /// This is the measurement the whole rewrite was aimed at, and it is what "the bots are too dumb"
+  /// looked like numerically: the pre-rewrite AI scored dug=4-5, visited=9-11, cash=20-70 on every
+  /// difficulty, i.e. it never left its starting cavern and barely touched the map.
+  ///
+  /// After the rewrite, with the empty starting inventory a fresh round gives (no shop purchases, so
+  /// drilling power 1 - a bot that has bought a drill digs an order of magnitude faster):
+  ///
+  /// | | dug | visited | cash | treasures |
+  /// |---|---|---|---|---|
+  /// | Easy | 20.1 | 40.4 | 269 | 4.1 |
+  /// | Medium | 27.1 | 41.5 | 211 | 3.9 |
+  /// | Hard | 49.7 | 59.0 | 635 | 8.6 |
+  ///
+  /// Medium mining slightly less than Easy is not a regression: it values an enemy higher, so it
+  /// spends more of the round hunting - and beats Easy in 83% of resolved matches.
+  ///
+  /// Ignored by default: 20 rounds x 3 difficulties x 3000 ticks takes a couple of minutes.
+  #[test]
+  #[ignore = "slow (~2 min): full-round simulation across 60 generated maps"]
+  fn measure_bot_activity() {
+    let options = Options::default();
+    const TRIALS: u32 = 20;
+    const TICKS: u32 = 3000;
+    for difficulty in [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard] {
+      let (mut dug, mut visited, mut cash, mut treasures) = (0i64, 0i64, 0i64, 0i64);
+      for _ in 0..TRIALS {
+        let mut level = crate::world::map::LevelMap::random_map(75);
+        level.generate_entrances(2);
+        let mut players = human_and_bot(difficulty, &options);
+        let mut world = World::create(level, &mut players, false, 50, false);
+        let before = Cursor::all().filter(|c| world.maps.level[*c].is_passable()).count();
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..TICKS {
+          world.tick();
+          let cursor = world.actors[1].pos.cursor();
+          seen.insert((cursor.row, cursor.col));
+          if world.actors[1].is_dead || world.is_end_of_round() {
+            break;
+          }
+        }
+        let after = Cursor::all().filter(|c| world.maps.level[*c].is_passable()).count();
+        dug += after as i64 - before as i64;
+        visited += seen.len() as i64;
+        cash += i64::from(world.actors[1].accumulated_cash);
+        treasures += i64::from(world.players[1].stats.treasures_collected);
+      }
+      let per = |total: i64| total as f64 / f64::from(TRIALS);
+      println!(
+        "{:?}: dug={:.1} visited={:.1} cash={:.1} treasures={:.1} (avg of {} rounds, {} ticks each)",
+        difficulty,
+        per(dug),
+        per(visited),
+        per(cash),
+        per(treasures),
+        TRIALS,
+        TICKS
+      );
+    }
+  }
+
+  /// Win rate per difficulty pairing with *identical* equipment, so the only thing being measured is
+  /// decision quality. This is the test two earlier tuning attempts failed to move: with the old AI
+  /// every pairing sat at 47-54% (i.e. the three difficulties played the same), and both principled
+  /// fixes (shrinking Hard's close-combat range, giving weaker bots a limited vision range) made
+  /// things worse rather than better - restricting vision actually made the *restricted* side
+  /// stronger, which was the clue that the shared core, not the per-difficulty constants, was the
+  /// limiting factor. Hence the rewrite: one competent core, with `BotParams` scaling how well each
+  /// difficulty executes it.
+  ///
+  /// Measured after the rewrite, n=250 (win counts of the matches that resolved): Hard beat Easy
+  /// 127-51, Hard beat Medium 111-72, Medium beat Easy 140-28. The Hard/Medium pairing was the last
+  /// one to separate - it sat at 98-109 until `situational_aggression` gave Hard a reason to break
+  /// off a fight it was losing.
+  ///
+  /// With the exotic weapons added (`BotParams::special_weapons`) the same measurement reads Hard
+  /// 164-63 Easy, Hard 120-107 Medium, Medium 168-36 Easy. Note what moved: both gaps against Easy
+  /// widened, while Hard's edge over Medium narrowed to roughly even here - a clone, a super drill
+  /// and an extinguisher are simply efficient, and Medium gets all three. The gap that matters for a
+  /// player did not narrow; see the shop-equipment test below, where Hard beats Medium 89-15.
+  ///
+  /// n=250, not 60: at n=60 the noise is larger than the effect (two runs of *identical* code came
+  /// back 58% and 38% for the same pairing). Takes a few minutes.
+  ///
+  /// Needs a real classic map, not `LevelMap::empty()`: on an open map every blast travels
+  /// unobstructed across the whole board, which produced simultaneous "both players die together"
+  /// chain reactions in ~77% of trials and swamped the signal.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn measure_bot_difficulty_win_rates() {
+    const TRIALS: u32 = 250;
+    const MAX_TICKS: u32 = 60 * 180;
+    let level = real_classic_map("BATTLE.MNE");
+
+    let mut broken = Vec::new();
+    for (label, a, b) in [
+      ("Hard vs Easy", BotDifficulty::Hard, BotDifficulty::Easy),
+      ("Hard vs Medium", BotDifficulty::Hard, BotDifficulty::Medium),
+      ("Medium vs Easy", BotDifficulty::Medium, BotDifficulty::Easy),
+    ] {
+      // Alternate which player index (0 or 1) each side gets: the two spawn corners are not verified
+      // symmetric, and difficulty would otherwise be fully confounded with spawn slot.
+      let mut a_wins = 0;
+      let mut b_wins = 0;
+      let mut draws = 0;
+      for i in 0..TRIALS {
+        let result = if i % 2 == 0 {
+          run_match(level.clone(), a, b, MAX_TICKS)
+        } else {
+          run_match(level.clone(), b, a, MAX_TICKS).map(|winner| 1 - winner)
+        };
+        match result {
+          Some(0) => a_wins += 1,
+          Some(1) => b_wins += 1,
+          _ => draws += 1,
+        }
+      }
+      println!("{label}: {a:?}={a_wins} {b:?}={b_wins} draws={draws} (of {TRIALS})");
+      // Draws are a legitimate result now that the bots survive: two careful, well-armed bots
+      // regularly both live out the 3-minute round, and the better-equipped pairings draw most
+      // often (Hard vs Medium with shop equipment: 156 of 250). This check is only here to catch a
+      // run where essentially nothing resolves, which would make the win counts meaningless.
+      if draws * 4 > TRIALS * 3 {
+        broken.push(format!("{label}: only {}/{TRIALS} matches resolved", TRIALS - draws));
+      }
+      if a_wins <= b_wins {
+        broken.push(format!("{label}: harder side did not win more ({a_wins} vs {b_wins})"));
+      }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
+  }
+
+  /// The same pairings with the equipment a real game gives a CPU player (`auto_buy_for_bot` scales
+  /// its purchases by difficulty), instead of the equalized loadout above. Both numbers matter: this
+  /// one is what a player actually faces, the equalized one isolates the AI itself.
+  ///
+  /// Measured at n=250 (resolved matches): Hard beat Easy 153-9, Hard beat Medium 89-15, Medium beat
+  /// Easy 129-27. Equipment and decision quality compound, so the gaps are much wider here than in the
+  /// equalized test - which is the intended shape: picking HARD in the menu should feel like a
+  /// different opponent, not like the same bot with a different label.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn measure_bot_difficulty_win_rates_with_real_shop_equipment() {
+    const TRIALS: u32 = 250;
+    const MAX_TICKS: u32 = 60 * 180;
+    // The in-game CASH option's maximum, so each difficulty's shop *priorities* actually diverge
+    // instead of everyone being cut off early by a shared budget limit.
+    const STARTING_CASH: u32 = 2650;
+    let level = real_classic_map("BATTLE.MNE");
+
+    let mut broken = Vec::new();
+    for (label, a, b) in [
+      ("Hard vs Easy", BotDifficulty::Hard, BotDifficulty::Easy),
+      ("Hard vs Medium", BotDifficulty::Hard, BotDifficulty::Medium),
+      ("Medium vs Easy", BotDifficulty::Medium, BotDifficulty::Easy),
+    ] {
+      let mut a_wins = 0;
+      let mut b_wins = 0;
+      let mut draws = 0;
+      for i in 0..TRIALS {
+        let result = if i % 2 == 0 {
+          run_match_with_real_shop_equipment(level.clone(), a, b, STARTING_CASH, MAX_TICKS)
+        } else {
+          run_match_with_real_shop_equipment(level.clone(), b, a, STARTING_CASH, MAX_TICKS).map(|winner| 1 - winner)
+        };
+        match result {
+          Some(0) => a_wins += 1,
+          Some(1) => b_wins += 1,
+          _ => draws += 1,
+        }
+      }
+      println!("{label}: {a:?}={a_wins} {b:?}={b_wins} draws={draws} (of {TRIALS})");
+      // Draws are a legitimate result now that the bots survive: two careful, well-armed bots
+      // regularly both live out the 3-minute round, and the better-equipped pairings draw most
+      // often (Hard vs Medium with shop equipment: 156 of 250). This check is only here to catch a
+      // run where essentially nothing resolves, which would make the win counts meaningless.
+      if draws * 4 > TRIALS * 3 {
+        broken.push(format!("{label}: only {}/{TRIALS} matches resolved", TRIALS - draws));
+      }
+      if a_wins <= b_wins {
+        broken.push(format!("{label}: harder side did not win more ({a_wins} vs {b_wins})"));
+      }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
+  }
+
+  /// Same shape as a real local game: one human-controlled slot (never sent an action here) plus
+  /// Easy/Medium/Hard bots together in one match. Checks the engine handles a mixed 4-actor match
+  /// without crashing or hanging, not difficulty balance specifically.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn four_player_match_with_one_human_slot_and_three_bot_difficulties_completes() {
+    let level = real_classic_map("BATTLE.MNE");
+    let options = Options::default();
+    let mut players = [
+      PlayerComponent::new(
+        "Player".to_string(),
+        Default::default(),
+        &options,
+        false,
+        BotDifficulty::Easy,
+      ),
+      PlayerComponent::new(
+        "Bot Easy".to_string(),
+        Default::default(),
+        &options,
+        true,
+        BotDifficulty::Easy,
+      ),
+      PlayerComponent::new(
+        "Bot Medium".to_string(),
+        Default::default(),
+        &options,
+        true,
+        BotDifficulty::Medium,
+      ),
+      PlayerComponent::new(
+        "Bot Hard".to_string(),
+        Default::default(),
+        &options,
+        true,
+        BotDifficulty::Hard,
+      ),
+    ];
+    for p in players.iter_mut() {
+      equip_for_a_fair_fight(p);
+    }
+    let mut world = World::create(level, &mut players, false, 50, false);
+
+    let max_ticks = 60 * 180;
+    let mut ticks_run = 0;
+    for t in 0..max_ticks {
+      world.tick();
+      ticks_run = t + 1;
+      if world.alive_players() < 2 {
+        break;
+      }
+    }
+
+    let alive: Vec<&str> = world
+      .players
+      .iter()
+      .zip(world.actors.iter())
+      .filter(|(_, a)| !a.is_dead)
+      .map(|(p, _)| p.stats.name.as_str())
+      .collect();
+    println!("4-player match: resolved after {ticks_run} ticks, still alive: {alive:?}");
+    assert!(
+      !world.actors[0..4].iter().all(|a| a.is_dead),
+      "every actor died - likely a mutual chain reaction, not real combat"
+    );
+  }
+
+  /// Diagnostic (not a regression test): reproduces a fresh match exactly as `play_game` sets one
+  /// up - a human slot that never acts, and a bot with the empty starting inventory a new game
+  /// actually has - to check whether the bot ever leaves its spawn tile.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn fresh_game_start_bot_moves_from_spawn() {
+    let level = real_classic_map("BATTLE.MNE");
+    let options = Options::default();
+    let mut players = human_and_bot(BotDifficulty::Medium, &options);
+    let mut world = World::create(level, &mut players, false, 50, false);
+    let spawn_cursor = world.actors[1].pos.cursor();
+    for tick in 1..=600u32 {
+      world.tick();
+      if world.actors[1].pos.cursor() != spawn_cursor {
+        println!("moved at tick {}: cursor={:?}", tick, world.actors[1].pos.cursor());
+        return;
+      }
+      if world.is_end_of_round() {
+        break;
+      }
+    }
+    panic!("bot never left spawn tile {:?} in 600 ticks", spawn_cursor);
+  }
+
+  /// Same as `fresh_game_start_bot_moves_from_spawn`, but using the actual map generation path a
+  /// real (non-campaign) New Game uses, across many random maps. Checks whether some unlucky spawn
+  /// (e.g. fully enclosed by rock) can trap the bot in a way BATTLE.MNE doesn't.
+  #[test]
+  fn fresh_game_start_bot_moves_from_spawn_random_maps() {
+    let options = Options::default();
+    let mut stuck = Vec::new();
+    for seed in 0..200u32 {
+      let mut level = crate::world::map::LevelMap::random_map(75);
+      level.generate_entrances(2);
+      let mut players = human_and_bot(BotDifficulty::Medium, &options);
+      let mut world = World::create(level, &mut players, false, 50, false);
+      let spawn_cursor = world.actors[1].pos.cursor();
+      let mut moved = false;
+      for _ in 1..=300u32 {
+        world.tick();
+        if world.actors[1].pos.cursor() != spawn_cursor {
+          moved = true;
+          break;
+        }
+        if world.is_end_of_round() {
+          break;
+        }
+      }
+      if !moved {
+        stuck.push((seed, spawn_cursor, world.actors[1].is_dead));
+      }
+    }
+    if !stuck.is_empty() {
+      panic!(
+        "bot never moved from spawn in {}/200 random maps: {:?}",
+        stuck.len(),
+        stuck
+      );
+    }
+  }
+
+  #[test]
+  fn danger_map_covers_the_exact_blast_pattern() {
+    let options = Options::default();
+    let mut players = bot_players(BotDifficulty::Hard, BotDifficulty::Hard, &options);
+    let mut world = World::create(LevelMap::empty(), &mut players, false, 50, false);
+    let bomb = Cursor::new(20, 20);
+    world.maps.level[bomb] = MapValue::SmallBomb1;
+    world.maps.timer[bomb] = 42;
+
+    let danger = DangerMap::compute(&world);
+    assert_eq!(danger.at(bomb), 42, "the bomb's own tile is in its blast");
+    for (delta_row, delta_col) in SMALL_BOMB_PATTERN {
+      let cell = bomb.offset(delta_row, delta_col).unwrap();
+      assert_eq!(danger.at(cell), 42, "{:?} is inside a small bomb's cross", cell);
+    }
+    assert_eq!(
+      danger.at(bomb.offset(0, 2).unwrap()),
+      SAFE,
+      "two tiles away is outside a small bomb's cross"
+    );
+  }
+
+  #[test]
+  fn dig_cost_is_measured_in_ticks_of_drilling() {
+    let options = Options::default();
+    let mut players = bot_players(BotDifficulty::Hard, BotDifficulty::Hard, &options);
+    let mut world = World::create(filled_map(MapValue::Stone1), &mut players, false, 50, false);
+    let cell = Cursor::new(20, 20);
+    // Stone1 is 2000 hits (see `map::hits`), so bare hands need 2000 ticks and a drill 100.
+    assert_eq!(dig_ticks(&world, cell, 1), 2000);
+    assert_eq!(dig_ticks(&world, cell, 20), 100);
+    world.maps.hits[cell] = 0;
+    assert_eq!(dig_ticks(&world, cell, 1), 0);
+  }
+
+  /// Deaths in a round with nobody fighting back: the opponent slot is a human player that never
+  /// acts, so anything that kills the bot was the bot's own doing. This is how the single biggest
+  /// flaw in the first version of this AI was found - Hard died in 42 of 150 such rounds, and the
+  /// tick-by-tick log of those deaths showed health draining 2-7 points *per tick* with no explosion
+  /// anywhere near it. That is monster contact damage: Hard, being the most eager hunter, kept
+  /// walking up to monsters it had no reason to fight. With monsters treated as contact hazards
+  /// (`DangerMap::contact`) and dropped as targets outside Survival Horde, all three difficulties
+  /// now sit at 2 of 150, and Hard's average haul per round went from 781 to 1311.
+  ///
+  /// Kept as a measurement rather than a pass/fail test: it needs the original game files, and the
+  /// number it produces is only meaningful next to the ones above.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn measure_self_destruction() {
+    let options = Options::default();
+    let prices = crate::shop::Prices::new(options.free_market);
+    let level = real_classic_map("BATTLE.MNE");
+    const TRIALS: u32 = 150;
+    for difficulty in [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard] {
+      let mut deaths = 0;
+      let mut survivor_health = 0u32;
+      let mut cash = 0u32;
+      for _ in 0..TRIALS {
+        let mut players = human_and_bot(difficulty, &options);
+        players[1].cash = 2650;
+        crate::shop::auto_buy_for_bot(&mut players[1], &prices);
+        let mut world = World::create(level.clone(), &mut players, false, 50, false);
+        for _ in 0..3000 {
+          world.tick();
+          if world.actors[1].is_dead {
+            break;
+          }
+        }
+        if world.actors[1].is_dead {
+          deaths += 1;
+        } else {
+          survivor_health += u32::from(world.actors[1].health);
+        }
+        cash += world.actors[1].accumulated_cash;
+      }
+      println!(
+        "{:?}: died with nobody fighting back {}/{}, surviving health {}, cash {}",
+        difficulty,
+        deaths,
+        TRIALS,
+        if deaths < TRIALS {
+          survivor_health / (TRIALS - deaths)
+        } else {
+          0
+        },
+        cash / TRIALS
+      );
+    }
+  }
 
   #[test]
   fn test_dir_towards() {
@@ -1624,6 +2319,7 @@ mod tests {
 
     let c_diag = Cursor::new(7, 7);
     assert_eq!(BotController::dir_towards(c1, c_diag), None);
+    assert_eq!(BotController::dir_towards(c1, c1), None);
   }
 
   #[test]
@@ -1649,5 +2345,3 @@ mod tests {
     assert_eq!(BotDifficulty::from_str("unknown"), BotDifficulty::Medium);
   }
 }
-
-
