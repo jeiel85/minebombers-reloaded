@@ -21,6 +21,14 @@ pub struct CannotLoadSinglePlayer {
   source: anyhow::Error,
 }
 
+impl CannotLoadSinglePlayer {
+  /// Why the map could not be used (for example a missing file, a bad format or no exit), without the
+  /// path, which is usually too long to show on the 640 pixel game screen.
+  pub fn reason(&self) -> String {
+    format!("{:#}", self.source)
+  }
+}
+
 pub type LevelMap = Map<MapValue>;
 
 const RANDOM_TREASURES: [MapValue; 13] = [
@@ -1267,7 +1275,26 @@ mod tests {
     let dir = campaign_dir_with(&LevelMap::empty(), "no-exit");
     let result = LevelMap::prepare_campaign_level(&dir, 1);
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(result.is_err());
+    match result {
+      Err(err) => assert_eq!(err.reason(), "the map has no exit"),
+      Ok(_) => panic!("a map without an exit must not load"),
+    }
+  }
+
+  #[test]
+  fn missing_campaign_level_names_the_cause_without_the_path() {
+    let dir = std::env::temp_dir().join(format!("mb-core-campaign-missing-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let result = LevelMap::prepare_campaign_level(&dir, 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+    let err = match result {
+      Err(err) => err,
+      Ok(_) => panic!("a missing map must not load"),
+    };
+    // The game screen shows `reason`; the full path stays in the error message for the log.
+    assert!(!err.reason().is_empty());
+    assert!(!err.reason().contains("LEVEL1.MNL"));
+    assert!(err.to_string().contains("LEVEL1.MNL"));
   }
 
   #[test]
