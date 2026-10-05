@@ -6,5 +6,7 @@ Thumbs.db
 tools/
 res/minebomb/
 web/data/
+# Built by scripts/build_web.ps1 and by pages.yml; never committed, so it cannot drift from the source.
+web/pkg/mb_wasm.wasm
 web/pkg/LICENSE-*.txt
 dist/
