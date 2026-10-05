@@ -10,10 +10,10 @@ use mb_core::world::map::{CaveBiome, LevelMap, MapValue, MAP_COLS};
 use mb_core::world::player::PlayerComponent;
 use mb_core::world::position::{Cursor, Direction};
 use mb_core::world::{Update, World};
-use std::convert::{TryFrom, TryInto};
-use std::time::Duration;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::convert::{TryFrom, TryInto};
+use std::time::Duration;
 
 const SCREEN_WIDTH: usize = 640;
 const SCREEN_HEIGHT: usize = 480;
@@ -207,16 +207,56 @@ fn insert_highscore(table: &mut Vec<HighscoreEntry>, entry: HighscoreEntry) -> O
 /// storage of its own, so the table resets when the page is reloaded.
 fn default_highscores() -> Vec<HighscoreEntry> {
   vec![
-    HighscoreEntry { name: "Skhar".to_string(), level: 10, cash: 18500 },
-    HighscoreEntry { name: "Sami".to_string(), level: 9, cash: 15200 },
-    HighscoreEntry { name: "Ivan".to_string(), level: 8, cash: 12800 },
-    HighscoreEntry { name: "Miner49er".to_string(), level: 7, cash: 10400 },
-    HighscoreEntry { name: "GoldDigger".to_string(), level: 6, cash: 8900 },
-    HighscoreEntry { name: "DynamiteKid".to_string(), level: 5, cash: 7200 },
-    HighscoreEntry { name: "CaveDweller".to_string(), level: 4, cash: 5600 },
-    HighscoreEntry { name: "BoomMaster".to_string(), level: 3, cash: 4100 },
-    HighscoreEntry { name: "TntExpert".to_string(), level: 2, cash: 2800 },
-    HighscoreEntry { name: "Rookie".to_string(), level: 1, cash: 1500 },
+    HighscoreEntry {
+      name: "Skhar".to_string(),
+      level: 10,
+      cash: 18500,
+    },
+    HighscoreEntry {
+      name: "Sami".to_string(),
+      level: 9,
+      cash: 15200,
+    },
+    HighscoreEntry {
+      name: "Ivan".to_string(),
+      level: 8,
+      cash: 12800,
+    },
+    HighscoreEntry {
+      name: "Miner49er".to_string(),
+      level: 7,
+      cash: 10400,
+    },
+    HighscoreEntry {
+      name: "GoldDigger".to_string(),
+      level: 6,
+      cash: 8900,
+    },
+    HighscoreEntry {
+      name: "DynamiteKid".to_string(),
+      level: 5,
+      cash: 7200,
+    },
+    HighscoreEntry {
+      name: "CaveDweller".to_string(),
+      level: 4,
+      cash: 5600,
+    },
+    HighscoreEntry {
+      name: "BoomMaster".to_string(),
+      level: 3,
+      cash: 4100,
+    },
+    HighscoreEntry {
+      name: "TntExpert".to_string(),
+      level: 2,
+      cash: 2800,
+    },
+    HighscoreEntry {
+      name: "Rookie".to_string(),
+      level: 1,
+      cash: 1500,
+    },
   ]
 }
 
@@ -238,11 +278,11 @@ pub const KEY_UP: u32 = 1;
 pub const KEY_DOWN: u32 = 2;
 pub const KEY_LEFT: u32 = 3;
 pub const KEY_RIGHT: u32 = 4;
-pub const KEY_BOMB: u32 = 5;    // Space / Enter (Select, Buy)
-pub const KEY_CHOOSE: u32 = 6;  // C / Shift (Sell / refund)
-pub const KEY_REMOTE: u32 = 7;  // X / Ctrl
-pub const KEY_TAB: u32 = 8;     // Tab / Q / E (Page toggle in shop)
-pub const KEY_ESC: u32 = 9;     // Escape
+pub const KEY_BOMB: u32 = 5; // Space / Enter (Select, Buy)
+pub const KEY_CHOOSE: u32 = 6; // C / Shift (Sell / refund)
+pub const KEY_REMOTE: u32 = 7; // X / Ctrl
+pub const KEY_TAB: u32 = 8; // Tab / Q / E (Page toggle in shop)
+pub const KEY_ESC: u32 = 9; // Escape
 pub const KEY_ANY: u32 = 10;
 
 #[repr(u32)]
@@ -621,7 +661,15 @@ impl WebGame {
               GameOption::BombDamage => (u64::from(self.options.bomb_damage) * 165 / 100) as u32,
               _ => 0,
             };
-            self.fill_rect(MENU_ITEM_X + 142, MENU_ITEM_Y + 5 + opt_y, (bar_w + 1).min(166), 13, p[1].r, p[1].g, p[1].b);
+            self.fill_rect(
+              MENU_ITEM_X + 142,
+              MENU_ITEM_Y + 5 + opt_y,
+              (bar_w + 1).min(166),
+              13,
+              p[1].r,
+              p[1].g,
+              p[1].b,
+            );
 
             let txt = match opt {
               GameOption::Cash => Some(format!("{}", self.options.cash)),
@@ -669,12 +717,22 @@ impl WebGame {
           }
         }
 
-        self.draw_text("ARROWS: ADJUST   ENTER: SELECT   ESC: MAIN MENU", 140, 455, p[8].r, p[8].g, p[8].b);
+        self.draw_text(
+          "ARROWS: ADJUST   ENTER: SELECT   ESC: MAIN MENU",
+          140,
+          455,
+          p[8].r,
+          p[8].g,
+          p[8].b,
+        );
       }
       AppState::Info => {
         Self::copy_rgb_to_fb(&self.info_img.image);
         let p = &self.info_img.palette;
-        let surv_rec = format!("★ SURVIVAL RECORD: WAVE {} | SCORE ${} ★", self.survival_best_wave, self.survival_best_score);
+        let surv_rec = format!(
+          "★ SURVIVAL RECORD: WAVE {} | SCORE ${} ★",
+          self.survival_best_wave, self.survival_best_score
+        );
         self.fill_rect(120, 425, 400, 16, 0, 0, 0);
         self.draw_text(&surv_rec, 130, 428, p[5].r, p[5].g, p[5].b);
         self.draw_text("PRESS ANY KEY OR ESCAPE TO RETURN", 180, 455, p[1].r, p[1].g, p[1].b);
@@ -818,7 +876,10 @@ impl WebGame {
           self.draw_text(&w_str, 220, 220, 255, 220, 50);
           let s_str = format!("FINAL SCORE: ${}", score);
           self.draw_text(&s_str, 230, 240, 100, 240, 120);
-          let best_str = format!("BEST RECORD: WAVE {} (${})", self.survival_best_wave, self.survival_best_score);
+          let best_str = format!(
+            "BEST RECORD: WAVE {} (${})",
+            self.survival_best_wave, self.survival_best_score
+          );
           self.draw_text(&best_str, 180, 260, 200, 200, 200);
           self.draw_text("PRESS ENTER / ESC TO MAIN MENU", 170, 280, 180, 180, 180);
         } else {
@@ -890,18 +951,34 @@ impl WebGame {
     match self.state {
       AppState::Title => {
         self.state = AppState::MainMenu;
-        self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+        self.audio_queue.push(AudioEvent {
+          effect_id: 1,
+          frequency: 11000,
+          pan: 0.0,
+        });
         self.render_current_state();
       }
       AppState::MainMenu => match key {
         KEY_UP => {
-          self.selected_menu = if self.selected_menu == 0 { 3 } else { self.selected_menu - 1 };
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.selected_menu = if self.selected_menu == 0 {
+            3
+          } else {
+            self.selected_menu - 1
+          };
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
         }
         KEY_DOWN => {
           self.selected_menu = (self.selected_menu + 1) % 4;
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
         }
         KEY_BOMB => match self.selected_menu {
@@ -923,20 +1000,32 @@ impl WebGame {
             self.shop_p2 = PlayerShopState::new();
             self.shop_p2.ready = true;
             self.state = AppState::Shop;
-            self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
+            self.audio_queue.push(AudioEvent {
+              effect_id: 0,
+              frequency: 11000,
+              pan: 0.0,
+            });
             self.render_current_state();
           }
           1 => {
             // OPTIONS: Open authentic Options menu screen
             self.selected_option = GameOption::MainMenu;
             self.state = AppState::Options;
-            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.audio_queue.push(AudioEvent {
+              effect_id: 1,
+              frequency: 11000,
+              pan: 0.0,
+            });
             self.render_current_state();
           }
           2 => {
             // INFO: Open authentic Info screen
             self.state = AppState::Info;
-            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.audio_queue.push(AudioEvent {
+              effect_id: 1,
+              frequency: 11000,
+              pan: 0.0,
+            });
             self.render_current_state();
           }
           3 => {
@@ -951,41 +1040,69 @@ impl WebGame {
       AppState::Options => match key {
         KEY_UP => {
           self.selected_option = self.selected_option.prev();
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
         }
         KEY_DOWN => {
           self.selected_option = self.selected_option.next();
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
         }
         KEY_LEFT => {
           match self.selected_option {
             GameOption::Cash => {
-              self.options.cash = if self.options.cash >= 100 { self.options.cash - 100 } else { 0 };
+              self.options.cash = if self.options.cash >= 100 {
+                self.options.cash - 100
+              } else {
+                0
+              };
             }
             GameOption::Treasures => {
-              if self.options.treasures > 0 { self.options.treasures -= 1; }
+              if self.options.treasures > 0 {
+                self.options.treasures -= 1;
+              }
             }
             GameOption::Rounds => {
-              if self.options.rounds > 1 { self.options.rounds -= 1; }
+              if self.options.rounds > 1 {
+                self.options.rounds -= 1;
+              }
             }
             GameOption::Time => {
               let s = self.options.round_time.as_secs().saturating_sub(15);
               self.options.round_time = Duration::from_secs(s);
             }
             GameOption::Players => {
-              if self.options.players > 1 { self.options.players -= 1; }
+              if self.options.players > 1 {
+                self.options.players -= 1;
+              }
             }
             GameOption::Speed => {
-              if self.options.speed < 33 { self.options.speed += 1; }
+              if self.options.speed < 33 {
+                self.options.speed += 1;
+              }
             }
             GameOption::BombDamage => {
-              if self.options.bomb_damage >= 5 { self.options.bomb_damage -= 5; }
+              if self.options.bomb_damage >= 5 {
+                self.options.bomb_damage -= 5;
+              }
             }
-            GameOption::Darkness => { self.options.darkness = !self.options.darkness; }
-            GameOption::FreeMarket => { self.options.free_market = !self.options.free_market; }
-            GameOption::Selling => { self.options.selling = !self.options.selling; }
+            GameOption::Darkness => {
+              self.options.darkness = !self.options.darkness;
+            }
+            GameOption::FreeMarket => {
+              self.options.free_market = !self.options.free_market;
+            }
+            GameOption::Selling => {
+              self.options.selling = !self.options.selling;
+            }
             GameOption::Winner => {
               self.options.win = match self.options.win {
                 WinCondition::ByMoney => WinCondition::Survival,
@@ -994,39 +1111,63 @@ impl WebGame {
                 WinCondition::Survival => WinCondition::GoldRush,
               };
             }
-            GameOption::LoadLevels => { self.map_selection = self.map_selection.prev(); }
+            GameOption::LoadLevels => {
+              self.map_selection = self.map_selection.prev();
+            }
             _ => {}
           }
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
         }
         KEY_RIGHT => {
           match self.selected_option {
             GameOption::Cash => {
-              if self.options.cash <= 2550 { self.options.cash += 100; }
+              if self.options.cash <= 2550 {
+                self.options.cash += 100;
+              }
             }
             GameOption::Treasures => {
-              if self.options.treasures < 75 { self.options.treasures += 1; }
+              if self.options.treasures < 75 {
+                self.options.treasures += 1;
+              }
             }
             GameOption::Rounds => {
-              if self.options.rounds < 55 { self.options.rounds += 1; }
+              if self.options.rounds < 55 {
+                self.options.rounds += 1;
+              }
             }
             GameOption::Time => {
               let s = (self.options.round_time.as_secs() + 15).min(1359);
               self.options.round_time = Duration::from_secs(s);
             }
             GameOption::Players => {
-              if self.options.players < 4 { self.options.players += 1; }
+              if self.options.players < 4 {
+                self.options.players += 1;
+              }
             }
             GameOption::Speed => {
-              if self.options.speed > 0 { self.options.speed -= 1; }
+              if self.options.speed > 0 {
+                self.options.speed -= 1;
+              }
             }
             GameOption::BombDamage => {
-              if self.options.bomb_damage <= 95 { self.options.bomb_damage += 5; }
+              if self.options.bomb_damage <= 95 {
+                self.options.bomb_damage += 5;
+              }
             }
-            GameOption::Darkness => { self.options.darkness = !self.options.darkness; }
-            GameOption::FreeMarket => { self.options.free_market = !self.options.free_market; }
-            GameOption::Selling => { self.options.selling = !self.options.selling; }
+            GameOption::Darkness => {
+              self.options.darkness = !self.options.darkness;
+            }
+            GameOption::FreeMarket => {
+              self.options.free_market = !self.options.free_market;
+            }
+            GameOption::Selling => {
+              self.options.selling = !self.options.selling;
+            }
             GameOption::Winner => {
               self.options.win = match self.options.win {
                 WinCondition::ByMoney => WinCondition::ByWins,
@@ -1035,16 +1176,26 @@ impl WebGame {
                 WinCondition::Survival => WinCondition::ByMoney,
               };
             }
-            GameOption::LoadLevels => { self.map_selection = self.map_selection.next(); }
+            GameOption::LoadLevels => {
+              self.map_selection = self.map_selection.next();
+            }
             _ => {}
           }
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
         }
         KEY_BOMB => match self.selected_option {
           GameOption::MainMenu => {
             self.state = AppState::MainMenu;
-            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+            self.audio_queue.push(AudioEvent {
+              effect_id: 1,
+              frequency: 11000,
+              pan: 0.0,
+            });
             self.render_current_state();
           }
           GameOption::Darkness => {
@@ -1076,7 +1227,11 @@ impl WebGame {
         },
         KEY_ESC => {
           self.state = AppState::MainMenu;
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
         }
         _ => {}
@@ -1085,13 +1240,21 @@ impl WebGame {
         // Any key returns to MainMenu
         self.new_score_rank = None;
         self.state = AppState::MainMenu;
-        self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+        self.audio_queue.push(AudioEvent {
+          effect_id: 1,
+          frequency: 11000,
+          pan: 0.0,
+        });
         self.render_current_state();
       }
       AppState::Info => {
         // Any key or escape returns to MainMenu
         self.state = AppState::MainMenu;
-        self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+        self.audio_queue.push(AudioEvent {
+          effect_id: 1,
+          frequency: 11000,
+          pan: 0.0,
+        });
         self.render_current_state();
       }
       AppState::Shop => {
@@ -1103,7 +1266,11 @@ impl WebGame {
 
         if key == KEY_TAB {
           self.shop_p1.cursor.toggle_page();
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
           return;
         }
@@ -1117,7 +1284,11 @@ impl WebGame {
         };
         if let Some(direction) = direction {
           self.shop_p1.cursor.step(direction);
-          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.audio_queue.push(AudioEvent {
+            effect_id: 1,
+            frequency: 11000,
+            pan: 0.0,
+          });
           self.render_current_state();
           return;
         }
@@ -1125,7 +1296,11 @@ impl WebGame {
           KEY_BOMB => {
             if let Some(selection) = self.shop_p1.cursor.selection {
               if buy(&mut self.players[0], None, selection, &self.prices) {
-                self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
+                self.audio_queue.push(AudioEvent {
+                  effect_id: 0,
+                  frequency: 11000,
+                  pan: 0.0,
+                });
                 self.render_current_state();
               }
             } else {
@@ -1134,14 +1309,28 @@ impl WebGame {
               let level = self.level.clone();
               self.start_round(level);
               self.state = AppState::Battle;
-              self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
+              self.audio_queue.push(AudioEvent {
+                effect_id: 0,
+                frequency: 11000,
+                pan: 0.0,
+              });
               self.render_full();
             }
           }
           KEY_CHOOSE => {
             if let Some(selection) = self.shop_p1.cursor.selection {
-              if sell(&mut self.players[0], None, selection, &self.prices, self.options.selling) {
-                self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+              if sell(
+                &mut self.players[0],
+                None,
+                selection,
+                &self.prices,
+                self.options.selling,
+              ) {
+                self.audio_queue.push(AudioEvent {
+                  effect_id: 1,
+                  frequency: 11000,
+                  pan: 0.0,
+                });
                 self.render_current_state();
               }
             }
@@ -1204,9 +1393,7 @@ impl WebGame {
     self.round_start_tick = 0;
     self.choose_hold_ticks = [0; 4];
 
-    let players_ref: &'static mut [PlayerComponent] = unsafe {
-      std::mem::transmute(&mut self.players[..])
-    };
+    let players_ref: &'static mut [PlayerComponent] = unsafe { std::mem::transmute(&mut self.players[..]) };
 
     let is_gold_rush = self.options.win == WinCondition::GoldRush;
     let is_survival = self.options.win == WinCondition::Survival;
@@ -1218,9 +1405,15 @@ impl WebGame {
       }
     }
 
-    let world = World::create(level, players_ref, self.options.darkness, self.options.bomb_damage, false)
-      .with_gold_rush_mode(is_gold_rush)
-      .with_survival_mode(is_survival, self.round as u16);
+    let world = World::create(
+      level,
+      players_ref,
+      self.options.darkness,
+      self.options.bomb_damage,
+      false,
+    )
+    .with_gold_rush_mode(is_gold_rush)
+    .with_survival_mode(is_survival, self.round as u16);
     self.level = world.maps.level.clone();
     self.world = Some(world);
 
@@ -1257,12 +1450,7 @@ impl WebGame {
   fn draw_hud(&self) {
     self.fill_rect(0, 0, 640, 30, 20, 20, 24);
 
-    let colors = [
-      (240, 200, 50),
-      (230, 60, 50),
-      (50, 150, 240),
-      (50, 220, 90),
-    ];
+    let colors = [(240, 200, 50), (230, 60, 50), (50, 150, 240), (50, 220, 90)];
 
     for idx in 0..4 {
       let p = &self.players[idx];
@@ -1349,7 +1537,11 @@ impl WebGame {
         self.draw_text(&ring_str, 224, 464, 255, 60, 50);
       } else if world.sudden_death_warning {
         // Flashing yellow/red warning bar
-        let flash_color = if (elapsed / 15) % 2 == 0 { (255, 40, 40) } else { (255, 210, 30) };
+        let flash_color = if (elapsed / 15) % 2 == 0 {
+          (255, 40, 40)
+        } else {
+          (255, 210, 30)
+        };
         self.fill_rect(2, 473, 636 - bar_w, 5, flash_color.0, flash_color.1, flash_color.2);
         let warn_sec = (remaining / 60) + 1;
         let warn_str = format!("!! COLLAPSE IN {}S !!", warn_sec);
@@ -1361,7 +1553,11 @@ impl WebGame {
         let wave = world.current_wave;
         let killed = world.wave_killed;
         let quota = world.wave_quota;
-        let p_ratio = if quota > 0 { (killed as u32 * 636) / quota as u32 } else { 0 };
+        let p_ratio = if quota > 0 {
+          (killed as u32 * 636) / quota as u32
+        } else {
+          0
+        };
         self.fill_rect(2, 473, p_ratio.min(636), 5, 40, 220, 100);
         let surv_str = format!("★ WAVE {} ★  KILLS: {}/{}", wave, killed, quota);
         let sx = 320 - (surv_str.len() as i32 * 8) / 2;
@@ -1404,13 +1600,7 @@ pub extern "C" fn mb_asset_register(name_ptr: *mut u8, name_len: u32, data_ptr: 
 }
 
 #[no_mangle]
-pub extern "C" fn mb_init(
-  _level_idx: u32,
-  diff1: u32,
-  diff2: u32,
-  diff3: u32,
-  diff4: u32,
-) -> u32 {
+pub extern "C" fn mb_init(_level_idx: u32, diff1: u32, diff2: u32, diff3: u32, diff4: u32) -> u32 {
   // The host must have registered the original game files first (see `mb_asset_register`).
   if missing_asset().is_some() {
     return 0;
@@ -1605,11 +1795,21 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         if game.players[idx].is_bot {
           continue;
         }
-        if (input_mask & 1) != 0 { world.player_action(idx, Key::Up); }
-        if (input_mask & 2) != 0 { world.player_action(idx, Key::Down); }
-        if (input_mask & 4) != 0 { world.player_action(idx, Key::Left); }
-        if (input_mask & 8) != 0 { world.player_action(idx, Key::Right); }
-        if (input_mask & 16) != 0 { world.player_action(idx, Key::Bomb); }
+        if (input_mask & 1) != 0 {
+          world.player_action(idx, Key::Up);
+        }
+        if (input_mask & 2) != 0 {
+          world.player_action(idx, Key::Down);
+        }
+        if (input_mask & 4) != 0 {
+          world.player_action(idx, Key::Left);
+        }
+        if (input_mask & 8) != 0 {
+          world.player_action(idx, Key::Right);
+        }
+        if (input_mask & 16) != 0 {
+          world.player_action(idx, Key::Bomb);
+        }
         if (input_mask & 32) != 0 {
           let hold = &mut game.choose_hold_ticks[idx];
           if *hold == 0 {
@@ -1625,8 +1825,12 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         } else {
           game.choose_hold_ticks[idx] = 0;
         }
-        if (input_mask & 64) != 0 { world.player_action(idx, Key::Remote); }
-        if (input_mask & 128) != 0 { world.player_action(idx, Key::Stop); }
+        if (input_mask & 64) != 0 {
+          world.player_action(idx, Key::Remote);
+        }
+        if (input_mask & 128) != 0 {
+          world.player_action(idx, Key::Stop);
+        }
       }
 
       world.tick();
@@ -1644,9 +1848,11 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
         })
         .collect();
 
-      let actors: Vec<_> = world.actors.iter().map(|a| {
-        (a.pos, a.kind, a.facing, a.moving, a.animation)
-      }).collect();
+      let actors: Vec<_> = world
+        .actors
+        .iter()
+        .map(|a| (a.pos, a.kind, a.facing, a.moving, a.animation))
+        .collect();
 
       (effects, updates, map_snapshots, is_flash, is_end_round, actors)
     };
@@ -1750,7 +1956,15 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
 
               let glyph = Glyph::Monster(kind, facing, digging, phase);
               let rect = glyph.rect();
-              game.blit_sika(rect.x as u32, rect.y as u32, rect.w, rect.h, pos.x as i32 - 5, pos.y as i32 - 5, true);
+              game.blit_sika(
+                rect.x as u32,
+                rect.y as u32,
+                rect.w,
+                rect.h,
+                pos.x as i32 - 5,
+                pos.y as i32 - 5,
+                true,
+              );
             }
           }
           _ => {}
@@ -1978,7 +2192,9 @@ static mut RANDOM_SEED: u64 = 0x853c49e6748fea9b;
 fn custom_getrandom(buf: &mut [u8]) -> Result<(), getrandom::Error> {
   for b in buf.iter_mut() {
     unsafe {
-      RANDOM_SEED = RANDOM_SEED.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+      RANDOM_SEED = RANDOM_SEED
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
       *b = (RANDOM_SEED >> 33) as u8;
     }
   }
@@ -2016,7 +2232,11 @@ mod tests {
   }
 
   fn entry(name: &str, level: u8, cash: u32) -> HighscoreEntry {
-    HighscoreEntry { name: name.to_string(), level, cash }
+    HighscoreEntry {
+      name: name.to_string(),
+      level,
+      cash,
+    }
   }
 
   /// Where the developer keeps the original game files, if anywhere: `MB_GAME_DIR`, else `res/minebomb`.
@@ -2050,7 +2270,9 @@ mod tests {
       vec![0u8; 256 * 8]
     } else if name.ends_with(".MNE") {
       // A distinct, valid map per name; procedural generation stands in for the hand-made level
-      let seed = name.bytes().fold(7u64, |acc, b| acc.wrapping_mul(31).wrapping_add(u64::from(b)));
+      let seed = name
+        .bytes()
+        .fold(7u64, |acc, b| acc.wrapping_mul(31).wrapping_add(u64::from(b)));
       LevelMap::procedural_map(seed, CaveBiome::Classic, 45, 10).to_file_map()
     } else {
       panic!("no stand-in for {}", name)
@@ -2093,7 +2315,9 @@ mod tests {
     let mut names: Vec<&str> = ALL_SELECTIONS.iter().map(|s| s.name()).collect();
     // The plate is `len * 8 + 8` px wide (8px font advance) and starts at MAP_NAME_X.
     assert!(
-      names.iter().all(|n| MAP_NAME_X as usize + n.len() * 8 + 8 <= SCREEN_WIDTH),
+      names
+        .iter()
+        .all(|n| MAP_NAME_X as usize + n.len() * 8 + 8 <= SCREEN_WIDTH),
       "{:?}",
       names
     );
@@ -2106,7 +2330,11 @@ mod tests {
   fn every_classic_map_file_parses() {
     // `get_map` falls back to a procedural map on a parse error, which would hide a corrupt file.
     for name in CLASSIC_MAP_FILES {
-      assert!(LevelMap::from_file_map(test_file(name)).is_ok(), "{} failed to parse", name);
+      assert!(
+        LevelMap::from_file_map(test_file(name)).is_ok(),
+        "{} failed to parse",
+        name
+      );
     }
   }
 
@@ -2134,7 +2362,12 @@ mod tests {
     for seed in [0u64, 7, 12345] {
       let a = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
       let b = MapSelection::RandomClassic.get_map(seed, CaveBiome::Classic, 45);
-      assert_eq!(tiles(&a), tiles(&b), "seed {} must be reproducible (netplay lockstep)", seed);
+      assert_eq!(
+        tiles(&a),
+        tiles(&b),
+        "seed {} must be reproducible (netplay lockstep)",
+        seed
+      );
     }
     let mut distinct: Vec<Vec<MapValue>> = Vec::new();
     for seed in 0..64u64 {
@@ -2150,7 +2383,9 @@ mod tests {
   fn default_highscores_are_full_and_sorted() {
     let table = default_highscores();
     assert_eq!(table.len(), HIGHSCORE_SLOTS);
-    assert!(table.windows(2).all(|w| (w[0].level, w[0].cash) >= (w[1].level, w[1].cash)));
+    assert!(table
+      .windows(2)
+      .all(|w| (w[0].level, w[0].cash) >= (w[1].level, w[1].cash)));
   }
 
   #[test]
@@ -2201,7 +2436,10 @@ mod tests {
     let len = SCREEN_WIDTH * SCREEN_HEIGHT * 4;
     let pixels = unsafe { std::slice::from_raw_parts(mb_get_framebuffer(), len) };
 
-    assert!(pixels.iter().any(|&b| b != 0), "title screen render left the framebuffer all zero");
+    assert!(
+      pixels.iter().any(|&b| b != 0),
+      "title screen render left the framebuffer all zero"
+    );
     for (i, &alpha) in pixels.iter().enumerate().skip(3).step_by(4) {
       assert!(
         alpha == 0 || alpha == 255,
@@ -2230,14 +2468,24 @@ mod tests {
       for _ in 0..7 {
         mb_handle_key(KEY_DOWN); // walk to the LEAVE slot
       }
-      assert_eq!(mb_handle_key(KEY_BOMB), AppState::Battle as u32, "{:?}: leaving the shop", sel);
+      assert_eq!(
+        mb_handle_key(KEY_BOMB),
+        AppState::Battle as u32,
+        "{:?}: leaving the shop",
+        sel
+      );
       for _ in 0..600 {
         mb_step(0, 0, 0, 0);
         if mb_get_state() != AppState::Battle as u32 {
           break;
         }
       }
-      assert_ne!(mb_get_state(), AppState::MainMenu as u32, "{:?}: fell back to the menu unexpectedly", sel);
+      assert_ne!(
+        mb_get_state(),
+        AppState::MainMenu as u32,
+        "{:?}: fell back to the menu unexpectedly",
+        sel
+      );
     }
   }
 
@@ -2327,7 +2575,10 @@ mod tests {
       std::ptr::copy_nonoverlapping(name.as_ptr(), name_ptr, name.len());
       std::ptr::copy_nonoverlapping(data.as_ptr(), data_ptr, data.len());
     }
-    assert_eq!(mb_asset_register(name_ptr, name.len() as u32, data_ptr, data.len() as u32), 1);
+    assert_eq!(
+      mb_asset_register(name_ptr, name.len() as u32, data_ptr, data.len() as u32),
+      1
+    );
     assert_eq!(asset("ROUNDTRIP.BIN"), Some(data.to_vec()));
     // Registering the same name again replaces the content instead of keeping two entries.
     register_asset("ROUNDTRIP.BIN", vec![9]);

@@ -78,12 +78,20 @@ pub fn prepare(game_dir: &Path) -> PathBuf {
     return game_dir.to_path_buf();
   };
   if let Err(err) = std::fs::create_dir_all(&dir) {
-    eprintln!("Warning: cannot create '{}' ({}); saving next to the game files instead.", dir.display(), err);
+    eprintln!(
+      "Warning: cannot create '{}' ({}); saving next to the game files instead.",
+      dir.display(),
+      err
+    );
     return game_dir.to_path_buf();
   }
   let copied = migrate(game_dir, &dir);
   if !copied.is_empty() {
-    eprintln!("Copied {} from the game folder to '{}'.", copied.join(", "), dir.display());
+    eprintln!(
+      "Copied {} from the game folder to '{}'.",
+      copied.join(", "),
+      dir.display()
+    );
   }
   dir
 }
@@ -106,7 +114,10 @@ mod tests {
   #[test]
   fn windows_uses_appdata() {
     let dir = user_dir_for(Platform::Windows, env(&[("APPDATA", "C:/Users/me/AppData/Roaming")]));
-    assert_eq!(dir, Some(PathBuf::from("C:/Users/me/AppData/Roaming").join("MineBombers")));
+    assert_eq!(
+      dir,
+      Some(PathBuf::from("C:/Users/me/AppData/Roaming").join("MineBombers"))
+    );
   }
 
   #[test]
@@ -114,7 +125,10 @@ mod tests {
     let xdg = user_dir_for(Platform::Other, env(&[("XDG_CONFIG_HOME", "/x"), ("HOME", "/home/me")]));
     assert_eq!(xdg, Some(PathBuf::from("/x").join("minebombers")));
     let home = user_dir_for(Platform::Other, env(&[("HOME", "/home/me")]));
-    assert_eq!(home, Some(PathBuf::from("/home/me").join(".config").join("minebombers")));
+    assert_eq!(
+      home,
+      Some(PathBuf::from("/home/me").join(".config").join("minebombers"))
+    );
     // an empty XDG_CONFIG_HOME counts as unset, as the XDG specification says
     let empty = user_dir_for(Platform::Other, env(&[("XDG_CONFIG_HOME", ""), ("HOME", "/home/me")]));
     assert_eq!(empty, home);
@@ -123,13 +137,19 @@ mod tests {
   #[test]
   fn macos_uses_application_support() {
     let dir = user_dir_for(Platform::MacOs, env(&[("HOME", "/Users/me")]));
-    assert_eq!(dir, Some(PathBuf::from("/Users/me/Library/Application Support/MineBombers")));
+    assert_eq!(
+      dir,
+      Some(PathBuf::from("/Users/me/Library/Application Support/MineBombers"))
+    );
   }
 
   #[test]
   fn the_override_wins_on_every_platform() {
     for platform in [Platform::Windows, Platform::MacOs, Platform::Other] {
-      let dir = user_dir_for(platform, env(&[(USER_DIR_ENV, "/portable"), ("APPDATA", "/a"), ("HOME", "/h")]));
+      let dir = user_dir_for(
+        platform,
+        env(&[(USER_DIR_ENV, "/portable"), ("APPDATA", "/a"), ("HOME", "/h")]),
+      );
       assert_eq!(dir, Some(PathBuf::from("/portable")));
     }
   }
@@ -158,15 +178,26 @@ mod tests {
     let copied = migrate(&game, &user);
 
     assert_eq!(copied, vec!["HIGHSCOR.DAT"], "only the missing engine file is copied");
-    assert_eq!(std::fs::read(user.join("HIGHSCOR.DAT")).unwrap(), b"scores from the original");
-    assert_eq!(std::fs::read(user.join("PLAYERS.DAT")).unwrap(), b"newer players", "existing files are kept");
+    assert_eq!(
+      std::fs::read(user.join("HIGHSCOR.DAT")).unwrap(),
+      b"scores from the original"
+    );
+    assert_eq!(
+      std::fs::read(user.join("PLAYERS.DAT")).unwrap(),
+      b"newer players",
+      "existing files are kept"
+    );
     assert!(!user.join("TITLEBE.SPY").exists(), "game data is never copied");
     let after: Vec<_> = ["HIGHSCOR.DAT", "PLAYERS.DAT", "TITLEBE.SPY"]
       .iter()
       .map(|n| std::fs::read(game.join(n)).unwrap())
       .collect();
     assert_eq!(before, after, "the game folder is left exactly as it was");
-    assert_eq!(std::fs::read_dir(&game).unwrap().count(), 3, "and nothing was added to it");
+    assert_eq!(
+      std::fs::read_dir(&game).unwrap().count(),
+      3,
+      "and nothing was added to it"
+    );
 
     // running it again changes nothing
     assert!(migrate(&game, &user).is_empty());

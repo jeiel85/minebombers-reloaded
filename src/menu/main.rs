@@ -149,7 +149,11 @@ impl Application<'_> {
     let texture = &self.main_menu;
     let glyphs = &self.glyphs;
     let mode_str = if ctx.is_fullscreen { "FULL" } else { "WIN" };
-    let aspect_str = if ctx.config.display.keep_aspect_ratio { "4:3" } else { "WIDE" };
+    let aspect_str = if ctx.config.display.keep_aspect_ratio {
+      "4:3"
+    } else {
+      "WIDE"
+    };
     let hint = format!("F1:1X F2:2X F3:3X F4:{} F11:{}", aspect_str, mode_str);
 
     ctx.with_render_context(|canvas| {

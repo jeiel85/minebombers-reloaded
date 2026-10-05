@@ -51,10 +51,9 @@ impl World<'_> {
       MapValue::BlackHoleActive => {
         self.explode_black_hole(cursor, total);
       }
-      MapValue::DrillDroneRight
-      | MapValue::DrillDroneLeft
-      | MapValue::DrillDroneUp
-      | MapValue::DrillDroneDown => self.drill_drone_fly(cursor, total),
+      MapValue::DrillDroneRight | MapValue::DrillDroneLeft | MapValue::DrillDroneUp | MapValue::DrillDroneDown => {
+        self.drill_drone_fly(cursor, total)
+      }
 
       MapValue::Atomic1 | MapValue::Atomic2 | MapValue::Atomic3 => {
         self.maps.level[cursor] = MapValue::Passage;

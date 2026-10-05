@@ -14,7 +14,11 @@ const ERROR_TITLE: &str = "Mine Bombers: error";
 /// SDL's message box is used; on Windows SDL's box sizes itself so badly that it cuts off the last lines.
 #[cfg(windows)]
 fn message_dialog(title: &str, is_error: bool, text: &str) {
-  let level = if is_error { rfd::MessageLevel::Error } else { rfd::MessageLevel::Info };
+  let level = if is_error {
+    rfd::MessageLevel::Error
+  } else {
+    rfd::MessageLevel::Info
+  };
   let _ = rfd::MessageDialog::new()
     .set_level(level)
     .set_title(title)
@@ -26,7 +30,11 @@ fn message_dialog(title: &str, is_error: bool, text: &str) {
 #[cfg(not(windows))]
 fn message_dialog(title: &str, is_error: bool, text: &str) {
   use sdl2::messagebox::{show_simple_message_box, MessageBoxFlag};
-  let flag = if is_error { MessageBoxFlag::ERROR } else { MessageBoxFlag::INFORMATION };
+  let flag = if is_error {
+    MessageBoxFlag::ERROR
+  } else {
+    MessageBoxFlag::INFORMATION
+  };
   let _ = show_simple_message_box(flag, title, text, None);
 }
 
@@ -86,7 +94,9 @@ pub fn parse_args() -> Args {
     .unwrap_or_default();
   let inputs = Inputs {
     explicit,
-    from_env: std::env::var_os(GAME_DIR_ENV).filter(|v| !v.is_empty()).map(PathBuf::from),
+    from_env: std::env::var_os(GAME_DIR_ENV)
+      .filter(|v| !v.is_empty())
+      .map(PathBuf::from),
     nearby: vec![
       cur.join("res").join("minebomb"),
       exe_dir.join("res").join("minebomb"),

@@ -361,7 +361,9 @@ pub fn parse_scancode(name: &str) -> Option<Scancode> {
 }
 
 pub fn scancode_name(code: Option<Scancode>, fallback: &str) -> String {
-  code.map(|c| c.name().to_string()).unwrap_or_else(|| fallback.to_string())
+  code
+    .map(|c| c.name().to_string())
+    .unwrap_or_else(|| fallback.to_string())
 }
 
 #[cfg(test)]

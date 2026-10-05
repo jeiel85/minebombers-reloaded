@@ -121,4 +121,3 @@ mod tests {
     assert!(iter_items.contains(&Equipment::SmallBomb));
   }
 }
-

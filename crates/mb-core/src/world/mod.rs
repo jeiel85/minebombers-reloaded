@@ -249,21 +249,39 @@ impl<'p> World<'p> {
       let cur = candidates[i % candidates.len()];
       let roll = rng.gen_range(0..100);
       let kind = if wave == 1 {
-        if roll < 60 { ActorKind::Slime } else { ActorKind::Furry }
+        if roll < 60 {
+          ActorKind::Slime
+        } else {
+          ActorKind::Furry
+        }
       } else if wave == 2 {
-        if roll < 35 { ActorKind::Slime }
-        else if roll < 70 { ActorKind::Furry }
-        else { ActorKind::Grenadier }
+        if roll < 35 {
+          ActorKind::Slime
+        } else if roll < 70 {
+          ActorKind::Furry
+        } else {
+          ActorKind::Grenadier
+        }
       } else if wave == 3 {
-        if roll < 25 { ActorKind::Slime }
-        else if roll < 55 { ActorKind::Furry }
-        else if roll < 80 { ActorKind::Grenadier }
-        else { ActorKind::Alien }
+        if roll < 25 {
+          ActorKind::Slime
+        } else if roll < 55 {
+          ActorKind::Furry
+        } else if roll < 80 {
+          ActorKind::Grenadier
+        } else {
+          ActorKind::Alien
+        }
       } else {
-        if roll < 15 { ActorKind::Slime }
-        else if roll < 40 { ActorKind::Furry }
-        else if roll < 70 { ActorKind::Grenadier }
-        else { ActorKind::Alien }
+        if roll < 15 {
+          ActorKind::Slime
+        } else if roll < 40 {
+          ActorKind::Furry
+        } else if roll < 70 {
+          ActorKind::Grenadier
+        } else {
+          ActorKind::Alien
+        }
       };
 
       let base_hp = kind.initial_health() as f32;
@@ -435,10 +453,7 @@ impl<'p> World<'p> {
           self.end_round_counter += 3;
         } else {
           // Check if wave is cleared
-          let active_monsters = self.actors[self.players.len()..]
-            .iter()
-            .filter(|m| !m.is_dead)
-            .count();
+          let active_monsters = self.actors[self.players.len()..].iter().filter(|m| !m.is_dead).count();
           if self.wave_killed >= self.wave_quota && active_monsters == 0 {
             // Wave cleared!
             self.end_round_counter += 105;
@@ -502,10 +517,7 @@ impl<'p> World<'p> {
 
     // In Survival Mode: Check reinforcement spawns
     if self.survival_mode && self.alive_players() > 0 && self.round_counter % 30 == 0 {
-      let active_monsters = self.actors[self.players.len()..]
-        .iter()
-        .filter(|m| !m.is_dead)
-        .count() as u16;
+      let active_monsters = self.actors[self.players.len()..].iter().filter(|m| !m.is_dead).count() as u16;
       let spawned_so_far = self.wave_killed + active_monsters;
       if spawned_so_far < self.wave_quota {
         if self.wave_spawn_timer == 0 || active_monsters <= 2 {
@@ -1810,9 +1822,18 @@ mod tests {
 
   #[test]
   fn test_item_placement_helpers() {
-    assert_eq!(item_placement_level(Equipment::FreezeBomb, Direction::Right, 0), MapValue::FreezeBomb);
-    assert_eq!(item_placement_level(Equipment::BlackHole, Direction::Right, 0), MapValue::BlackHoleBomb);
-    assert_eq!(item_placement_level(Equipment::DrillDrone, Direction::Up, 0), MapValue::DrillDroneUp);
+    assert_eq!(
+      item_placement_level(Equipment::FreezeBomb, Direction::Right, 0),
+      MapValue::FreezeBomb
+    );
+    assert_eq!(
+      item_placement_level(Equipment::BlackHole, Direction::Right, 0),
+      MapValue::BlackHoleBomb
+    );
+    assert_eq!(
+      item_placement_level(Equipment::DrillDrone, Direction::Up, 0),
+      MapValue::DrillDroneUp
+    );
 
     assert_eq!(item_placement_timer(Equipment::BlackHole), 80);
     assert_eq!(item_placement_timer(Equipment::FreezeBomb), 90);
@@ -1881,7 +1902,10 @@ mod tests {
 
     // Gold should be dropped around the player position
     let dropped_gold: u32 = Cursor::all().map(|c| world.maps.level[c].gold_value()).sum();
-    assert!(dropped_gold >= 100, "Loot drop should place gold items around death position");
+    assert!(
+      dropped_gold >= 100,
+      "Loot drop should place gold items around death position"
+    );
   }
 
   #[test]
@@ -1895,7 +1919,10 @@ mod tests {
     let world_gr = World::create(level, &mut players2, false, 50, false).with_gold_rush_mode(true);
     let gr_drill = world_gr.actors[0].drilling;
 
-    assert!(gr_drill > normal_drill, "Gold Rush mode should grant bonus drilling power");
+    assert!(
+      gr_drill > normal_drill,
+      "Gold Rush mode should grant bonus drilling power"
+    );
   }
 
   #[test]
@@ -1911,14 +1938,20 @@ mod tests {
     let world_w3 = World::create(level, &mut players3, false, 50, false).with_survival_mode(true, 3);
     assert_eq!(world_w3.current_wave, 3);
     assert_eq!(world_w3.wave_quota, 20); // 8 + 3*4
-    // Monster kinds are random, so comparing two independently chosen monsters is flaky (a wave 3
-    // slime has less health than a wave 1 furry). Check every monster against its own kind instead.
+                                         // Monster kinds are random, so comparing two independently chosen monsters is flaky (a wave 3
+                                         // slime has less health than a wave 1 furry). Check every monster against its own kind instead.
     for (world, wave) in [(&world_w1, 1u16), (&world_w3, 3u16)] {
       let multiplier = 1.0 + 0.15 * (wave - 1) as f32;
       assert!(world.actors.len() > 2);
       for monster in &world.actors[2..] {
         let expected = ((monster.kind.initial_health() as f32) * multiplier).max(5.0) as u16;
-        assert_eq!(monster.max_health, expected, "wave {}, base health {}", wave, monster.kind.initial_health());
+        assert_eq!(
+          monster.max_health,
+          expected,
+          "wave {}, base health {}",
+          wave,
+          monster.kind.initial_health()
+        );
       }
     }
   }
@@ -1938,7 +1971,10 @@ mod tests {
     // In survival mode, 1 alive player should NOT end round!
     world.round_counter = 5; // Triggers % 5 == 0 check
     world.tick();
-    assert!(world.end_round_counter < 100, "Round must not end prematurely while at least 1 player is alive");
+    assert!(
+      world.end_round_counter < 100,
+      "Round must not end prematurely while at least 1 player is alive"
+    );
 
     // Clear all monsters and meet wave quota
     for monster in world.actors[2..].iter_mut() {
@@ -1949,11 +1985,17 @@ mod tests {
     // Next tick should trigger wave cleared victory!
     world.round_counter = 10;
     world.tick();
-    assert!(world.end_round_counter >= 105, "Meeting quota with monsters cleared must trigger victory");
+    assert!(
+      world.end_round_counter >= 105,
+      "Meeting quota with monsters cleared must trigger victory"
+    );
 
     // Call end_of_round: dead player 1 must be revived and bonus awarded!
     world.end_of_round();
-    assert!(!world.actors[1].is_dead, "Fallen teammates should be revived on wave victory");
+    assert!(
+      !world.actors[1].is_dead,
+      "Fallen teammates should be revived on wave victory"
+    );
     assert_eq!(world.actors[1].health, world.actors[1].max_health);
     assert!(world.players[0].cash >= 400, "Wave bonus must be awarded to players");
   }
@@ -1971,12 +2013,14 @@ mod tests {
     // Kill monster via apply_damage_in_cell
     world.apply_damage_in_cell(cur, 1000);
     assert!(world.actors[monster_idx].is_dead);
-    assert_eq!(world.wave_killed, initial_killed + 1, "Monster death should increment wave_killed");
+    assert_eq!(
+      world.wave_killed,
+      initial_killed + 1,
+      "Monster death should increment wave_killed"
+    );
 
     // Bounty loot dropped
     let dropped_gold: u32 = Cursor::all().map(|c| world.maps.level[c].gold_value()).sum();
     assert!(dropped_gold > 0, "Bounty loot should be dropped on monster death");
   }
 }
-
-

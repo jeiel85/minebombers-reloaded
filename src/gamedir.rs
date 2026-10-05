@@ -168,7 +168,11 @@ mod tests {
   impl Ui for FakeUi {
     fn pick_folder(&self, reason: &str) -> Option<PathBuf> {
       self.reasons.borrow_mut().push(reason.to_string());
-      self.picks.borrow_mut().pop_front().expect("asked more often than the test expected")
+      self
+        .picks
+        .borrow_mut()
+        .pop_front()
+        .expect("asked more often than the test expected")
     }
     fn show_error(&self, message: &str) {
       self.errors.borrow_mut().push(message.to_string());
@@ -191,7 +195,10 @@ mod tests {
   #[test]
   fn a_valid_command_line_folder_is_used_without_asking() {
     let (dir, ui) = (game("cli"), FakeUi::new(vec![]));
-    let inputs = Inputs { explicit: Some(dir.clone()), ..Default::default() };
+    let inputs = Inputs {
+      explicit: Some(dir.clone()),
+      ..Default::default()
+    };
     assert_eq!(locate(&inputs, None, &ui), Located::Found(dir));
     assert_eq!(ui.asked(), 0);
   }
@@ -199,17 +206,29 @@ mod tests {
   #[test]
   fn a_wrong_command_line_folder_is_an_error_not_a_fallback() {
     let (wrong, other, ui) = (temp("wrong"), game("other"), FakeUi::new(vec![]));
-    let inputs = Inputs { explicit: Some(wrong), nearby: vec![other], ..Default::default() };
-    assert!(matches!(locate(&inputs, None, &ui), Located::Invalid(m) if m.contains("command line") && m.contains(MARKER)));
+    let inputs = Inputs {
+      explicit: Some(wrong),
+      nearby: vec![other],
+      ..Default::default()
+    };
+    assert!(
+      matches!(locate(&inputs, None, &ui), Located::Invalid(m) if m.contains("command line") && m.contains(MARKER))
+    );
     assert_eq!(ui.asked(), 0);
   }
 
   #[test]
   fn the_environment_variable_is_used_when_there_is_no_command_line_folder() {
     let (dir, ui) = (game("env"), FakeUi::new(vec![]));
-    let inputs = Inputs { from_env: Some(dir.clone()), ..Default::default() };
+    let inputs = Inputs {
+      from_env: Some(dir.clone()),
+      ..Default::default()
+    };
     assert_eq!(locate(&inputs, None, &ui), Located::Found(dir));
-    let bad = Inputs { from_env: Some(temp("envbad")), ..Default::default() };
+    let bad = Inputs {
+      from_env: Some(temp("envbad")),
+      ..Default::default()
+    };
     assert!(matches!(locate(&bad, None, &ui), Located::Invalid(m) if m.contains(GAME_DIR_ENV)));
   }
 
@@ -226,7 +245,10 @@ mod tests {
     let (user, gone, fresh) = (temp("user2"), temp("gone"), game("fresh"));
     remember(&user, &gone).unwrap();
     let ui = FakeUi::new(vec![Some(fresh.clone())]);
-    assert_eq!(locate(&Inputs::default(), Some(&user), &ui), Located::Found(fresh.clone()));
+    assert_eq!(
+      locate(&Inputs::default(), Some(&user), &ui),
+      Located::Found(fresh.clone())
+    );
     assert!(ui.reasons.borrow()[0].contains("no longer contains"));
     assert_eq!(remembered(&user), Some(fresh), "the new choice replaces the old one");
   }
@@ -234,7 +256,10 @@ mod tests {
   #[test]
   fn a_nearby_folder_is_used_before_asking() {
     let (near, ui) = (game("near"), FakeUi::new(vec![]));
-    let inputs = Inputs { nearby: vec![temp("empty"), near.clone()], ..Default::default() };
+    let inputs = Inputs {
+      nearby: vec![temp("empty"), near.clone()],
+      ..Default::default()
+    };
     assert_eq!(locate(&inputs, None, &ui), Located::Found(near));
     assert_eq!(ui.asked(), 0);
   }
@@ -243,8 +268,14 @@ mod tests {
   fn with_nothing_known_it_asks_and_remembers_the_choice() {
     let (user, dir) = (temp("user3"), game("picked"));
     let ui = FakeUi::new(vec![Some(dir.clone())]);
-    assert_eq!(locate(&Inputs::default(), Some(&user), &ui), Located::Found(dir.clone()));
-    assert!(ui.reasons.borrow()[0].contains("archive.org"), "the first question says where to get the game");
+    assert_eq!(
+      locate(&Inputs::default(), Some(&user), &ui),
+      Located::Found(dir.clone())
+    );
+    assert!(
+      ui.reasons.borrow()[0].contains("archive.org"),
+      "the first question says where to get the game"
+    );
     assert_eq!(remembered(&user), Some(dir.clone()));
     // the next run needs no question
     let quiet = FakeUi::new(vec![]);
@@ -273,7 +304,12 @@ mod tests {
   fn choosing_again_ignores_everything_that_is_known() {
     let (user, known, chosen) = (temp("user6"), game("known"), game("chosen"));
     remember(&user, &known).unwrap();
-    let inputs = Inputs { explicit: Some(known.clone()), from_env: Some(known.clone()), nearby: vec![known], force_choose: true };
+    let inputs = Inputs {
+      explicit: Some(known.clone()),
+      from_env: Some(known.clone()),
+      nearby: vec![known],
+      force_choose: true,
+    };
     let ui = FakeUi::new(vec![Some(chosen.clone())]);
     assert_eq!(locate(&inputs, Some(&user), &ui), Located::Found(chosen.clone()));
     assert_eq!(remembered(&user), Some(chosen));
