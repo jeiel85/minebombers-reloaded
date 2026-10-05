@@ -77,6 +77,19 @@ fn shop_command(scan: Scancode, own: &PlayerKeys, other: Option<&PlayerKeys>, le
   None
 }
 
+/// Input: an SDL key name such as "Keypad 5" or "Right Shift".
+/// Output: the name in at most 7 characters for the page banner (which has room for 18), shortened so
+/// the part that tells keys apart survives: "KP 5", "R SHIFT".
+fn banner_key_name(name: &str) -> String {
+  const MAX_CHARS: usize = 7;
+  let name = name
+    .to_uppercase()
+    .replace("KEYPAD ", "KP ")
+    .replace("LEFT ", "L ")
+    .replace("RIGHT ", "R ");
+  name.chars().take(MAX_CHARS).collect()
+}
+
 struct PlayerState<'a> {
   entity: &'a mut PlayerComponent,
   cursor: ShopCursor,
@@ -355,15 +368,13 @@ impl Application<'_> {
     offset_x: i32,
     state: &PlayerState,
   ) -> Result<(), anyhow::Error> {
-    // The banner has room for 18 characters.
-    const KEY_NAME_CHARS: usize = 7;
     let palette = &self.shop.palette;
     canvas.set_draw_color(Color::BLACK);
     canvas
       .fill_rect(Rect::new(80 + offset_x, 442, 160, 14))
       .map_err(SdlError)?;
-    let key_name: String = match state.entity.keys.scancode(Key::Stop) {
-      Some(scancode) => scancode.name().to_uppercase().chars().take(KEY_NAME_CHARS).collect(),
+    let key_name = match state.entity.keys.scancode(Key::Stop) {
+      Some(scancode) => banner_key_name(&scancode.name()),
       None => "TAB".to_string(),
     };
     let banner_text = format!("PAGE {}/2 [{}]", state.cursor.page + 1, key_name);
@@ -459,6 +470,15 @@ mod tests {
     // Tab is player 2's Sell key, so it must not turn player 1's page.
     assert_eq!(command(Scancode::Tab), None);
     assert_eq!(command(Scancode::E), None);
+  }
+
+  #[test]
+  fn the_banner_keeps_the_part_of_a_key_name_that_tells_keys_apart() {
+    assert_eq!(banner_key_name(&Scancode::Kp5.name()), "KP 5");
+    assert_eq!(banner_key_name(&Scancode::RShift.name()), "R SHIFT");
+    assert_eq!(banner_key_name(&Scancode::Space.name()), "SPACE");
+    assert_eq!(banner_key_name(&Scancode::Q.name()), "Q");
+    assert_eq!(banner_key_name("Right"), "RIGHT");
   }
 
   #[test]
