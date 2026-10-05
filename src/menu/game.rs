@@ -172,7 +172,14 @@ impl Application<'_> {
     round: u16,
     err: &CannotLoadSinglePlayer,
   ) -> Result<(), anyhow::Error> {
-    eprintln!("Error: {} ({})", err, err.reason());
+    // The log gets the whole chain, with the operating system's own words (the screen shows `reason`).
+    let mut message = err.to_string();
+    let mut cause = std::error::Error::source(err);
+    while let Some(inner) = cause {
+      message.push_str(&format!(": {}", inner));
+      cause = inner.source();
+    }
+    eprintln!("Error: {}", message);
     // 8 pixels per character on a 640 pixel screen
     const MAX_CHARS: usize = 76;
     let reason: String = err.reason().chars().take(MAX_CHARS).collect();
