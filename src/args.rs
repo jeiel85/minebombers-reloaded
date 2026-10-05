@@ -8,25 +8,35 @@ pub struct Args {
 }
 
 const DIALOG_TITLE: &str = "Mine Bombers: game files needed";
+const ERROR_TITLE: &str = "Mine Bombers: error";
 
 /// A message dialog. Windows gets the standard message box, which lays long text out correctly. Elsewhere
 /// SDL's message box is used; on Windows SDL's box sizes itself so badly that it cuts off the last lines.
 #[cfg(windows)]
-fn message_dialog(is_error: bool, text: &str) {
+fn message_dialog(title: &str, is_error: bool, text: &str) {
   let level = if is_error { rfd::MessageLevel::Error } else { rfd::MessageLevel::Info };
   let _ = rfd::MessageDialog::new()
     .set_level(level)
-    .set_title(DIALOG_TITLE)
+    .set_title(title)
     .set_description(text)
     .set_buttons(rfd::MessageButtons::Ok)
     .show();
 }
 
 #[cfg(not(windows))]
-fn message_dialog(is_error: bool, text: &str) {
+fn message_dialog(title: &str, is_error: bool, text: &str) {
   use sdl2::messagebox::{show_simple_message_box, MessageBoxFlag};
   let flag = if is_error { MessageBoxFlag::ERROR } else { MessageBoxFlag::INFORMATION };
-  let _ = show_simple_message_box(flag, DIALOG_TITLE, text, None);
+  let _ = show_simple_message_box(flag, title, text, None);
+}
+
+/// Input: the error that ended the program.
+/// Output: none; the error is shown in a dialog (`main` still returns it, which prints it to stderr).
+/// Why: the program is a Windows GUI executable, so an error returned from `main` was printed to a
+/// console nobody sees and the window just vanished.
+pub fn show_fatal_error(err: &anyhow::Error) {
+  let text = format!("Mine Bombers stopped because of an error:\n\n{:#}", err);
+  message_dialog(ERROR_TITLE, true, &text);
 }
 
 /// Native dialogs. The program is a Windows GUI executable, so nobody would see anything printed to
@@ -35,7 +45,7 @@ struct NativeUi;
 
 impl Ui for NativeUi {
   fn pick_folder(&self, reason: &str) -> Option<PathBuf> {
-    message_dialog(false, reason);
+    message_dialog(DIALOG_TITLE, false, reason);
     rfd::FileDialog::new()
       .set_title("Select your Mine Bombers 3.11 folder")
       .pick_folder()
@@ -43,7 +53,7 @@ impl Ui for NativeUi {
 
   fn show_error(&self, message: &str) {
     eprintln!("{}", message);
-    message_dialog(true, message);
+    message_dialog(DIALOG_TITLE, true, message);
   }
 }
 

@@ -9,7 +9,9 @@ use crate::options::WinCondition;
 use crate::roster::PlayersRoster;
 use crate::settings::GameSettings;
 use crate::world::actor::{ActorComponent, ActorKind};
-use crate::world::map::{LevelInfo, LevelMap, MapValue, DIRT_BORDER_BITMAP, MAP_COLS, MAP_ROWS};
+use crate::world::map::{
+  CannotLoadSinglePlayer, LevelInfo, LevelMap, MapValue, DIRT_BORDER_BITMAP, MAP_COLS, MAP_ROWS,
+};
 use crate::world::player::{GlyphCheat, PlayerComponent};
 use crate::world::position::{Cursor, Direction};
 use crate::world::{Maps, SplatterKind, Update, World};
@@ -83,7 +85,14 @@ impl Application<'_> {
       ctx.animate(Animation::FadeUp, 7)?;
       let slot;
       let level = if campaign_mode {
-        slot = LevelMap::prepare_campaign_level(ctx.game_dir(), round)?;
+        slot = match LevelMap::prepare_campaign_level(ctx.game_dir(), round) {
+          Ok(level) => level,
+          Err(err) => {
+            ctx.animate(Animation::FadeDown, 7)?;
+            self.campaign_level_error(ctx, round, &err)?;
+            return Ok(());
+          }
+        };
         &slot
       } else {
         settings
@@ -119,6 +128,44 @@ impl Application<'_> {
       self.multi_player_end(ctx, &players, settings.options.win)?;
       update_player_stats(ctx.user_dir(), &mut players, &players_to_roster, settings.options.win)?;
     }
+    Ok(())
+  }
+
+  /// Input: the campaign round whose map could not be loaded, and why.
+  /// Output: none; the caller goes back to the main menu after a key press.
+  /// Why: a missing, damaged or exit-less `LEVELn.MNL` used to end the whole program, and the Windows
+  /// build has no console, so the window just vanished. The game itself is still fine, so say what
+  /// went wrong and let the player go on with other modes.
+  fn campaign_level_error(
+    &self,
+    ctx: &mut ApplicationContext,
+    round: u16,
+    err: &CannotLoadSinglePlayer,
+  ) -> Result<(), anyhow::Error> {
+    eprintln!("Error: {} ({})", err, err.reason());
+    // 8 pixels per character on a 640 pixel screen
+    const MAX_CHARS: usize = 76;
+    let reason: String = err.reason().chars().take(MAX_CHARS).collect();
+    let title = format!("Campaign map LEVEL{}.MNL cannot be loaded:", round);
+    ctx.with_render_context(|canvas| {
+      canvas.set_draw_color(Color::BLACK);
+      canvas.clear();
+      let color = self.main_menu.palette[1];
+      let lines = [
+        title.as_str(),
+        reason.as_str(),
+        "",
+        "Press any key to return to the main menu",
+      ];
+      for (row, line) in lines.iter().enumerate() {
+        let left = (crate::SCREEN_WIDTH as i32 - 8 * line.chars().count() as i32) / 2;
+        self.font.render(canvas, left, 200 + 16 * row as i32, color, line)?;
+      }
+      Ok(())
+    })?;
+    ctx.animate(Animation::FadeUp, 7)?;
+    ctx.wait_key_pressed();
+    ctx.animate(Animation::FadeDown, 7)?;
     Ok(())
   }
 

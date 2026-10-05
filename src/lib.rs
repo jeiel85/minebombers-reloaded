@@ -40,12 +40,15 @@ pub struct Avatars<'t> {
 pub fn main() -> Result<(), anyhow::Error> {
   let args = args::parse_args();
   let campaign_mode = args.campaign_mode;
-  ApplicationContext::with_context(args.path, |mut ctx| {
+  let result = ApplicationContext::with_context(args.path, |mut ctx| {
     let app = Application::init(&ctx)?;
     app.main_menu(&mut ctx, campaign_mode)?;
     Ok(())
-  })?;
-  Ok(())
+  });
+  if let Err(err) = &result {
+    args::show_fatal_error(err);
+  }
+  result
 }
 
 struct Application<'t> {
