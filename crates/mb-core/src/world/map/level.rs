@@ -24,8 +24,18 @@ pub struct CannotLoadSinglePlayer {
 impl CannotLoadSinglePlayer {
   /// Why the map could not be used (for example a missing file, a bad format or no exit), without the
   /// path, which is usually too long to show on the 640 pixel game screen.
+  /// A file error is described in fixed English words: the operating system's own message is in the
+  /// user's language, and the game font only has ASCII, so on a Korean Windows "the file is missing"
+  /// came out as blanks. The full message stays in `Display` for the log.
   pub fn reason(&self) -> String {
-    format!("{:#}", self.source)
+    match self.source.downcast_ref::<std::io::Error>() {
+      Some(err) => match err.kind() {
+        std::io::ErrorKind::NotFound => "the file is missing".to_string(),
+        std::io::ErrorKind::PermissionDenied => "the file cannot be opened (access denied)".to_string(),
+        kind => format!("the file cannot be read ({:?})", kind),
+      },
+      None => format!("{:#}", self.source),
+    }
   }
 }
 
@@ -1289,9 +1299,9 @@ mod tests {
       Err(err) => err,
       Ok(_) => panic!("a missing map must not load"),
     };
-    // The game screen shows `reason`; the full path stays in the error message for the log.
-    assert!(!err.reason().is_empty());
-    assert!(!err.reason().contains("LEVEL1.MNL"));
+    // The game screen shows `reason`, in words its ASCII font can draw whatever the system language;
+    // the full path stays in the error message for the log.
+    assert_eq!(err.reason(), "the file is missing");
     assert!(err.to_string().contains("LEVEL1.MNL"));
   }
 
