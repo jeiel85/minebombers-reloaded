@@ -28,6 +28,36 @@ use std::time::{Duration, Instant};
 
 const CAMPAIGN_ROUNDS: u16 = 15;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpeedHotkey {
+  Slower,
+  Faster,
+  Reset,
+}
+
+/// Input: a key pressed during a round, and whether a human player has it bound.
+/// Output: the speed change it asks for, if any.
+/// Why the check: player 4's default Bomb and Remote keys are Keypad 0 and Keypad +, so without it every
+/// remote bomb sped the game up (#47). `P` (pause) has the same guard.
+/// Whether a human player (not a bot) has `scancode` bound to one of their keys.
+fn bound_to_a_human(players: &[PlayerComponent], scancode: Scancode) -> bool {
+  players
+    .iter()
+    .any(|player| !player.is_bot && Key::all_keys().any(|key| player.keys.scancode(key) == Some(scancode)))
+}
+
+fn speed_hotkey(scancode: Scancode, bound_to_player: bool) -> Option<SpeedHotkey> {
+  if bound_to_player {
+    return None;
+  }
+  match scancode {
+    Scancode::LeftBracket | Scancode::Minus | Scancode::KpMinus => Some(SpeedHotkey::Slower),
+    Scancode::RightBracket | Scancode::Equals | Scancode::KpPlus => Some(SpeedHotkey::Faster),
+    Scancode::Backspace | Scancode::Num0 | Scancode::Kp0 => Some(SpeedHotkey::Reset),
+    _ => None,
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoundEnd {
   /// Round end (all gold collected in multiplayer, all opponents are dead, etc)
@@ -409,25 +439,17 @@ impl Application<'_> {
               keymod,
               ..
             } => {
-              let bound_to_player = world
-                .players
-                .iter()
-                .any(|player| !player.is_bot && Key::all_keys().any(|key| player.keys.scancode(key) == Some(scancode)));
+              let bound_to_player = bound_to_a_human(&world.players, scancode);
+              if let Some(change) = speed_hotkey(scancode, bound_to_player) {
+                speed_multiplier = match change {
+                  SpeedHotkey::Slower => (speed_multiplier - 0.25).max(0.25),
+                  SpeedHotkey::Faster => (speed_multiplier + 0.25).min(3.0),
+                  SpeedHotkey::Reset => 1.0,
+                };
+                osd = Some(format!("SPEED {:.2}x", speed_multiplier));
+              }
               match scancode {
                 Scancode::Escape | Scancode::F10 => break 'round RoundEnd::AbortToMenu,
-                // Speed control hotkeys
-                Scancode::LeftBracket | Scancode::Minus | Scancode::KpMinus => {
-                  speed_multiplier = (speed_multiplier - 0.25).max(0.25);
-                  osd = Some(format!("SPEED {:.2}x", speed_multiplier));
-                }
-                Scancode::RightBracket | Scancode::Equals | Scancode::KpPlus => {
-                  speed_multiplier = (speed_multiplier + 0.25).min(3.0);
-                  osd = Some(format!("SPEED {:.2}x", speed_multiplier));
-                }
-                Scancode::Backspace | Scancode::Num0 | Scancode::Kp0 => {
-                  speed_multiplier = 1.0;
-                  osd = Some(format!("SPEED {:.2}x", speed_multiplier));
-                }
                 // Display mode hotkeys
                 Scancode::F11 => {
                   display_toggle_fullscreen = true;
@@ -1125,4 +1147,68 @@ fn update_player_stats(
   }
   roster.save(game_dir)?;
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::config::{
+    default_player1_keys, default_player2_keys, default_player3_keys, default_player4_keys, PlayerKeysConfig,
+  };
+
+  fn human(keys: PlayerKeysConfig) -> PlayerComponent {
+    let mut player = PlayerComponent::default();
+    player.keys = keys.to_key_bindings().to_player_keys();
+    player
+  }
+
+  /// In a round every key goes to every human player, so a key shared by two default bindings would act
+  /// for both.
+  #[test]
+  fn the_default_keys_of_the_four_players_never_overlap() {
+    let all = [
+      default_player1_keys(),
+      default_player2_keys(),
+      default_player3_keys(),
+      default_player4_keys(),
+    ];
+    let mut seen = std::collections::HashMap::new();
+    for (player, config) in all.into_iter().enumerate() {
+      let keys = config.to_key_bindings();
+      for key in Key::all_keys() {
+        let scancode = keys[key].expect("every default key is bound");
+        if let Some(other) = seen.insert(scancode as i32, (player, key)) {
+          panic!(
+            "{:?} is bound to {:?} and to player {} {}",
+            scancode,
+            other,
+            player + 1,
+            key
+          );
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn player_4s_default_keys_do_not_change_the_speed() {
+    let players = [human(default_player1_keys()), human(default_player4_keys())];
+    for scancode in [Scancode::Kp0, Scancode::KpPlus] {
+      assert!(bound_to_a_human(&players, scancode));
+      assert_eq!(speed_hotkey(scancode, bound_to_a_human(&players, scancode)), None);
+    }
+  }
+
+  #[test]
+  fn speed_keys_work_when_no_human_uses_them() {
+    let mut bot = human(default_player4_keys());
+    bot.is_bot = true;
+    let players = [human(default_player1_keys()), bot];
+    let speed = |scancode| speed_hotkey(scancode, bound_to_a_human(&players, scancode));
+    assert_eq!(speed(Scancode::KpPlus), Some(SpeedHotkey::Faster));
+    assert_eq!(speed(Scancode::Kp0), Some(SpeedHotkey::Reset));
+    assert_eq!(speed(Scancode::LeftBracket), Some(SpeedHotkey::Slower));
+    // Player 1's Bomb key is not a speed key.
+    assert_eq!(speed(Scancode::Return), None);
+  }
 }
