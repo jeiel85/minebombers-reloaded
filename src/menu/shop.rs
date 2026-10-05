@@ -9,6 +9,7 @@ use crate::world::map::LevelMap;
 use crate::world::player::PlayerComponent;
 use crate::world::position::Direction;
 use crate::Application;
+use mb_core::keys::KeyBindings as PlayerKeys;
 use mb_core::shop::{auto_buy_for_bot, buy, sell, Prices, ShopCursor};
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::Color;
@@ -21,6 +22,72 @@ use std::convert::TryFrom;
 pub enum ShopResult {
   ExitGame,
   Continue,
+}
+
+/// What one key press does for one player in the shop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShopCommand {
+  /// Buy the item under the cursor, or leave the shop on LEAVE.
+  Buy,
+  Sell,
+  Move(Direction),
+  TogglePage,
+}
+
+/// Input: the key pressed, the keys of the player it is decided for, the keys of the other player in the
+/// same shop (if there is one), and whether this player is on the left.
+/// Output: what the key does for this player, or `None`.
+/// Why this order: the player's own keys come first, and the extra page keys (Tab, Q, E on the left;
+/// Tab, PageDown, PageUp on the right) count only when the other player has not bound them. The
+/// default keys of player 2 are Q, E and Tab for Stop, Buy and Sell, so checking the page keys first
+/// left player 2 unable to buy or leave, and turned player 1's page on every sale (#46). The player's
+/// own Stop key, unused in the shop otherwise, always turns the page.
+fn shop_command(scan: Scancode, own: &PlayerKeys, other: Option<&PlayerKeys>, left: bool) -> Option<ShopCommand> {
+  let own_key = |key| own.scancode(key) == Some(scan);
+  if own_key(Key::Bomb) {
+    return Some(ShopCommand::Buy);
+  }
+  if own_key(Key::Choose) {
+    return Some(ShopCommand::Sell);
+  }
+  for (key, direction) in [
+    (Key::Right, Direction::Right),
+    (Key::Left, Direction::Left),
+    (Key::Down, Direction::Down),
+    (Key::Up, Direction::Up),
+  ] {
+    if own_key(key) {
+      return Some(ShopCommand::Move(direction));
+    }
+  }
+  if own_key(Key::Stop) {
+    return Some(ShopCommand::TogglePage);
+  }
+  let page_keys = if left {
+    [Scancode::Tab, Scancode::Q, Scancode::E]
+  } else {
+    [Scancode::Tab, Scancode::PageDown, Scancode::PageUp]
+  };
+  let taken_by_other = other.map_or(false, |other| {
+    Key::all_keys().any(|key| other.scancode(key) == Some(scan))
+  });
+  if page_keys.contains(&scan) && !taken_by_other {
+    return Some(ShopCommand::TogglePage);
+  }
+  None
+}
+
+/// Input: an SDL key name such as "Keypad 5" or "Right Shift".
+/// Output: the name in at most 7 characters for the page banner (which has room for 18), shortened so
+/// the part that tells keys apart survives: "KP 5", "R SHIFT".
+fn banner_key_name(name: &str) -> String {
+  const MAX_CHARS: usize = 7;
+  let name = name
+    .to_uppercase()
+    .replace("KEYPAD ", "KP ")
+    .replace("LEFT ", "L ")
+    .replace("RIGHT ", "R ");
+  name.chars().take(MAX_CHARS).collect()
 }
 
 struct PlayerState<'a> {
@@ -123,12 +190,16 @@ impl Application<'_> {
         _ => {}
       }
 
+      let right_keys = state.right.entity.keys;
+      let left_keys = state.left.as_ref().map(|left| left.entity.keys);
       if let Some(left) = &mut state.left {
-        self.handle_player_keys(ctx, scan, true, options.selling, shared_cash, left, &state.prices)?;
+        let command = shop_command(scan, &left.entity.keys, Some(&right_keys), true);
+        self.handle_player_command(ctx, command, true, options.selling, shared_cash, left, &state.prices)?;
       }
-      self.handle_player_keys(
+      let command = shop_command(scan, &right_keys, left_keys.as_ref(), false);
+      self.handle_player_command(
         ctx,
-        scan,
+        command,
         false,
         options.selling,
         shared_cash,
@@ -141,10 +212,10 @@ impl Application<'_> {
     Ok(result)
   }
 
-  fn handle_player_keys(
+  fn handle_player_command(
     &self,
     ctx: &mut ApplicationContext,
-    scan: Scancode,
+    command: Option<ShopCommand>,
     left: bool,
     selling: bool,
     shared_cash: &mut Option<u32>,
@@ -159,53 +230,34 @@ impl Application<'_> {
       return Ok(());
     }
 
-    // Toggle shop page (Tab, or Q/E for left player, PageDown/PageUp for right player)
-    let toggle_page = if left {
-      scan == Scancode::Tab || scan == Scancode::Q || scan == Scancode::E
-    } else {
-      scan == Scancode::Tab || scan == Scancode::PageDown || scan == Scancode::PageUp
-    };
-
-    if toggle_page {
-      state.cursor.toggle_page();
-      ctx.with_render_context(|canvas| {
-        let offsets = if left { (0, 0) } else { (420, 320) };
-        self.render_player_stats(canvas, offsets.0, *shared_cash, state)?;
-        self.render_all_items(canvas, offsets.1, state, prices)?;
-        Ok(())
-      })?;
-      ctx.present()?;
-      return Ok(());
-    }
-
-    let keys = &state.entity.keys;
-    let direction = if Some(scan) == keys.scancode(Key::Right) {
-      Some(Direction::Right)
-    } else if Some(scan) == keys.scancode(Key::Left) {
-      Some(Direction::Left)
-    } else if Some(scan) == keys.scancode(Key::Down) {
-      Some(Direction::Down)
-    } else if Some(scan) == keys.scancode(Key::Up) {
-      Some(Direction::Up)
-    } else {
-      None
-    };
-    if Some(scan) == keys.scancode(Key::Bomb) {
-      match state.cursor.selection {
+    match command {
+      None => {
+        // Nothing to re-render, skip re-rendering
+        return Ok(());
+      }
+      Some(ShopCommand::TogglePage) => {
+        state.cursor.toggle_page();
+        ctx.with_render_context(|canvas| {
+          let offsets = if left { (0, 0) } else { (420, 320) };
+          self.render_player_stats(canvas, offsets.0, *shared_cash, state)?;
+          self.render_all_items(canvas, offsets.1, state, prices)?;
+          Ok(())
+        })?;
+        ctx.present()?;
+        return Ok(());
+      }
+      Some(ShopCommand::Buy) => match state.cursor.selection {
         Some(selection) => {
           buy(state.entity, shared_cash.as_mut(), selection, prices);
         }
         None => state.ready = true,
+      },
+      Some(ShopCommand::Sell) => {
+        if let Some(selection) = state.cursor.selection {
+          sell(state.entity, shared_cash.as_mut(), selection, prices, selling);
+        }
       }
-    } else if Some(scan) == keys.scancode(Key::Choose) {
-      if let Some(selection) = state.cursor.selection {
-        sell(state.entity, shared_cash.as_mut(), selection, prices, selling);
-      }
-    } else if let Some(direction) = direction {
-      state.cursor.step(direction);
-    } else {
-      // Nothing to re-render, skip re-rendering
-      return Ok(());
+      Some(ShopCommand::Move(direction)) => state.cursor.step(direction),
     }
 
     let new_slot = state.cursor.slot();
@@ -296,7 +348,7 @@ impl Application<'_> {
       }
     }
     self.render_shop_slot(canvas, offset_x, 27, None, state, prices)?;
-    self.render_page_banner(canvas, offset_x, state.cursor.page)?;
+    self.render_page_banner(canvas, offset_x, state)?;
     Ok(())
   }
 
@@ -309,14 +361,24 @@ impl Application<'_> {
     Ok(())
   }
 
-  fn render_page_banner(&self, canvas: &mut WindowCanvas, offset_x: i32, page: usize) -> Result<(), anyhow::Error> {
+  /// "PAGE 1/2 [key]", naming the player's own Stop key, which always turns the page (`shop_command`).
+  fn render_page_banner(
+    &self,
+    canvas: &mut WindowCanvas,
+    offset_x: i32,
+    state: &PlayerState,
+  ) -> Result<(), anyhow::Error> {
     let palette = &self.shop.palette;
     canvas.set_draw_color(Color::BLACK);
     canvas
       .fill_rect(Rect::new(80 + offset_x, 442, 160, 14))
       .map_err(SdlError)?;
-    let banner_text = if page == 0 { "PAGE 1/2 [TAB]" } else { "PAGE 2/2 [TAB]" };
-    self.font.render(canvas, 96 + offset_x, 444, palette[1], banner_text)?;
+    let key_name = match state.entity.keys.scancode(Key::Stop) {
+      Some(scancode) => banner_key_name(&scancode.name()),
+      None => "TAB".to_string(),
+    };
+    let banner_text = format!("PAGE {}/2 [{}]", state.cursor.page + 1, key_name);
+    self.font.render(canvas, 96 + offset_x, 444, palette[1], &banner_text)?;
     Ok(())
   }
 
@@ -370,5 +432,76 @@ impl Application<'_> {
       .unwrap_or_else(|| Cow::Borrowed("LEAVE"));
     self.font.render(canvas, pos_x, pos_y, palette[5], &text)?;
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::config::{default_player1_keys, default_player2_keys, default_player3_keys, default_player4_keys};
+
+  fn keys(config: crate::config::PlayerKeysConfig) -> PlayerKeys {
+    config.to_key_bindings().to_player_keys()
+  }
+
+  #[test]
+  fn player_2_on_the_left_can_buy_sell_and_turn_the_page_with_the_default_keys() {
+    let (p1, p2) = (keys(default_player1_keys()), keys(default_player2_keys()));
+    let command = |scan| shop_command(scan, &p2, Some(&p1), true);
+    assert_eq!(command(Scancode::E), Some(ShopCommand::Buy));
+    assert_eq!(command(Scancode::Tab), Some(ShopCommand::Sell));
+    assert_eq!(command(Scancode::Q), Some(ShopCommand::TogglePage));
+    assert_eq!(command(Scancode::A), Some(ShopCommand::Move(Direction::Left)));
+    assert_eq!(command(Scancode::S), Some(ShopCommand::Move(Direction::Down)));
+    // Player 1's keys do nothing for player 2.
+    assert_eq!(command(Scancode::Return), None);
+    assert_eq!(command(Scancode::Space), None);
+  }
+
+  #[test]
+  fn player_1_on_the_right_ignores_the_keys_of_player_2() {
+    let (p1, p2) = (keys(default_player1_keys()), keys(default_player2_keys()));
+    let command = |scan| shop_command(scan, &p1, Some(&p2), false);
+    assert_eq!(command(Scancode::Return), Some(ShopCommand::Buy));
+    assert_eq!(command(Scancode::RShift), Some(ShopCommand::Sell));
+    assert_eq!(command(Scancode::Up), Some(ShopCommand::Move(Direction::Up)));
+    assert_eq!(command(Scancode::Space), Some(ShopCommand::TogglePage));
+    assert_eq!(command(Scancode::PageDown), Some(ShopCommand::TogglePage));
+    // Tab is player 2's Sell key, so it must not turn player 1's page.
+    assert_eq!(command(Scancode::Tab), None);
+    assert_eq!(command(Scancode::E), None);
+  }
+
+  #[test]
+  fn the_banner_keeps_the_part_of_a_key_name_that_tells_keys_apart() {
+    assert_eq!(banner_key_name(&Scancode::Kp5.name()), "KP 5");
+    assert_eq!(banner_key_name(&Scancode::RShift.name()), "R SHIFT");
+    assert_eq!(banner_key_name(&Scancode::Space.name()), "SPACE");
+    assert_eq!(banner_key_name(&Scancode::Q.name()), "Q");
+    assert_eq!(banner_key_name("Right"), "RIGHT");
+  }
+
+  #[test]
+  fn a_player_alone_in_the_shop_keeps_tab_for_the_page() {
+    let p1 = keys(default_player1_keys());
+    assert_eq!(
+      shop_command(Scancode::Tab, &p1, None, false),
+      Some(ShopCommand::TogglePage)
+    );
+  }
+
+  #[test]
+  fn players_3_and_4_share_a_shop_without_conflicts() {
+    let (p3, p4) = (keys(default_player3_keys()), keys(default_player4_keys()));
+    assert_eq!(shop_command(Scancode::O, &p3, Some(&p4), false), Some(ShopCommand::Buy));
+    assert_eq!(
+      shop_command(Scancode::Kp0, &p4, Some(&p3), true),
+      Some(ShopCommand::Buy)
+    );
+    assert_eq!(
+      shop_command(Scancode::Tab, &p4, Some(&p3), true),
+      Some(ShopCommand::TogglePage)
+    );
+    assert_eq!(shop_command(Scancode::Kp0, &p3, Some(&p4), false), None);
   }
 }
