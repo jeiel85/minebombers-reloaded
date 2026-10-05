@@ -236,6 +236,10 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
   }
 
   pub fn animate(&mut self, animation: Animation, steps: usize) -> Result<(), anyhow::Error> {
+    // A fade means another screen, and an on-screen message belongs to the screen it was shown on. Every
+    // screen change fades, so clearing it here keeps a message from following onto the next screen
+    // without each screen having to remember to (#34 was one that did not).
+    self.hide_osd();
     // Note that we actually do steps + 1 iteration, as per original behavior
     // Roughly, we do it for half a second for 8 steps. For 60 FPS, which means ~4 frames per step.
     let total_frames = (steps + 1) * 4;

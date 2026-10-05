@@ -758,9 +758,8 @@ impl Application<'_> {
       std::thread::sleep(std::time::Duration::from_millis(frame_delay_ms));
     };
 
-    // A speed or toggle message from the last second of the round must not linger on the next screen
-    ctx.hide_osd();
     sdl2::mixer::Music::halt();
+    // Also clears a speed or toggle message from the last second of the round
     ctx.animate(Animation::FadeDown, 7)?;
 
     world.end_of_round();
