@@ -35,7 +35,7 @@
 - **사실** (2026-09-20 측정, 같은 경로 파일의 의미 있는 줄 일치율): `src/`의 73%, `crates/mb-core`의 75%가 상위 `mb-reloaded`와 같은 줄입니다. `bitmaps.rs`, `roster.rs`는 100%. 새로 쓴 것은 `world/bot.rs`, `config.rs`, `crates/mb-wasm`입니다. 측정 당시 상위 저장소에는 라이선스가 없었습니다.
 - **대안**: (a) 상위 저자가 라이선스를 부여 / (b) 유지관리자가 독립적으로 다시 구현 / (c) 현 상태 유지(권장하지 않음).
 - **근거**: 상위 저자 Ivan Dubrov가 2026-10-01 라이선스 요청 메일([idubrov/mb-reloaded#1](https://github.com/idubrov/mb-reloaded/issues/1)과 같은 요청)에 "MIT + Apache 2.0 PR을 머지했다"고 답했습니다. 상위 커밋 `4a515ca`(PR #2, 머지 `5d02273`, 2026-10-01)가 `LICENSE-MIT`(Copyright (c) 2020 Ivan Dubrov)와 `LICENSE-APACHE`를 추가하고 `Cargo.toml`에 `license = "MIT OR Apache-2.0"`을 적었습니다.
-- **결과**: 이 저장소 전체(상위에서 온 코드와 이 저장소에서 새로 쓴 코드)를 상위와 같은 `MIT OR Apache-2.0`으로 배포합니다. `LICENSE-MIT`에는 상위 저작권 줄을 그대로 두고 이 저장소의 줄(`Copyright (c) 2026 jeiel85`)을 덧붙였고, `LICENSE-APACHE`는 상위 파일과 같습니다. 모든 크레이트의 `Cargo.toml`에 `license`를 적고, 릴리스 zip에 두 파일을 동봉합니다. (b) 재구현은 필요 없어졌습니다.
+- **결과**: 이 저장소 전체(상위에서 온 코드와 이 저장소에서 새로 쓴 코드)를 상위와 같은 `MIT OR Apache-2.0`으로 배포합니다. `LICENSE-MIT`에는 상위 저작권 줄을 그대로 두고 이 저장소의 줄(`Copyright (c) 2026 jeiel85`)을 덧붙였고, `LICENSE-APACHE`는 apache.org의 원문 전체입니다(상위 파일과 조항이 같고, 상위에서 빠진 부록까지 포함). 모든 크레이트의 `Cargo.toml`에 `license`를 적고, 릴리스 zip에 두 파일을 동봉합니다. (b) 재구현은 필요 없어졌습니다.
 - **이유**: 상위와 같은 라이선스를 쓰면 파생 코드와 새 코드의 경계를 나눌 필요가 없고, Rust 생태계의 관례(MIT OR Apache-2.0)와도 맞습니다.
 - **범위 밖**: 원작 게임 파일은 이 라이선스와 무관하며 여전히 사용자가 준비합니다(D1).
 

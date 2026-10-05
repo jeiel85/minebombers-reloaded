@@ -101,7 +101,7 @@ jobs:
           $notes = @"
           Windows 64-bit build of the native engine. Unzip anywhere, run ``MineBombers.exe``, and pick the folder with your own copy of Mine Bombers 3.11 when asked (the zip contains no original game files; see README.txt inside).
 
-          - Pre-release: the code license of this project is not settled yet (see NOTICE.txt).
+          - Licensed under MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE and NOTICE.txt are in the zip). The original game files are not covered and not included.
           - The exe is not code-signed, so Windows SmartScreen may warn on first run ("More info" -> "Run anyway").
           - Verify the download with the ``.sha256`` file.
           - Only Windows has been run and checked. There is no Linux build here.
