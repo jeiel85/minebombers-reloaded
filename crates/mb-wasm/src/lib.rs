@@ -2,13 +2,13 @@ use mb_core::glyphs::{AnimationPhase, Glyph};
 use mb_core::images::{decode_font, decode_spy, Color, DecodedImage};
 use mb_core::keys::Key;
 use mb_core::options::{Options, WinCondition};
-use mb_core::shop::{auto_buy_for_bot, Prices};
+use mb_core::shop::{auto_buy_for_bot, buy, sell, Prices, ShopCursor};
 use mb_core::sound::SoundEffect;
 use mb_core::world::bot::BotDifficulty;
 use mb_core::world::equipment::Equipment;
 use mb_core::world::map::{CaveBiome, LevelMap, MapValue, MAP_COLS};
 use mb_core::world::player::PlayerComponent;
-use mb_core::world::position::Cursor;
+use mb_core::world::position::{Cursor, Direction};
 use mb_core::world::{Update, World};
 use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
@@ -310,9 +310,8 @@ impl GameOption {
 
 #[derive(Clone, Copy)]
 pub struct PlayerShopState {
-  pub selection: Option<Equipment>,
+  pub cursor: ShopCursor,
   pub ready: bool,
-  pub page: usize,
 }
 
 impl Default for PlayerShopState {
@@ -324,26 +323,8 @@ impl Default for PlayerShopState {
 impl PlayerShopState {
   pub fn new() -> Self {
     Self {
-      selection: Some(Equipment::SmallBomb),
+      cursor: ShopCursor::default(),
       ready: false,
-      page: 0,
-    }
-  }
-
-  pub fn current_slot(&self) -> usize {
-    match (self.page, self.selection) {
-      (0, Some(eq)) => (eq as usize).min(26),
-      (0, None) => 27,
-      (1, Some(eq)) => {
-        let idx = eq as usize;
-        if (27..=29).contains(&idx) {
-          idx - 27
-        } else {
-          0
-        }
-      }
-      (1, None) => 27,
-      _ => 27,
     }
   }
 }
@@ -734,7 +715,7 @@ impl WebGame {
         self.draw_text(&p1.stats.name, 35, 16, p[1].r, p[1].g, p[1].b);
         self.draw_text(&power1.to_string(), 35, 30, p[3].r, p[3].g, p[3].b);
         self.draw_text(&p1.cash.to_string(), 35, 44, p[5].r, p[5].g, p[5].b);
-        if let Some(item) = self.shop_p1.selection {
+        if let Some(item) = self.shop_p1.cursor.selection {
           let cnt = p1.inventory[item].to_string();
           self.draw_text(&cnt, 35, 58, p[1].r, p[1].g, p[1].b);
         }
@@ -757,14 +738,14 @@ impl WebGame {
         self.draw_text(&name2, 455, 16, p[1].r, p[1].g, p[1].b);
         self.draw_text(&power2.to_string(), 455, 30, p[3].r, p[3].g, p[3].b);
         self.draw_text(&p2.cash.to_string(), 455, 44, p[5].r, p[5].g, p[5].b);
-        if let Some(item) = self.shop_p2.selection {
+        if let Some(item) = self.shop_p2.cursor.selection {
           let cnt = p2.inventory[item].to_string();
           self.draw_text(&cnt, 455, 58, p[1].r, p[1].g, p[1].b);
         }
 
         // Draw Slots for P1 (left: offset_x = 0)
-        let page1 = self.shop_p1.page;
-        let selected1 = self.shop_p1.current_slot();
+        let page1 = self.shop_p1.cursor.page;
+        let selected1 = self.shop_p1.cursor.slot();
         if page1 == 0 {
           for slot in 0..=26 {
             let eq = Equipment::try_from(slot as u8).ok();
@@ -787,8 +768,8 @@ impl WebGame {
         self.draw_text(banner1, 96, 444, p[1].r, p[1].g, p[1].b);
 
         // Draw Slots for P2 (right: offset_x = 320)
-        let page2 = self.shop_p2.page;
-        let selected2 = self.shop_p2.current_slot();
+        let page2 = self.shop_p2.cursor.page;
+        let selected2 = self.shop_p2.cursor.slot();
         if page2 == 0 {
           for slot in 0..=26 {
             let eq = Equipment::try_from(slot as u8).ok();
@@ -1121,106 +1102,29 @@ impl WebGame {
         }
 
         if key == KEY_TAB {
-          self.shop_p1.page = 1 - self.shop_p1.page;
-          if self.shop_p1.selection.is_some() {
-            self.shop_p1.selection = if self.shop_p1.page == 1 {
-              Some(Equipment::BlackHole)
-            } else {
-              Some(Equipment::SmallBomb)
-            };
-          }
+          self.shop_p1.cursor.toggle_page();
           self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
           self.render_current_state();
           return;
         }
 
-        let last_slot = self.shop_p1.current_slot();
+        let direction = match key {
+          KEY_RIGHT => Some(Direction::Right),
+          KEY_LEFT => Some(Direction::Left),
+          KEY_DOWN => Some(Direction::Down),
+          KEY_UP => Some(Direction::Up),
+          _ => None,
+        };
+        if let Some(direction) = direction {
+          self.shop_p1.cursor.step(direction);
+          self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
+          self.render_current_state();
+          return;
+        }
         match key {
-          KEY_RIGHT => {
-            if self.shop_p1.page == 0 {
-              let new_slot = (last_slot + 1).min(27);
-              self.shop_p1.selection = if new_slot < 27 {
-                Equipment::try_from(new_slot as u8).ok()
-              } else {
-                None
-              };
-            } else {
-              let new_slot = match last_slot {
-                0 => 1,
-                1 => 2,
-                _ => 27,
-              };
-              self.shop_p1.selection = if new_slot < 3 {
-                Equipment::try_from((27 + new_slot) as u8).ok()
-              } else {
-                None
-              };
-            }
-            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
-            self.render_current_state();
-          }
-          KEY_LEFT => {
-            if self.shop_p1.page == 0 {
-              let new_slot = last_slot.saturating_sub(1);
-              self.shop_p1.selection = if new_slot < 27 {
-                Equipment::try_from(new_slot as u8).ok()
-              } else {
-                None
-              };
-            } else {
-              let new_slot = match last_slot {
-                27 => 2,
-                2 => 1,
-                _ => 0,
-              };
-              self.shop_p1.selection = if new_slot < 3 {
-                Equipment::try_from((27 + new_slot) as u8).ok()
-              } else {
-                None
-              };
-            }
-            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
-            self.render_current_state();
-          }
-          KEY_DOWN => {
-            if self.shop_p1.page == 0 {
-              let new_slot = (last_slot + 4).min(27);
-              self.shop_p1.selection = if new_slot < 27 {
-                Equipment::try_from(new_slot as u8).ok()
-              } else {
-                None
-              };
-            } else {
-              self.shop_p1.selection = None;
-            }
-            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
-            self.render_current_state();
-          }
-          KEY_UP => {
-            if self.shop_p1.page == 0 {
-              let new_slot = if last_slot >= 4 { last_slot - 4 } else { last_slot };
-              self.shop_p1.selection = if new_slot < 27 {
-                Equipment::try_from(new_slot as u8).ok()
-              } else {
-                None
-              };
-            } else {
-              let new_slot = if last_slot == 27 { 2 } else { last_slot };
-              self.shop_p1.selection = if new_slot < 3 {
-                Equipment::try_from((27 + new_slot) as u8).ok()
-              } else {
-                None
-              };
-            }
-            self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
-            self.render_current_state();
-          }
           KEY_BOMB => {
-            if let Some(selection) = self.shop_p1.selection {
-              let price = self.prices[selection];
-              if self.players[0].cash >= price {
-                self.players[0].cash -= price;
-                self.players[0].inventory[selection] += 1;
+            if let Some(selection) = self.shop_p1.cursor.selection {
+              if buy(&mut self.players[0], None, selection, &self.prices) {
                 self.audio_queue.push(AudioEvent { effect_id: 0, frequency: 11000, pan: 0.0 });
                 self.render_current_state();
               }
@@ -1235,12 +1139,8 @@ impl WebGame {
             }
           }
           KEY_CHOOSE => {
-            if let Some(selection) = self.shop_p1.selection {
-              if self.players[0].inventory[selection] > 0 {
-                let price = self.prices[selection];
-                let refund = (7 * price + 5) / 10;
-                self.players[0].cash += refund;
-                self.players[0].inventory[selection] -= 1;
+            if let Some(selection) = self.shop_p1.cursor.selection {
+              if sell(&mut self.players[0], None, selection, &self.prices, self.options.selling) {
                 self.audio_queue.push(AudioEvent { effect_id: 1, frequency: 11000, pan: 0.0 });
                 self.render_current_state();
               }
