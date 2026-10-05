@@ -1,4 +1,4 @@
-# Packages the Windows release: MineBombers.exe, the SDL2 DLLs, their license texts and the notices, as one zip plus its SHA-256.
+# Packages the Windows release: MineBombers.exe, the SDL2 DLLs, their license texts, the code license and the notices, as one zip plus its SHA-256.
 #
 #   cargo build --release
 #   pwsh scripts/package_windows.ps1            # writes dist/MineBombers-<version>-windows-x64.zip
@@ -21,7 +21,7 @@ $dlls = @(
     "SDL2.dll", "SDL2_mixer.dll", "libgme.dll", "libogg-0.dll",
     "libopus-0.dll", "libopusfile-0.dll", "libwavpack-1.dll", "libxmp.dll"
 )
-$files = @("target/release/MineBombers.exe") + $dlls + @("packaging/windows/README.txt", "packaging/windows/NOTICE.txt")
+$files = @("target/release/MineBombers.exe") + $dlls + @("packaging/windows/README.txt", "packaging/windows/NOTICE.txt", "LICENSE-MIT", "LICENSE-APACHE")
 $licenseDir = "packaging/windows/licenses"
 if (-not (Test-Path "$licenseDir/LICENSE.gme.txt")) { throw "Missing $licenseDir (license texts of the bundled DLLs)" }
 foreach ($f in $files) {

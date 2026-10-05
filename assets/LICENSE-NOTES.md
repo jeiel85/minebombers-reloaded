@@ -61,13 +61,16 @@ Checked in September 2026:
 
 ## 2. Source code
 
-- `src/` and `crates/mb-core/` are derived from `idubrov/mb-reloaded` by Ivan Dubrov. That repository
-  publishes no license (no `LICENSE` file, no license metadata), so by default all rights are reserved
-  and this repository cannot relicense that code. A request to add a license is open at
-  https://github.com/idubrov/mb-reloaded/issues/1.
-- The "MIT" badge that used to be in the README had no basis and was removed.
-- No license has been chosen yet for the code that was written for this repository (`crates/mb-wasm`,
-  `web/`, `scripts/`). A license for the whole project depends on what the upstream author allows.
+- The code of this repository is licensed under either of `LICENSE-MIT` or `LICENSE-APACHE` at your
+  option (`MIT OR Apache-2.0`). This covers the code derived from upstream and the code written here.
+- `src/`, `crates/mb-core/` and `sdl2-effects/` are derived from `idubrov/mb-reloaded` by Ivan Dubrov.
+  That repository had no license when this project started. At this project's request, its author added
+  `MIT OR Apache-2.0` on 2026-10-01 (upstream commit `4a515ca`, merged as PR #2). `LICENSE-MIT` keeps
+  the upstream copyright line ("Copyright (c) 2020 Ivan Dubrov") and adds this repository's own.
+- Builds and pre-releases published before that date (v0.1.0 to v0.1.4) were made while the license was
+  still unsettled. The same code is now covered by the license above.
+- The license applies to code only. It grants nothing for the original Mine Bombers game files
+  (section 1), which this project does not contain.
 
 ## 3. Bundled third-party code and binaries
 
