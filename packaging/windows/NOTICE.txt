@@ -52,6 +52,8 @@ commit 861c0c865696bb157039b2a6b48e5ae0548983be, the version pinned by SDL_mixer
 If that location ever goes away, ask for a copy with an issue at
 https://github.com/jeiel85/minebombers-reloaded/issues.
 
-The exe itself is built with the Rust standard library and the 89 crates listed in Cargo.lock of the source
-repository. Each of them is licensed under MIT, Apache-2.0, Zlib, BSD-3-Clause, ISC or Unlicense terms
-(checked with `cargo metadata`). The Microsoft C runtime is linked statically.
+The exe itself is built with the Rust standard library and the crates listed in Cargo.lock of the source
+repository. Each of them is usable under MIT, Apache-2.0, Zlib, BSD-3-Clause, ISC or Unlicense terms; CI
+checks this on every change (`cargo deny check licenses`, deny.toml). The one addition is unicode-ident,
+whose Unicode data tables are also under Unicode-DFS-2016; only proc-macros use it while compiling, and
+it is not part of the exe. The Microsoft C runtime is linked statically.
