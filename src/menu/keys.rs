@@ -18,7 +18,13 @@ impl Application<'_> {
       canvas.copy(&self.keys.texture, None, None).map_err(SdlError)?;
       self.render_configured_keys(canvas, keys_config)?;
       let hint_color = self.keys.palette[8];
-      self.font.render(canvas, 110, 440, hint_color, "PRESS KEY TO BIND | ESC TO SKIP | F10 TO FINISH & SAVE")?;
+      self.font.render(
+        canvas,
+        110,
+        440,
+        hint_color,
+        "PRESS KEY TO BIND | ESC TO SKIP | F10 TO FINISH & SAVE",
+      )?;
       Ok(())
     })?;
     ctx.animate(Animation::FadeUp, 7)?;
@@ -47,7 +53,9 @@ impl Application<'_> {
             let rect = Rect::new(356, y, 144, 8);
             canvas.fill_rect(rect).map_err(SdlError)?;
             if let Some(scancode) = keys_config.keys[player][key] {
-              self.font.render(canvas, 356, y, color, &scancode.name().to_uppercase())?;
+              self
+                .font
+                .render(canvas, 356, y, color, &scancode.name().to_uppercase())?;
             }
             Ok(())
           })?;
@@ -64,7 +72,9 @@ impl Application<'_> {
           let rect = Rect::new(356, y, 144, 8);
           canvas.fill_rect(rect).map_err(SdlError)?;
           if let Some(scancode) = keys_config.keys[player][key] {
-            self.font.render(canvas, 356, y, color, &scancode.name().to_uppercase())?;
+            self
+              .font
+              .render(canvas, 356, y, color, &scancode.name().to_uppercase())?;
           }
           Ok(())
         })?;

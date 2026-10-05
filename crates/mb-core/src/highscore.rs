@@ -101,8 +101,16 @@ fn test_save_and_load_round_trip() {
   std::fs::create_dir_all(&dir).unwrap();
 
   let mut scores = Highscores::default();
-  scores.scores[0] = Some(Score { name: "Skhar".to_string(), level: 10, cash: 18500 });
-  scores.scores[9] = Some(Score { name: "Rookie".to_string(), level: 1, cash: 1500 });
+  scores.scores[0] = Some(Score {
+    name: "Skhar".to_string(),
+    level: 10,
+    cash: 18500,
+  });
+  scores.scores[9] = Some(Score {
+    name: "Rookie".to_string(),
+    level: 1,
+    cash: 1500,
+  });
   scores.save(&dir).unwrap();
   assert_eq!(std::fs::metadata(dir.join("HIGHSCOR.DAT")).unwrap().len(), 260);
   let loaded = Highscores::load(&dir).unwrap();

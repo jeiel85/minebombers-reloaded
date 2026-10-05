@@ -330,7 +330,11 @@ impl Application<'_> {
     selected: GameOption,
   ) -> Result<(), anyhow::Error> {
     let mode_str = if ctx.is_fullscreen { "FULL" } else { "WIN" };
-    let aspect_str = if ctx.config.display.keep_aspect_ratio { "4:3" } else { "WIDE" };
+    let aspect_str = if ctx.config.display.keep_aspect_ratio {
+      "4:3"
+    } else {
+      "WIDE"
+    };
     let hint = format!("F1:1X F2:2X F3:3X F4:{} F11:{} D:DEFAULT", aspect_str, mode_str);
 
     ctx.with_render_context(|canvas| {
@@ -342,7 +346,9 @@ impl Application<'_> {
         self.render_option_value(canvas, options, option)?;
       }
 
-      self.font.render(canvas, 120, 455, self.options_menu.palette[8], &hint)?;
+      self
+        .font
+        .render(canvas, 120, 455, self.options_menu.palette[8], &hint)?;
       Ok(())
     })?;
     Ok(())

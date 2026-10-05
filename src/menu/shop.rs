@@ -300,12 +300,7 @@ impl Application<'_> {
     Ok(())
   }
 
-  fn render_empty_slot(
-    &self,
-    canvas: &mut WindowCanvas,
-    offset_x: i32,
-    slot: usize,
-  ) -> Result<(), anyhow::Error> {
+  fn render_empty_slot(&self, canvas: &mut WindowCanvas, offset_x: i32, slot: usize) -> Result<(), anyhow::Error> {
     let col = (slot % 4) as i32;
     let row = (slot / 4) as i32;
     let pos_x = col * 64 + 32 + offset_x;
@@ -314,22 +309,13 @@ impl Application<'_> {
     Ok(())
   }
 
-  fn render_page_banner(
-    &self,
-    canvas: &mut WindowCanvas,
-    offset_x: i32,
-    page: usize,
-  ) -> Result<(), anyhow::Error> {
+  fn render_page_banner(&self, canvas: &mut WindowCanvas, offset_x: i32, page: usize) -> Result<(), anyhow::Error> {
     let palette = &self.shop.palette;
     canvas.set_draw_color(Color::BLACK);
     canvas
       .fill_rect(Rect::new(80 + offset_x, 442, 160, 14))
       .map_err(SdlError)?;
-    let banner_text = if page == 0 {
-      "PAGE 1/2 [TAB]"
-    } else {
-      "PAGE 2/2 [TAB]"
-    };
+    let banner_text = if page == 0 { "PAGE 1/2 [TAB]" } else { "PAGE 2/2 [TAB]" };
     self.font.render(canvas, 96 + offset_x, 444, palette[1], banner_text)?;
     Ok(())
   }
@@ -352,9 +338,7 @@ impl Application<'_> {
     let pos_x = col * 64 + 32 + offset_x;
     let pos_y = row * 48 + 96;
     let is_selected = state.cursor.selection == slot;
-    self
-      .glyphs
-      .render(canvas, pos_x, pos_y, Glyph::ShopSlot(is_selected))?;
+    self.glyphs.render(canvas, pos_x, pos_y, Glyph::ShopSlot(is_selected))?;
 
     // Render item count
     let item_count = slot.map(|item| state.entity.inventory[item] as i32).unwrap_or(0);
@@ -388,4 +372,3 @@ impl Application<'_> {
     Ok(())
   }
 }
-

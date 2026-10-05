@@ -501,7 +501,9 @@ impl Application<'_> {
     }
     // Render hint for CPU toggle
     let hint_color = self.select_players.palette[8];
-    self.font.render(canvas, 55, 232, hint_color, "Tab/B/Left: Bot (Easy/Norm/Hard)")?;
+    self
+      .font
+      .render(canvas, 55, 232, hint_color, "Tab/B/Left: Bot (Easy/Norm/Hard)")?;
     Ok(())
   }
 

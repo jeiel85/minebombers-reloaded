@@ -137,15 +137,13 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     // replicate original game (this buffer is an equivalent of "video buffer").
     // This allows us to do additive rendering and do a "pallette animation" by blending it
     // with an alpha modifier on top of black screen.
-    let buffer =
-      texture_creator.create_texture_target(PixelFormatEnum::RGB24, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+    let buffer = texture_creator.create_texture_target(PixelFormatEnum::RGB24, SCREEN_WIDTH, SCREEN_HEIGHT)?;
 
     // Create static CRT scanline and vignette overlay texture
     let crt_texture = create_crt_texture(&texture_creator)?;
 
     // Create dynamic lighting mask and light textures
-    let mut light_mask =
-      texture_creator.create_texture_target(PixelFormatEnum::RGBA32, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+    let mut light_mask = texture_creator.create_texture_target(PixelFormatEnum::RGBA32, SCREEN_WIDTH, SCREEN_HEIGHT)?;
     light_mask.set_blend_mode(BlendMode::Mod);
 
     let lantern_light = create_radial_light(&texture_creator, 128, (230, 205, 140))?;
@@ -305,7 +303,10 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     // Apply dynamic cave lighting if enabled and active
     if self.config.graphics.dynamic_lighting && self.lighting_active {
       let _ = self.light_mask.set_blend_mode(BlendMode::Mod);
-      self.canvas.copy(&self.light_mask, None, Some(target)).map_err(SdlError)?;
+      self
+        .canvas
+        .copy(&self.light_mask, None, Some(target))
+        .map_err(SdlError)?;
       self.lighting_active = false;
     }
 
@@ -320,7 +321,10 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
 
     // Apply retro CRT scanline & vignette filter if enabled
     if self.config.graphics.crt_shader {
-      self.canvas.copy(&self.crt_texture, None, Some(target)).map_err(SdlError)?;
+      self
+        .canvas
+        .copy(&self.crt_texture, None, Some(target))
+        .map_err(SdlError)?;
     }
 
     self.canvas.present();
@@ -386,11 +390,15 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
   pub fn toggle_fullscreen(&mut self) -> Result<(), anyhow::Error> {
     let window = self.canvas.window_mut();
     if self.is_fullscreen {
-      window.set_fullscreen(sdl2::video::FullscreenType::Off).map_err(SdlError)?;
+      window
+        .set_fullscreen(sdl2::video::FullscreenType::Off)
+        .map_err(SdlError)?;
       self.is_fullscreen = false;
       self.config.display.window_mode = "Windowed".to_string();
     } else {
-      window.set_fullscreen(sdl2::video::FullscreenType::Desktop).map_err(SdlError)?;
+      window
+        .set_fullscreen(sdl2::video::FullscreenType::Desktop)
+        .map_err(SdlError)?;
       self.is_fullscreen = true;
       self.config.display.window_mode = "Borderless".to_string();
     }
@@ -404,15 +412,15 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
     }
     let window = self.canvas.window_mut();
     if self.is_fullscreen {
-      window.set_fullscreen(sdl2::video::FullscreenType::Off).map_err(SdlError)?;
+      window
+        .set_fullscreen(sdl2::video::FullscreenType::Off)
+        .map_err(SdlError)?;
       self.is_fullscreen = false;
       self.config.display.window_mode = "Windowed".to_string();
     }
     let new_w = SCREEN_WIDTH * scale;
     let new_h = SCREEN_HEIGHT * scale;
-    window
-      .set_size(new_w, new_h)
-      .map_err(|e| anyhow::anyhow!("{}", e))?;
+    window.set_size(new_w, new_h).map_err(|e| anyhow::anyhow!("{}", e))?;
     window.set_position(sdl2::video::WindowPos::Centered, sdl2::video::WindowPos::Centered);
     self.config.display.scale = scale;
     self.config.display.width = new_w;
@@ -608,7 +616,9 @@ fn create_crt_texture<'textures>(
     }
   }
 
-  tex.update(None, &pixels, (SCREEN_WIDTH * 4) as usize).map_err(|e| anyhow::anyhow!("{}", e))?;
+  tex
+    .update(None, &pixels, (SCREEN_WIDTH * 4) as usize)
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
   Ok(tex)
 }
 
@@ -647,6 +657,8 @@ fn create_radial_light<'textures>(
     }
   }
 
-  tex.update(None, &pixels, (size * 4) as usize).map_err(|e| anyhow::anyhow!("{}", e))?;
+  tex
+    .update(None, &pixels, (size * 4) as usize)
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
   Ok(tex)
 }

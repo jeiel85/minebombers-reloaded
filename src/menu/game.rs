@@ -450,9 +450,7 @@ impl Application<'_> {
                 Scancode::F7 => {
                   toggle_dynamic_lighting = true;
                 }
-                Scancode::Return
-                  if keymod.intersects(sdl2::keyboard::Mod::LALTMOD | sdl2::keyboard::Mod::RALTMOD) =>
-                {
+                Scancode::Return if keymod.intersects(sdl2::keyboard::Mod::LALTMOD | sdl2::keyboard::Mod::RALTMOD) => {
                   display_toggle_fullscreen = true;
                 }
                 Scancode::Pause => {
@@ -509,7 +507,14 @@ impl Application<'_> {
         }
         if display_toggle_aspect {
           display_failed |= display_change_failed(ctx.toggle_aspect_ratio());
-          osd = Some(if ctx.config.display.keep_aspect_ratio { "KEEP 4:3" } else { "STRETCH TO WINDOW" }.to_owned());
+          osd = Some(
+            if ctx.config.display.keep_aspect_ratio {
+              "KEEP 4:3"
+            } else {
+              "STRETCH TO WINDOW"
+            }
+            .to_owned(),
+          );
         }
         if toggle_crt {
           osd = Some(format!("CRT FILTER {}", on_off(ctx.toggle_crt())));

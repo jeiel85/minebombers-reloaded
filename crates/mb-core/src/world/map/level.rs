@@ -428,11 +428,9 @@ impl LevelMap {
               *[MapValue::Stone1, MapValue::Stone2].choose(rng).unwrap()
             }
           }
-          CaveBiome::Classic => {
-            *[MapValue::Stone1, MapValue::Stone2, MapValue::Stone3, MapValue::Stone4]
-              .choose(rng)
-              .unwrap()
-          }
+          CaveBiome::Classic => *[MapValue::Stone1, MapValue::Stone2, MapValue::Stone3, MapValue::Stone4]
+            .choose(rng)
+            .unwrap(),
         };
       } else if self[cursor] == MapValue::Passage {
         self[cursor] = match biome {
@@ -457,11 +455,7 @@ impl LevelMap {
               MapValue::Passage
             }
           }
-          CaveBiome::Classic => {
-            *[MapValue::Sand1, MapValue::Sand2, MapValue::Sand3]
-              .choose(rng)
-              .unwrap()
-          }
+          CaveBiome::Classic => *[MapValue::Sand1, MapValue::Sand2, MapValue::Sand3].choose(rng).unwrap(),
         };
       }
     }
@@ -514,7 +508,11 @@ impl LevelMap {
     };
     let distribution = WeightedIndex::new(weights).unwrap();
 
-    let count_base = if mineral_density > 0 { mineral_density as usize } else { 40 };
+    let count_base = if mineral_density > 0 {
+      mineral_density as usize
+    } else {
+      40
+    };
     let treasure_count = match biome {
       CaveBiome::Treasury => (count_base * 3 / 2).max(45),
       _ => count_base,
