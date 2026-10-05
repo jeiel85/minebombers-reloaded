@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jeiel85/minebombers-reloaded/actions/workflows/ci.yml/badge.svg)](https://github.com/jeiel85/minebombers-reloaded/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Language-Rust-orange?logo=rust)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/License-Unresolved%20(see%20notes)-lightgrey.svg)](assets/LICENSE-NOTES.md)
+[![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](#-크레딧--라이선스)
 
 1995년 MS-DOS 아케이드 게임 **Mine Bombers 3.11**(Skitso Productions)을 최신 Windows와 Linux에서 DOSBox 없이 실행하기 위한 Rust 엔진입니다. [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2)와 같은 방식으로, 이 프로젝트는 엔진이고 **게임 데이터는 사용자가 자기 사본을 준비**합니다. 원작 3.11은 무료(프리웨어)입니다. 브라우저에서 실행하는 부가 에디션도 있습니다.
 
@@ -191,6 +191,7 @@ CI는 Windows와 Linux에서 네이티브 엔진을, 그리고 웹 에디션을 
 ## 📜 크레딧 & 라이선스
 
 - **Original Game**: *Mine Bombers* 3.11 by **Skitso Productions** (Finland). 원작의 저작권은 Skitso Productions에 있으며, 이 저장소는 원작과 제휴하거나 승인받은 프로젝트가 아닙니다.
-- **Engine base**: 게임 엔진의 뼈대(DOS 데이터 디코딩, 타일 렌더링, 월드 시뮬레이션)는 **Ivan Dubrov**의 [`mb-reloaded`](https://github.com/idubrov/mb-reloaded)를 기반으로 합니다. 해당 저장소에는 라이선스가 명시되어 있지 않아 [라이선스를 요청하는 이슈](https://github.com/idubrov/mb-reloaded/issues/1)를 올려 두었습니다.
-- **라이선스 상태**: 이 프로젝트의 코드 라이선스는 **아직 정리되지 않았습니다**. 원작 게임 파일은 이 프로젝트에 포함되지 않으며 사용자가 자기 사본을 준비합니다(이전 저장소의 이력에 있던 원본 파일은 이력을 재작성해 모두 제거했습니다). 근거와 현황은 [assets/LICENSE-NOTES.md](assets/LICENSE-NOTES.md)에 있으며, 권리자께서 요청하시면 해당 자료를 바로 제거하겠습니다.
+- **Engine base**: 게임 엔진의 뼈대(DOS 데이터 디코딩, 타일 렌더링, 월드 시뮬레이션)는 **Ivan Dubrov**의 [`mb-reloaded`](https://github.com/idubrov/mb-reloaded)를 기반으로 합니다. 이 프로젝트의 요청에 Ivan Dubrov가 2026-10-01 상위 저장소에 MIT OR Apache-2.0 라이선스를 추가해 주었습니다.
+- **코드 라이선스**: 이 저장소의 코드는 [MIT](LICENSE-MIT) 또는 [Apache-2.0](LICENSE-APACHE) 중 원하는 쪽을 골라 쓸 수 있습니다(`MIT OR Apache-2.0`). 상위에서 온 코드와 이 저장소에서 새로 쓴 코드 모두 해당합니다. 근거는 [결정 기록 D3](DECISIONS.md)에 있습니다.
+- **원작 게임 파일**: 위 라이선스는 코드에만 적용됩니다. 원작 게임 파일은 이 프로젝트에 포함되지 않으며 사용자가 자기 사본을 준비합니다(이전 저장소의 이력에 있던 원본 파일은 이력을 재작성해 모두 제거했습니다). 근거와 현황은 [assets/LICENSE-NOTES.md](assets/LICENSE-NOTES.md)에 있으며, 권리자께서 요청하시면 해당 자료를 바로 제거하겠습니다.
 - **이 저장소에서 새로 만든 부분**: AI 봇(`crates/mb-core/src/world/bot.rs`), 설정 파일(`src/config.rs`), 폴더 선택과 사용자 폴더(`src/gamedir.rs`, `src/userdata.rs`), 웹 에디션(`crates/mb-wasm`, `web/`), 앱 아이콘(직접 그린 폭탄 그림)

@@ -53,8 +53,8 @@ To remove everything, delete the folder you unzipped and the folder above.
 
 알려진 한계 / Known limitations
 -------------------------------
-- 이 프로젝트의 코드 라이선스는 아직 정리되지 않았습니다. 자세한 내용은 NOTICE.txt와 저장소의 DECISIONS.md를 보세요.
-  The code license of this project is not settled yet. See NOTICE.txt and DECISIONS.md in the repository.
+- 이 프로그램의 코드 라이선스는 MIT OR Apache-2.0입니다(LICENSE-MIT, LICENSE-APACHE, NOTICE.txt).
+  The code is licensed under MIT OR Apache-2.0 (see LICENSE-MIT, LICENSE-APACHE and NOTICE.txt).
 - 함께 들어 있는 DLL의 라이선스 원문은 licenses 폴더에 있습니다.
   The license texts of the bundled DLLs are in the licenses folder.
 - 시험용 릴리스(pre-release)입니다. 문제는 GitHub Issues에 알려 주세요.

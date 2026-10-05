@@ -9,12 +9,13 @@ Players bring their own copy of the freeware release 3.11.
 
 This project's code
 -------------------
-The license of this project's code is NOT settled yet.
+MineBombers.exe is licensed under either of LICENSE-MIT or LICENSE-APACHE (both in this package), at
+your option (MIT OR Apache-2.0).
 
-The engine is based on Ivan Dubrov's mb-reloaded (https://github.com/idubrov/mb-reloaded), which does not
-state a license; a request for one is open at https://github.com/idubrov/mb-reloaded/issues/1.
-Until that is resolved, this build is published as a pre-release for testing, without a license grant.
-Details: DECISIONS.md and assets/LICENSE-NOTES.md in https://github.com/jeiel85/minebombers-reloaded.
+The engine is based on Ivan Dubrov's mb-reloaded (https://github.com/idubrov/mb-reloaded), which is
+licensed under the same terms; LICENSE-MIT keeps its copyright notice. The license covers the code only,
+not the original game files. Source code and details (DECISIONS.md, assets/LICENSE-NOTES.md):
+https://github.com/jeiel85/minebombers-reloaded
 
 If you are a rights holder and want something removed, please open an issue in that repository.
 
