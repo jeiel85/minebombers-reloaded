@@ -1,6 +1,6 @@
 [package]
 name = "mb-reloaded"
-version = "0.1.4"
+version = "0.2.0"
 authors = ["Ivan Dubrov <dubrov.ivan@gmail.com>", "jeiel85"]
 edition = "2018"
 license = "MIT OR Apache-2.0"

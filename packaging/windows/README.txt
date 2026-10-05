@@ -57,5 +57,5 @@ To remove everything, delete the folder you unzipped and the folder above.
   The code is licensed under MIT OR Apache-2.0 (see LICENSE-MIT, LICENSE-APACHE and NOTICE.txt).
 - 함께 들어 있는 DLL의 라이선스 원문은 licenses 폴더에 있습니다.
   The license texts of the bundled DLLs are in the licenses folder.
-- 시험용 릴리스(pre-release)입니다. 문제는 GitHub Issues에 알려 주세요.
-  This is a pre-release. Please report problems on GitHub Issues.
+- 문제는 GitHub Issues에 알려 주세요.
+  Please report problems on GitHub Issues.

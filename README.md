@@ -8,7 +8,7 @@
 
 | | 상태 |
 |---|---|
-| **Windows** (네이티브) | 실제로 실행해 확인했습니다. [릴리스 zip](https://github.com/jeiel85/minebombers-reloaded/releases) 제공(시험용) |
+| **Windows** (네이티브) | 실제로 실행해 확인했습니다. [릴리스 zip](https://github.com/jeiel85/minebombers-reloaded/releases) 제공 |
 | **Linux** (네이티브) | CI(ubuntu-latest)에서 빌드·테스트에 더해 실제로 실행해 메뉴까지 뜨는지 확인합니다. 사람이 원작 파일로 직접 플레이해 확인한 적은 아직 없고, 배포용 패키지(tar.gz/AppImage)도 없습니다 — 소스 빌드만 가능합니다. |
 | **웹** | [라이브 데모](https://jeiel85.github.io/minebombers-reloaded/) (부가 에디션) |
 
@@ -25,7 +25,7 @@
 
 ## 🖥️ 실행 (Windows / Linux)
 
-**Windows (릴리스 zip)**: [Releases](https://github.com/jeiel85/minebombers-reloaded/releases)에서 `MineBombers-<버전>-windows-x64.zip`을 받아 풀고 `MineBombers.exe`를 실행합니다. 시험용(pre-release)이며 exe에 코드 서명이 없어 처음에 Windows의 "PC 보호" 창이 뜰 수 있습니다("추가 정보" → "실행"). 함께 올라오는 `.sha256` 파일로 받은 파일을 확인할 수 있습니다.
+**Windows (릴리스 zip)**: [Releases](https://github.com/jeiel85/minebombers-reloaded/releases)에서 `MineBombers-<버전>-windows-x64.zip`을 받아 풀고 `MineBombers.exe`를 실행합니다. exe에 코드 서명이 없어 처음에 Windows의 "PC 보호" 창이 뜰 수 있습니다("추가 정보" → "실행"). 함께 올라오는 `.sha256` 파일로 받은 파일을 확인할 수 있습니다.
 
 소스에서 빌드하려면 [Rust](https://rustup.rs/) 툴체인이 필요합니다.
 
