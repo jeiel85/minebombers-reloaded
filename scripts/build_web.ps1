@@ -12,6 +12,9 @@ if ($LASTEXITCODE -ne 0) {
 
 New-Item -ItemType Directory -Path "web\pkg" -Force | Out-Null
 Copy-Item ".\target\$target\release\mb_wasm.wasm" ".\web\pkg\mb_wasm.wasm" -Force
+# Same as pages.yml: the page links to these copies next to the wasm.
+Copy-Item ".\LICENSE-MIT" ".\web\pkg\LICENSE-MIT.txt" -Force
+Copy-Item ".\LICENSE-APACHE" ".\web\pkg\LICENSE-APACHE.txt" -Force
 
 # Optional: if MB_GAME_DIR points at your own copy of Mine Bombers 3.11, stage it next to the page so
 # it starts without asking for the files. The repository contains no original game files.

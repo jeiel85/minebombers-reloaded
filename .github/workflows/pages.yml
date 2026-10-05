@@ -37,6 +37,9 @@ jobs:
           cargo build -p mb-wasm --target wasm32-unknown-unknown --release
           mkdir -p web/pkg
           cp target/wasm32-unknown-unknown/release/mb_wasm.wasm web/pkg/mb_wasm.wasm
+          # The wasm is derived from the upstream code; ship the license texts with it, not only a link.
+          cp LICENSE-MIT web/pkg/LICENSE-MIT.txt
+          cp LICENSE-APACHE web/pkg/LICENSE-APACHE.txt
 
       - name: Setup Pages
         uses: actions/configure-pages@1f0c5cde4bc74cd7e1254d0cb4de8d49e9068c7d # v4

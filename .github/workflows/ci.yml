@@ -72,3 +72,17 @@ jobs:
 
       - name: JavaScript tests
         run: node --test web/test/*.test.mjs
+
+  licenses:
+    name: Dependency licenses
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # deny.toml allows only the licenses that packaging/windows/NOTICE.txt names.
+      - name: cargo deny check licenses
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
+          command-arguments: licenses

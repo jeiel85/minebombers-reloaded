@@ -6,4 +6,5 @@ Thumbs.db
 tools/
 res/minebomb/
 web/data/
+web/pkg/LICENSE-*.txt
 dist/
