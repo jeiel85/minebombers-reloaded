@@ -104,6 +104,10 @@ const STUCK_LIMIT: u32 = 90;
 /// small bomb's 100-tick fuse (see `item_placement_timer`) so it never buries itself in its own bombs.
 const BOMB_COOLDOWN: u32 = 110;
 
+/// Ticks after its own bomb key press during which a bot reacts to a blast at once instead of after
+/// `BotParams::reaction_ticks`: it knows where it just put a bomb. A small bomb's fuse.
+const OWN_BOMB_MEMORY: usize = 100;
+
 /// Ticks between ranged shots. Short - a grenade is gone from our tile immediately - but not zero.
 const RANGED_COOLDOWN: u32 = 25;
 
@@ -136,6 +140,10 @@ enum SpecialWeapons {
 struct BotParams {
   /// Ticks between decisions. 1 = reacts on every tick.
   decision_interval: usize,
+  /// Ticks between a blast first threatening the bot's tile and the bot doing something about it - a
+  /// human's reaction time. A tick is 20 ms at full speed (26 ms at the default speed option), so 10
+  /// ticks is a quarter of a second. Its own bombs it knows about at once (`OWN_BOMB_MEMORY`).
+  reaction_ticks: usize,
   /// Ticks a plan is kept before the target is re-evaluated.
   replan_interval: u32,
   /// Maximum path cost (in ticks) the target search will consider - how far ahead the bot can plan.
@@ -184,57 +192,61 @@ struct BotParams {
 }
 
 impl BotParams {
+  /// Every difficulty carries the same equipment (`shop::BOT_LOADOUT`); these are how well it plays.
+  /// The reaction and decision times keep even Hard within what a quick human can do: the bot used to
+  /// decide on every tick (20 ms) and see a new bomb the moment it landed.
   fn for_difficulty(difficulty: BotDifficulty) -> Self {
     match difficulty {
-      // Thinks slowly, plans barely past its own cavern, only digs what bare hands dig quickly
-      // (sand and light gravel), notices bombs only once the fuse is nearly out, never checks
-      // whether it has somewhere to run, and fumbles one decision in five.
+      // Slow to notice and to decide, plans within its own part of the map, digs only what is quick
+      // to dig, never throws or bombs its way through rock, and makes one bad move in seven. It does
+      // check that it has somewhere to run before it drops a bomb, so it is not just target practice.
       BotDifficulty::Easy => BotParams {
-        decision_interval: 5,
-        replan_interval: 70,
-        search_budget: 320,
-        dig_cost_cap: 180,
-        danger_horizon: 28,
-        escape_margin: 0,
-        escape_steps: 4,
-        verify_retreat: false,
+        decision_interval: 4,
+        reaction_ticks: 16,
+        replan_interval: 50,
+        search_budget: 520,
+        dig_cost_cap: 320,
+        danger_horizon: 40,
+        escape_margin: 4,
+        escape_steps: 5,
+        verify_retreat: true,
         use_ranged: false,
         use_remote: false,
         use_mines: false,
         bomb_digging: false,
         bomb_dig_threshold: u32::MAX,
-        mistake_pct: 22,
-        ignore_danger_pct: 30,
-        enemy_value: 50,
+        mistake_pct: 14,
+        ignore_danger_pct: 12,
+        enemy_value: 60,
         special_weapons: SpecialWeapons::None,
         situational_aggression: false,
         ranged_range: 0,
       },
       BotDifficulty::Medium => BotParams {
         decision_interval: 2,
+        reaction_ticks: 6,
         replan_interval: 30,
-        search_budget: 900,
-        dig_cost_cap: 900,
-        danger_horizon: 60,
-        escape_margin: 10,
+        search_budget: 600,
+        dig_cost_cap: 600,
+        danger_horizon: 55,
+        escape_margin: 8,
         escape_steps: 6,
         verify_retreat: true,
         use_ranged: true,
         use_remote: false,
         use_mines: false,
         bomb_digging: true,
-        bomb_dig_threshold: 150,
-        mistake_pct: 7,
-        ignore_danger_pct: 5,
-        enemy_value: 100,
+        bomb_dig_threshold: 160,
+        mistake_pct: 10,
+        ignore_danger_pct: 6,
+        enemy_value: 90,
         special_weapons: SpecialWeapons::Safe,
         situational_aggression: false,
-        ranged_range: 7,
+        ranged_range: 6,
       },
-      // Reacts every tick, plans across the whole map, tunnels through solid stone, respects the
-      // full fuse length of every blast, never fumbles, and picks its fights by who is winning them.
       BotDifficulty::Hard => BotParams {
         decision_interval: 1,
+        reaction_ticks: 3,
         replan_interval: 14,
         search_budget: 4000,
         dig_cost_cap: 4000,
@@ -247,8 +259,8 @@ impl BotParams {
         use_mines: true,
         bomb_digging: true,
         bomb_dig_threshold: 110,
-        mistake_pct: 0,
-        ignore_danger_pct: 0,
+        mistake_pct: 2,
+        ignore_danger_pct: 1,
         enemy_value: 150,
         special_weapons: SpecialWeapons::All,
         situational_aggression: true,
@@ -258,8 +270,6 @@ impl BotParams {
   }
 }
 
-/// Per-bot memory that has to survive between decisions: the current plan, and enough history to
-/// notice that the bot is making no progress.
 #[derive(Debug, Default, Clone)]
 pub struct BotState {
   /// Remaining waypoints towards the goal, nearest first. Each is adjacent to the previous one.
@@ -279,6 +289,10 @@ pub struct BotState {
   last_front_hits: i32,
   stuck_ticks: u32,
   bomb_cooldown: u32,
+  /// `round_counter` when the bot's tile first came under a blast it has not reacted to yet.
+  threat_since: Option<usize>,
+  /// `round_counter` of the bot's last bomb key press.
+  last_bomb_at: Option<usize>,
 }
 
 impl BotState {
@@ -536,6 +550,17 @@ impl BotAction {
   }
 }
 
+/// The parameters bot `bot_idx` plays with. Tests can replace them per player slot
+/// (`tests::with_params`) to measure the current difficulties against the previous ones.
+fn params_for(bot_idx: usize, difficulty: BotDifficulty) -> BotParams {
+  #[cfg(test)]
+  if let Some(params) = tests::PARAMS_OVERRIDE.with(|o| o.borrow().get(bot_idx).copied().flatten()) {
+    return params;
+  }
+  let _ = bot_idx;
+  BotParams::for_difficulty(difficulty)
+}
+
 pub struct BotController;
 
 impl BotController {
@@ -554,7 +579,7 @@ impl BotController {
       if !world.players[bot_idx].is_bot || world.actors[bot_idx].is_dead || world.actors[bot_idx].frozen_ticks > 0 {
         continue;
       }
-      let params = BotParams::for_difficulty(world.players[bot_idx].bot_difficulty);
+      let params = params_for(bot_idx, world.players[bot_idx].bot_difficulty);
       if (world.round_counter + bot_idx) % params.decision_interval != 0 {
         continue;
       }
@@ -569,6 +594,9 @@ impl BotController {
         if world.players[bot_idx].inventory[weapon] > 0 {
           world.players[bot_idx].selection = weapon;
         }
+      }
+      if action.keys.contains(&Key::Bomb) {
+        world.bots[bot_idx].last_bomb_at = Some(world.round_counter);
       }
       for key in action.keys {
         world.player_action(bot_idx, key);
@@ -605,10 +633,24 @@ impl BotController {
       state.path.remove(0);
     }
 
-    // 1. SURVIVE: step out of anything that is about to explode.
+    // 1. SURVIVE: step out of anything that is about to explode - once the bot has noticed it. A
+    // human needs a moment to see a bomb land next to them, so a blast is acted on only
+    // `reaction_ticks` after it first covered this tile; a bomb the bot dropped itself it knows about
+    // at once. The clock starts when the bomb lands, not when it gets close to going off: starting it
+    // at `danger_horizon` left an attacking bot too little of the fuse to get away, and Medium lost
+    // 57-174 to an Easy that simply kept out of fights.
     let here = danger.at(cursor);
+    let now = world.round_counter;
+    let noticed = if here == SAFE {
+      state.threat_since = None;
+      false
+    } else {
+      let since = *state.threat_since.get_or_insert(now);
+      let own_bomb = state.last_bomb_at.is_some_and(|at| now - at <= OWN_BOMB_MEMORY);
+      own_bomb || now - since >= params.reaction_ticks
+    };
     let panics = params.ignore_danger_pct > 0 && rng.gen_range(0..100) < params.ignore_danger_pct;
-    if here <= params.danger_horizon && !panics {
+    if noticed && here <= params.danger_horizon && !panics {
       if let Some(dir) = Self::escape_direction(world, cursor, danger, params) {
         state.clear_plan();
         return BotAction::step(dir);
@@ -1617,6 +1659,69 @@ mod tests {
   use crate::world::player::PlayerComponent;
   use crate::world::position::Position;
 
+  thread_local! {
+    /// Per player slot: parameters that replace `BotParams::for_difficulty` (see `params_for`).
+    pub(super) static PARAMS_OVERRIDE: std::cell::RefCell<Vec<Option<BotParams>>> =
+      const { std::cell::RefCell::new(Vec::new()) };
+  }
+
+  /// Runs `f` with bots in slot 0 and 1 playing `a` and `b` whatever their difficulty.
+  fn with_params<R>(a: BotParams, b: BotParams, f: impl FnOnce() -> R) -> R {
+    PARAMS_OVERRIDE.with(|o| *o.borrow_mut() = vec![Some(a), Some(b)]);
+    let result = f();
+    PARAMS_OVERRIDE.with(|o| o.borrow_mut().clear());
+    result
+  }
+
+  /// The difficulties as they were before reaction times and the shared loadout (v0.2.2), kept as the
+  /// yardstick for `measure_against_previous_difficulties`: players found the old Easy too easy and
+  /// the old Medium too hard, so the new ones are placed against these two.
+  fn previous_params(difficulty: BotDifficulty) -> BotParams {
+    let current = BotParams::for_difficulty(difficulty);
+    match difficulty {
+      BotDifficulty::Easy => BotParams {
+        decision_interval: 5,
+        reaction_ticks: 0,
+        replan_interval: 70,
+        search_budget: 320,
+        dig_cost_cap: 180,
+        danger_horizon: 28,
+        escape_margin: 0,
+        escape_steps: 4,
+        verify_retreat: false,
+        bomb_digging: false,
+        bomb_dig_threshold: u32::MAX,
+        mistake_pct: 22,
+        ignore_danger_pct: 30,
+        enemy_value: 50,
+        ..current
+      },
+      BotDifficulty::Medium => BotParams {
+        decision_interval: 2,
+        reaction_ticks: 0,
+        replan_interval: 30,
+        search_budget: 900,
+        dig_cost_cap: 900,
+        danger_horizon: 60,
+        escape_margin: 10,
+        escape_steps: 6,
+        bomb_dig_threshold: 150,
+        mistake_pct: 7,
+        ignore_danger_pct: 5,
+        enemy_value: 100,
+        ranged_range: 7,
+        ..current
+      },
+      BotDifficulty::Hard => BotParams {
+        decision_interval: 1,
+        reaction_ticks: 0,
+        mistake_pct: 0,
+        ignore_danger_pct: 0,
+        ..current
+      },
+    }
+  }
+
   /// Where the developer keeps the original game files, if anywhere: `MB_GAME_DIR`, else `res/minebomb`
   /// at the repository root (same convention as `crates/mb-wasm/src/lib.rs`'s `game_dir()`).
   fn game_dir() -> Option<std::path::PathBuf> {
@@ -2090,6 +2195,96 @@ mod tests {
     assert!(broken.is_empty(), "{}", broken.join("\n"));
   }
 
+  /// Number of matches per pairing for the measurements below: `MB_BOT_TRIALS`, else 250 (at 60 the
+  /// direction of a result can still flip).
+  fn trials() -> u32 {
+    std::env::var("MB_BOT_TRIALS")
+      .ok()
+      .and_then(|v| v.parse().ok())
+      .unwrap_or(250)
+  }
+
+  /// Plays `trials()` matches of `a` against `b` with the shop's equipment, alternating spawn slots,
+  /// and returns (a wins, b wins, draws).
+  fn tally_params(level: &LevelMap, a: BotParams, b: BotParams) -> (u32, u32, u32) {
+    const MAX_TICKS: u32 = 60 * 180;
+    const STARTING_CASH: u32 = 2650;
+    let (mut a_wins, mut b_wins, mut draws) = (0, 0, 0);
+    for i in 0..trials() {
+      let swap = i % 2 == 1;
+      let (first, second) = if swap { (b, a) } else { (a, b) };
+      let result = with_params(first, second, || {
+        run_match_with_real_shop_equipment(
+          level.clone(),
+          BotDifficulty::Medium,
+          BotDifficulty::Medium,
+          STARTING_CASH,
+          MAX_TICKS,
+        )
+      });
+      match result.map(|winner| if swap { 1 - winner } else { winner }) {
+        Some(0) => a_wins += 1,
+        Some(1) => b_wins += 1,
+        _ => draws += 1,
+      }
+    }
+    (a_wins, b_wins, draws)
+  }
+
+  /// Places the difficulties against the previous ones (`previous_params`): the old Easy was too
+  /// easy and the old Medium too hard for a human, so the new Easy has to beat the old Easy, the new
+  /// Medium has to lose to the old Medium and still beat the old Easy. Bot against bot is only a
+  /// proxy for how a person feels about it, so this checks the direction; the size of the steps is for
+  /// playtesting.
+  #[test]
+  #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
+  fn measure_against_previous_difficulties() {
+    let level = real_classic_map("BATTLE.MNE");
+    let new = BotParams::for_difficulty;
+    let old = previous_params;
+    let mut broken = Vec::new();
+    for (label, a, b, a_should_win) in [
+      (
+        "new Easy vs old Easy",
+        new(BotDifficulty::Easy),
+        old(BotDifficulty::Easy),
+        true,
+      ),
+      (
+        "new Medium vs old Medium",
+        new(BotDifficulty::Medium),
+        old(BotDifficulty::Medium),
+        false,
+      ),
+      (
+        "new Medium vs old Easy",
+        new(BotDifficulty::Medium),
+        old(BotDifficulty::Easy),
+        true,
+      ),
+      (
+        "new Hard vs old Medium",
+        new(BotDifficulty::Hard),
+        old(BotDifficulty::Medium),
+        true,
+      ),
+    ] {
+      let (a_wins, b_wins, draws) = tally_params(&level, a, b);
+      println!("{label}: {a_wins}-{b_wins}, draws {draws}");
+      if (a_wins > b_wins) != a_should_win {
+        broken.push(format!("{label}: {a_wins}-{b_wins}"));
+      }
+    }
+    assert!(
+      broken.is_empty(),
+      "{}",
+      broken.join(
+        "
+"
+      )
+    );
+  }
+
   /// Same shape as a real local game: one human-controlled slot (never sent an action here) plus
   /// Easy/Medium/Hard bots together in one match. Checks the engine handles a mixed 4-actor match
   /// without crashing or hanging, not difficulty balance specifically.
@@ -2271,7 +2466,16 @@ mod tests {
     let prices = crate::shop::Prices::new(options.free_market);
     let level = real_classic_map("BATTLE.MNE");
     const TRIALS: u32 = 150;
-    for difficulty in [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard] {
+    let runs = [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard]
+      .iter()
+      .copied()
+      .flat_map(|d| {
+        [
+          ("new", d, BotParams::for_difficulty(d)),
+          ("previous", d, previous_params(d)),
+        ]
+      });
+    for (generation, difficulty, params) in runs {
       let mut deaths = 0;
       let mut survivor_health = 0u32;
       let mut cash = 0u32;
@@ -2279,22 +2483,30 @@ mod tests {
         let mut players = human_and_bot(difficulty, &options);
         players[1].cash = 2650;
         crate::shop::auto_buy_for_bot(&mut players[1], &prices);
-        let mut world = World::create(level.clone(), &mut players, false, 50, false);
-        for _ in 0..3000 {
-          world.tick();
-          if world.actors[1].is_dead {
-            break;
+        // Slot 0 is the idle human, so only slot 1's parameters matter.
+        let (dead, health, earned) = with_params(params, params, || {
+          let mut world = World::create(level.clone(), &mut players, false, 50, false);
+          for _ in 0..3000 {
+            world.tick();
+            if world.actors[1].is_dead {
+              break;
+            }
           }
-        }
-        if world.actors[1].is_dead {
+          (
+            world.actors[1].is_dead,
+            world.actors[1].health,
+            world.actors[1].accumulated_cash,
+          )
+        });
+        if dead {
           deaths += 1;
         } else {
-          survivor_health += u32::from(world.actors[1].health);
+          survivor_health += u32::from(health);
         }
-        cash += world.actors[1].accumulated_cash;
+        cash += earned;
       }
       println!(
-        "{:?}: died with nobody fighting back {}/{}, surviving health {}, cash {}",
+        "{generation} {:?}: died with nobody fighting back {}/{}, surviving health {}, cash {}",
         difficulty,
         deaths,
         TRIALS,
