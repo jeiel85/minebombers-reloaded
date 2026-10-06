@@ -225,9 +225,9 @@ impl BotParams {
       BotDifficulty::Medium => BotParams {
         decision_interval: 2,
         reaction_ticks: 6,
-        replan_interval: 30,
-        search_budget: 600,
-        dig_cost_cap: 600,
+        replan_interval: 40,
+        search_budget: 450,
+        dig_cost_cap: 450,
         danger_horizon: 55,
         escape_margin: 8,
         escape_steps: 6,
@@ -237,11 +237,11 @@ impl BotParams {
         use_mines: false,
         bomb_digging: true,
         bomb_dig_threshold: 160,
-        mistake_pct: 10,
+        mistake_pct: 14,
         ignore_danger_pct: 6,
-        enemy_value: 90,
+        enemy_value: 75,
         special_weapons: SpecialWeapons::Safe,
-        situational_aggression: false,
+        situational_aggression: true,
         ranged_range: 6,
       },
       BotDifficulty::Hard => BotParams {
@@ -261,7 +261,7 @@ impl BotParams {
         bomb_dig_threshold: 110,
         mistake_pct: 2,
         ignore_danger_pct: 1,
-        enemy_value: 150,
+        enemy_value: 110,
         special_weapons: SpecialWeapons::All,
         situational_aggression: true,
         ranged_range: 10,
@@ -1677,7 +1677,8 @@ mod tests {
   /// yardstick for `measure_against_previous_difficulties`: players found the old Easy too easy and
   /// the old Medium too hard, so the new ones are placed against these two.
   fn previous_params(difficulty: BotDifficulty) -> BotParams {
-    let current = BotParams::for_difficulty(difficulty);
+    // Spelled out in full, not derived from the current table, so tuning the current one can never
+    // move the yardstick.
     match difficulty {
       BotDifficulty::Easy => BotParams {
         decision_interval: 5,
@@ -1689,12 +1690,17 @@ mod tests {
         escape_margin: 0,
         escape_steps: 4,
         verify_retreat: false,
+        use_ranged: false,
+        use_remote: false,
+        use_mines: false,
         bomb_digging: false,
         bomb_dig_threshold: u32::MAX,
         mistake_pct: 22,
         ignore_danger_pct: 30,
         enemy_value: 50,
-        ..current
+        special_weapons: SpecialWeapons::None,
+        situational_aggression: false,
+        ranged_range: 0,
       },
       BotDifficulty::Medium => BotParams {
         decision_interval: 2,
@@ -1705,19 +1711,40 @@ mod tests {
         danger_horizon: 60,
         escape_margin: 10,
         escape_steps: 6,
+        verify_retreat: true,
+        use_ranged: true,
+        use_remote: false,
+        use_mines: false,
+        bomb_digging: true,
         bomb_dig_threshold: 150,
         mistake_pct: 7,
         ignore_danger_pct: 5,
         enemy_value: 100,
+        special_weapons: SpecialWeapons::Safe,
+        situational_aggression: false,
         ranged_range: 7,
-        ..current
       },
       BotDifficulty::Hard => BotParams {
         decision_interval: 1,
         reaction_ticks: 0,
+        replan_interval: 14,
+        search_budget: 4000,
+        dig_cost_cap: 4000,
+        danger_horizon: 110,
+        escape_margin: 20,
+        escape_steps: 8,
+        verify_retreat: true,
+        use_ranged: true,
+        use_remote: true,
+        use_mines: true,
+        bomb_digging: true,
+        bomb_dig_threshold: 110,
         mistake_pct: 0,
         ignore_danger_pct: 0,
-        ..current
+        enemy_value: 150,
+        special_weapons: SpecialWeapons::All,
+        situational_aggression: true,
+        ranged_range: 10,
       },
     }
   }
@@ -1808,7 +1835,9 @@ mod tests {
   /// noticeably by difficulty (Hard: 3 armor / 15 bombs / 8 dynamite / 6 grenades / 3 big bombs / 4
   /// mines; Medium: 2 armor / 10 bombs / 5 dynamite / 4 grenades, no big bombs/mines; Easy: 1 armor /
   /// 6 bombs, no dynamite/grenades/big bombs/mines at all), so this measures decision quality *and*
-  /// equipment together, the way a real match does.
+  /// equipment together, the way a real match does. A match nobody dies in goes to whoever mined more
+  /// (the default win condition is money), so a bot that wins by out-mining its opponent rather than
+  /// by killing it is counted as winning, the way a player experiences it.
   fn run_match_with_real_shop_equipment(
     level: LevelMap,
     diff_a: BotDifficulty,
@@ -1837,7 +1866,13 @@ mod tests {
         return Some(0);
       }
     }
-    None
+    // Both alive at the end: the default win condition is money, so the one who mined more wins.
+    let (a_cash, b_cash) = (world.actors[0].accumulated_cash, world.actors[1].accumulated_cash);
+    match a_cash.cmp(&b_cash) {
+      std::cmp::Ordering::Greater => Some(0),
+      std::cmp::Ordering::Less => Some(1),
+      std::cmp::Ordering::Equal => None,
+    }
   }
 
   /// A solid block of `fill`, so a test can control exactly how much digging stands between the bot
@@ -2152,7 +2187,7 @@ mod tests {
   #[test]
   #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
   fn measure_bot_difficulty_win_rates_with_real_shop_equipment() {
-    const TRIALS: u32 = 250;
+    let trials = trials();
     const MAX_TICKS: u32 = 60 * 180;
     // The in-game CASH option's maximum, so each difficulty's shop *priorities* actually diverge
     // instead of everyone being cut off early by a shared budget limit.
@@ -2165,28 +2200,20 @@ mod tests {
       ("Hard vs Medium", BotDifficulty::Hard, BotDifficulty::Medium),
       ("Medium vs Easy", BotDifficulty::Medium, BotDifficulty::Easy),
     ] {
-      let mut a_wins = 0;
-      let mut b_wins = 0;
-      let mut draws = 0;
-      for i in 0..TRIALS {
-        let result = if i % 2 == 0 {
+      let (a_wins, b_wins, draws) = parallel_tally(trials, |i| {
+        if i % 2 == 0 {
           run_match_with_real_shop_equipment(level.clone(), a, b, STARTING_CASH, MAX_TICKS)
         } else {
           run_match_with_real_shop_equipment(level.clone(), b, a, STARTING_CASH, MAX_TICKS).map(|winner| 1 - winner)
-        };
-        match result {
-          Some(0) => a_wins += 1,
-          Some(1) => b_wins += 1,
-          _ => draws += 1,
         }
-      }
-      println!("{label}: {a:?}={a_wins} {b:?}={b_wins} draws={draws} (of {TRIALS})");
+      });
+      println!("{label}: {a:?}={a_wins} {b:?}={b_wins} draws={draws} (of {trials})");
       // Draws are a legitimate result now that the bots survive: two careful, well-armed bots
       // regularly both live out the 3-minute round, and the better-equipped pairings draw most
       // often (Hard vs Medium with shop equipment: 156 of 250). This check is only here to catch a
       // run where essentially nothing resolves, which would make the win counts meaningless.
-      if draws * 4 > TRIALS * 3 {
-        broken.push(format!("{label}: only {}/{TRIALS} matches resolved", TRIALS - draws));
+      if draws * 4 > trials * 3 {
+        broken.push(format!("{label}: only {}/{trials} matches resolved", trials - draws));
       }
       if a_wins <= b_wins {
         broken.push(format!("{label}: harder side did not win more ({a_wins} vs {b_wins})"));
@@ -2204,13 +2231,41 @@ mod tests {
       .unwrap_or(250)
   }
 
-  /// Plays `trials()` matches of `a` against `b` with the shop's equipment, alternating spawn slots,
-  /// and returns (a wins, b wins, draws).
+  /// Plays `trials` matches on all cores and returns (side 0 wins, side 1 wins, draws). `run(i)` plays
+  /// match `i` and reports the winner as 0 or 1 from side 0's point of view. Bot parameters are
+  /// per thread (`PARAMS_OVERRIDE`), so `run` sets its own with `with_params`.
+  fn parallel_tally(trials: u32, run: impl Fn(u32) -> Option<usize> + Sync) -> (u32, u32, u32) {
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get()) as u32;
+    let run = &run;
+    let results: Vec<(u32, u32, u32)> = std::thread::scope(|scope| {
+      let handles: Vec<_> = (0..threads)
+        .map(|t| {
+          scope.spawn(move || {
+            let (mut a, mut b, mut d) = (0, 0, 0);
+            for i in (t..trials).step_by(threads as usize) {
+              match run(i) {
+                Some(0) => a += 1,
+                Some(1) => b += 1,
+                _ => d += 1,
+              }
+            }
+            (a, b, d)
+          })
+        })
+        .collect();
+      handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    results
+      .into_iter()
+      .fold((0, 0, 0), |(a, b, d), (x, y, z)| (a + x, b + y, d + z))
+  }
+
+  /// `trials()` matches of `a` against `b` with the shop's equipment, alternating spawn slots;
+  /// returns (a wins, b wins, draws).
   fn tally_params(level: &LevelMap, a: BotParams, b: BotParams) -> (u32, u32, u32) {
     const MAX_TICKS: u32 = 60 * 180;
     const STARTING_CASH: u32 = 2650;
-    let (mut a_wins, mut b_wins, mut draws) = (0, 0, 0);
-    for i in 0..trials() {
+    parallel_tally(trials(), |i| {
       let swap = i % 2 == 1;
       let (first, second) = if swap { (b, a) } else { (a, b) };
       let result = with_params(first, second, || {
@@ -2222,57 +2277,56 @@ mod tests {
           MAX_TICKS,
         )
       });
-      match result.map(|winner| if swap { 1 - winner } else { winner }) {
-        Some(0) => a_wins += 1,
-        Some(1) => b_wins += 1,
-        _ => draws += 1,
-      }
-    }
-    (a_wins, b_wins, draws)
+      result.map(|winner| if swap { 1 - winner } else { winner })
+    })
   }
 
-  /// Places the difficulties against the previous ones (`previous_params`): the old Easy was too
-  /// easy and the old Medium too hard for a human, so the new Easy has to beat the old Easy, the new
-  /// Medium has to lose to the old Medium and still beat the old Easy. Bot against bot is only a
-  /// proxy for how a person feels about it, so this checks the direction; the size of the steps is for
-  /// playtesting.
+  /// How each difficulty fares against the same two opponents, the previous Easy and the previous
+  /// Medium (`previous_params`) - the way a player experiences difficulty: one fixed opponent (them)
+  /// against bots of each level. Head-to-head between the levels themselves is muddied by matchups
+  /// (with equal equipment, Easy's habit of staying out of fights holds off a Hard that comes looking
+  /// for one), which a fixed opponent avoids.
+  ///
+  /// Players found the previous Easy too easy and the previous Medium too hard, so: against each
+  /// opponent the levels must rank Easy < Medium < Hard, the new Easy must beat the previous Easy, and
+  /// the new Medium must lose to the previous Medium. Bot against bot is still only a proxy for a
+  /// person; the size of the steps is for playtesting.
   #[test]
   #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
   fn measure_against_previous_difficulties() {
     let level = real_classic_map("BATTLE.MNE");
-    let new = BotParams::for_difficulty;
-    let old = previous_params;
+    let levels = [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard];
     let mut broken = Vec::new();
-    for (label, a, b, a_should_win) in [
-      (
-        "new Easy vs old Easy",
-        new(BotDifficulty::Easy),
-        old(BotDifficulty::Easy),
-        true,
-      ),
-      (
-        "new Medium vs old Medium",
-        new(BotDifficulty::Medium),
-        old(BotDifficulty::Medium),
-        false,
-      ),
-      (
-        "new Medium vs old Easy",
-        new(BotDifficulty::Medium),
-        old(BotDifficulty::Easy),
-        true,
-      ),
-      (
-        "new Hard vs old Medium",
-        new(BotDifficulty::Hard),
-        old(BotDifficulty::Medium),
-        true,
-      ),
-    ] {
-      let (a_wins, b_wins, draws) = tally_params(&level, a, b);
-      println!("{label}: {a_wins}-{b_wins}, draws {draws}");
-      if (a_wins > b_wins) != a_should_win {
-        broken.push(format!("{label}: {a_wins}-{b_wins}"));
+    for opponent in [BotDifficulty::Easy, BotDifficulty::Medium] {
+      let mut rates = Vec::new();
+      for level_difficulty in levels.iter().copied() {
+        let (wins, losses, draws) = tally_params(
+          &level,
+          BotParams::for_difficulty(level_difficulty),
+          previous_params(opponent),
+        );
+        let rate = f64::from(wins) / f64::from((wins + losses).max(1));
+        println!(
+          "new {:?} vs previous {:?}: {}-{}, draws {} ({:.0}%)",
+          level_difficulty,
+          opponent,
+          wins,
+          losses,
+          draws,
+          rate * 100.0
+        );
+        rates.push(rate);
+      }
+      if !(rates[0] < rates[1] && rates[1] < rates[2]) {
+        broken.push(format!(
+          "against previous {:?} the levels do not rank Easy < Medium < Hard",
+          opponent
+        ));
+      }
+      match opponent {
+        BotDifficulty::Easy if rates[0] <= 0.5 => broken.push("new Easy does not beat previous Easy".into()),
+        BotDifficulty::Medium if rates[1] >= 0.5 => broken.push("new Medium does not lose to previous Medium".into()),
+        _ => {}
       }
     }
     assert!(
