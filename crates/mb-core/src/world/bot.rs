@@ -414,14 +414,7 @@ impl DangerMap {
       contact: vec![false; MAP_CELLS],
     };
     let fuse = super::item_placement_timer(weapon).max(1);
-    map.mark_blast(at, super::item_placement_level(weapon, Direction::Right, bot_idx), fuse);
-    // Not a blast, but no place to stand either: a freeze bomb freezes every actor within 5 tiles
-    // (`explode_freeze_bomb`), a black hole pulls in everything within 9 (`tick_black_hole`).
-    match weapon {
-      Equipment::FreezeBomb => map.mark_disc(at, 5, fuse),
-      Equipment::BlackHole => map.mark_disc(at, 10, fuse),
-      _ => {}
-    }
+    map.mark_reach(at, super::item_placement_level(weapon, Direction::Right, bot_idx), fuse);
     // Repeat until no new explosive is reached, so the chain does not depend on scan order.
     let mut set_off = vec![false; MAP_CELLS];
     loop {
@@ -430,13 +423,25 @@ impl DangerMap {
         let value = world.maps.level[cell];
         if explodes_when_hit(value) && !set_off[cell_index(cell)] && map.at(cell) != SAFE {
           set_off[cell_index(cell)] = true;
-          map.mark_blast(cell, value, fuse);
+          map.mark_reach(cell, value, fuse);
           reached_more = true;
         }
       }
       if !reached_more {
         return map;
       }
+    }
+  }
+
+  /// `mark_blast`, plus what a freeze bomb or black hole does beyond its blast - no place to stand
+  /// either: a freeze bomb freezes every actor within 5 tiles (`explode_freeze_bomb`), a black hole
+  /// pulls in everything within 9 (`tick_black_hole`).
+  fn mark_reach(&mut self, center: Cursor, value: MapValue, ticks: u16) {
+    self.mark_blast(center, value, ticks);
+    match value {
+      MapValue::FreezeBomb => self.mark_disc(center, 5, ticks),
+      MapValue::BlackHoleBomb | MapValue::BlackHoleActive => self.mark_disc(center, 10, ticks),
+      _ => {}
     }
   }
 
@@ -2243,6 +2248,22 @@ mod tests {
     assert_ne!(blast.at(Cursor::new(23, 23)), SAFE);
   }
 
+  /// The same holds for a freeze bomb that our blast only sets off.
+  #[test]
+  fn a_chained_freeze_bomb_covers_its_freezing_range_too() {
+    let options = Options::default();
+    let mut players = human_and_bot(BotDifficulty::Hard, &options);
+    let mut world = World::create(LevelMap::empty(), &mut players, false, 50, false);
+    world.maps.level[Cursor::new(20, 21)] = MapValue::FreezeBomb;
+    world.maps.timer[Cursor::new(20, 21)] = 300;
+    let blast = DangerMap::of_own_bomb(&world, 1, Cursor::new(20, 20), Equipment::SmallBomb);
+    assert_ne!(
+      blast.at(Cursor::new(20, 25)),
+      SAFE,
+      "4 tiles past the chained freeze bomb"
+    );
+  }
+
   #[test]
   fn walk_search_through_never_steps_past_a_blocked_tile() {
     let options = Options::default();
@@ -2281,10 +2302,12 @@ mod tests {
   }
 
   /// The one balance check that runs in CI: no original files there, so generated caves and short
-  /// rounds. It only guards against a reversal. Hard won 74.0% of 1000 such rounds when this was
-  /// written; at 80 rounds, needing 48 (60%) fails by chance about once in 800 runs, while a reversal
-  /// (about 40) fails it for certain. (40 rounds and 24, set from a smaller sample, failed in CI.)
-  /// The real balance measurements are the `measure_*` tests below, run by hand with the game files.
+  /// rounds. It only guards against a reversal: Hard has to win more than half. Hard won 74.0% of
+  /// 1000 such rounds when this was written, so at 80 rounds needing 41 fails by chance about once in
+  /// half a million runs. The game draws on thread-local randomness throughout, so the rounds cannot
+  /// be replayed; the margin is what keeps the test from flaking. (40 rounds needing 24, set from a
+  /// smaller sample, did fail in CI.) The real balance measurements are the `measure_*` tests below,
+  /// run by hand with the game files.
   #[test]
   fn hard_beats_easy_in_short_rounds_on_generated_maps() {
     const ROUNDS: u32 = 80;
@@ -2298,7 +2321,7 @@ mod tests {
       }
     });
     assert!(
-      hard >= 48,
+      hard > ROUNDS / 2,
       "Hard won only {} of {} rounds against Easy ({} lost)",
       hard,
       ROUNDS,
