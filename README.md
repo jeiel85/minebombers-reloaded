@@ -182,6 +182,8 @@ node --test web/test/*.test.mjs
 MB_GAME_DIR=/path/to/mb311 cargo test -p mb-wasm -- --include-ignored
 ```
 
+Windows에서 `cargo test --workspace`가 `os error 1455`(페이징 파일 부족)로 실패하면 동시 빌드 수를 줄여 `cargo test --workspace -j 2`로 실행하세요.
+
 CI는 Windows와 Linux에서 네이티브 엔진을, 그리고 웹 에디션을 빌드하고 테스트합니다.
 
 문서: [결정 기록](DECISIONS.md) · [에셋과 라이선스 노트](assets/LICENSE-NOTES.md) · [이전 설계 문서(보관)](docs/README.md)
