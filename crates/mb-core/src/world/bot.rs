@@ -115,9 +115,6 @@ const OWN_BOMB_MEMORY: usize = 100;
 /// `danger_horizon` steps out of it.
 const GRENADIER_WARNING: u16 = 30;
 
-/// How far a grenadier's grenade can fly, in tiles (the flying grenades are marked as far).
-const GRENADE_RANGE: u16 = 8;
-
 /// Ticks between ranged shots. Short - a grenade is gone from our tile immediately - but not zero.
 const RANGED_COOLDOWN: u32 = 25;
 
@@ -367,10 +364,11 @@ impl DangerMap {
         }
       }
       if actor.kind == crate::world::actor::ActorKind::Grenadier {
+        // A grenade flies until something stops it (`grenade_fly`), so the whole open line counts.
         let mut cell = cursor;
-        for _ in 0..GRENADE_RANGE {
+        loop {
           let next = cell.to(actor.facing);
-          if next == cell || !world.maps.level[next].is_passable() {
+          if next == cell || next.is_on_border() || !world.maps.level[next].is_passable() {
             break;
           }
           cell = next;
@@ -408,8 +406,8 @@ impl DangerMap {
     map
   }
 
-  /// Only the blast of `weapon` if bot `bot_idx` dropped it at `at` now, together with every bomb
-  /// that blast would set off (they go off with it, whatever is left of their own fuse).
+  /// Only the reach of `weapon` if bot `bot_idx` dropped it at `at` now, together with everything its
+  /// blast would set off, link by link (they go off with it, whatever is left of their own fuse).
   fn of_own_bomb(world: &World, bot_idx: usize, at: Cursor, weapon: Equipment) -> Self {
     let mut map = DangerMap {
       ticks: vec![SAFE; MAP_CELLS],
@@ -417,13 +415,29 @@ impl DangerMap {
     };
     let fuse = super::item_placement_timer(weapon).max(1);
     map.mark_blast(at, super::item_placement_level(weapon, Direction::Right, bot_idx), fuse);
-    for cell in Cursor::all() {
-      let value = world.maps.level[cell];
-      if value.is_bomb() && map.at(cell) != SAFE {
-        map.mark_blast(cell, value, fuse);
+    // Not a blast, but no place to stand either: a freeze bomb freezes every actor within 5 tiles
+    // (`explode_freeze_bomb`), a black hole pulls in everything within 9 (`tick_black_hole`).
+    match weapon {
+      Equipment::FreezeBomb => map.mark_disc(at, 5, fuse),
+      Equipment::BlackHole => map.mark_disc(at, 10, fuse),
+      _ => {}
+    }
+    // Repeat until no new explosive is reached, so the chain does not depend on scan order.
+    let mut set_off = vec![false; MAP_CELLS];
+    loop {
+      let mut reached_more = false;
+      for cell in Cursor::all() {
+        let value = world.maps.level[cell];
+        if explodes_when_hit(value) && !set_off[cell_index(cell)] && map.at(cell) != SAFE {
+          set_off[cell_index(cell)] = true;
+          map.mark_blast(cell, value, fuse);
+          reached_more = true;
+        }
+      }
+      if !reached_more {
+        return map;
       }
     }
-    map
   }
 
   /// Ticks until a blast covers `cursor`, or [`SAFE`].
@@ -1663,6 +1677,30 @@ impl BotController {
 // -----------------------------------------------------------------------------------------------
 
 #[inline]
+/// Whether a blast reaching `value` sets it off (`explode_entity`): bombs, and also mines, radio
+/// bombs, barrels, explosive plastic and the extinguished bombs, which are not `is_bomb`.
+fn explodes_when_hit(value: MapValue) -> bool {
+  value.is_bomb()
+    || matches!(
+      value,
+      MapValue::Mine
+        | MapValue::Barrel
+        | MapValue::ExplosivePlastic
+        | MapValue::SmallBombExtinguished
+        | MapValue::BigBombExtinguished
+        | MapValue::DynamiteExtinguished
+        | MapValue::NapalmExtinguished
+        | MapValue::SmallRadioBlue
+        | MapValue::SmallRadioRed
+        | MapValue::SmallRadioGreen
+        | MapValue::SmallRadioYellow
+        | MapValue::BigRadioBlue
+        | MapValue::BigRadioRed
+        | MapValue::BigRadioGreen
+        | MapValue::BigRadioYellow
+    )
+}
+
 /// Whether activating `item` puts an explosive down (as opposed to a tool, armor, a clone, a wall or
 /// a teleport).
 fn places_explosive(item: Equipment) -> bool {
@@ -2177,6 +2215,34 @@ mod tests {
     assert_ne!(blast.at(Cursor::new(20, 25)), SAFE, "the big bomb goes off with it");
   }
 
+  /// A chain that runs against the scan order (a mine left of the big bomb that sets it off) and
+  /// ends in something that is not `is_bomb` (the mine) has to be followed all the way.
+  #[test]
+  fn own_bomb_danger_follows_the_whole_chain() {
+    let options = Options::default();
+    let mut players = human_and_bot(BotDifficulty::Medium, &options);
+    let mut world = World::create(LevelMap::empty(), &mut players, false, 50, false);
+    place_bot(&mut world, Cursor::new(20, 30));
+    world.maps.level[Cursor::new(20, 27)] = MapValue::BigBomb1;
+    world.maps.timer[Cursor::new(20, 27)] = 300;
+    world.maps.level[Cursor::new(20, 25)] = MapValue::Mine;
+
+    let blast = DangerMap::of_own_bomb(&world, 1, Cursor::new(20, 30), Equipment::Dynamite);
+    assert_ne!(blast.at(Cursor::new(20, 25)), SAFE, "the big bomb reaches the mine");
+    assert_ne!(blast.at(Cursor::new(20, 24)), SAFE, "the mine goes off too");
+  }
+
+  /// A freeze bomb's blast is small, but it freezes everyone within 5 tiles.
+  #[test]
+  fn own_freeze_bomb_covers_its_whole_freezing_range() {
+    let options = Options::default();
+    let mut players = human_and_bot(BotDifficulty::Hard, &options);
+    let world = World::create(LevelMap::empty(), &mut players, false, 50, false);
+    let blast = DangerMap::of_own_bomb(&world, 1, Cursor::new(20, 20), Equipment::FreezeBomb);
+    assert_ne!(blast.at(Cursor::new(20, 24)), SAFE);
+    assert_ne!(blast.at(Cursor::new(23, 23)), SAFE);
+  }
+
   #[test]
   fn walk_search_through_never_steps_past_a_blocked_tile() {
     let options = Options::default();
@@ -2215,12 +2281,13 @@ mod tests {
   }
 
   /// The one balance check that runs in CI: no original files there, so generated caves and short
-  /// rounds. It only guards against a reversal - Hard won 28-36 of 40 such rounds when this was
-  /// written (about 79%), so needing 24 fails by chance about once in 500 runs. The real balance
-  /// measurements are the `measure_*` tests below, run by hand with the game files.
+  /// rounds. It only guards against a reversal. Hard won 74.0% of 1000 such rounds when this was
+  /// written; at 80 rounds, needing 48 (60%) fails by chance about once in 800 runs, while a reversal
+  /// (about 40) fails it for certain. (40 rounds and 24, set from a smaller sample, failed in CI.)
+  /// The real balance measurements are the `measure_*` tests below, run by hand with the game files.
   #[test]
   fn hard_beats_easy_in_short_rounds_on_generated_maps() {
-    const ROUNDS: u32 = 40;
+    const ROUNDS: u32 = 80;
     let (hard, easy, _) = parallel_tally(ROUNDS, |i| {
       let level = LevelMap::random_map(50);
       if i % 2 == 0 {
@@ -2231,7 +2298,7 @@ mod tests {
       }
     });
     assert!(
-      hard >= 24,
+      hard >= 48,
       "Hard won only {} of {} rounds against Easy ({} lost)",
       hard,
       ROUNDS,
