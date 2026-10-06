@@ -108,6 +108,16 @@ const BOMB_COOLDOWN: u32 = 110;
 /// `BotParams::reaction_ticks`: it knows where it just put a bomb. A small bomb's fuse.
 const OWN_BOMB_MEMORY: usize = 100;
 
+/// How the open line in front of a hunting grenadier is marked in the danger map: as a blast this many
+/// ticks away. A grenadier throws along its facing whenever a player shares its row or column, and the
+/// grenade arrives within a few ticks - too fast to dodge once thrown - so the line itself is the
+/// threat, the way a person keeps out of the way of one. Short enough that every difficulty's
+/// `danger_horizon` steps out of it.
+const GRENADIER_WARNING: u16 = 30;
+
+/// How far a grenadier's grenade can fly, in tiles (the flying grenades are marked as far).
+const GRENADE_RANGE: u16 = 8;
+
 /// Ticks between ranged shots. Short - a grenade is gone from our tile immediately - but not zero.
 const RANGED_COOLDOWN: u32 = 25;
 
@@ -229,23 +239,29 @@ impl BotParams {
         situational_aggression: false,
         ranged_range: 0,
       },
+      // Quicker than Easy at everything except hand-digging: rock that takes long by hand it bombs
+      // instead, which is what holds its haul a fifth below the previous Medium's (643 against 813
+      // a round). It shares Easy's escape settings: with a human reaction time, a later horizon
+      // and a wider margin left it with no tile it accepted as safe in narrow tunnels, so it stood in
+      // the blast - it lost 35% to Easy on OLDMINE.MNE until they matched. Mistake and ignore rates
+      // are per decision, and Medium decides twice as often, so they are half of Easy's.
       BotDifficulty::Medium => BotParams {
         decision_interval: 2,
         reaction_ticks: 14,
         replan_interval: 40,
-        search_budget: 450,
-        dig_cost_cap: 200,
-        danger_horizon: 55,
-        escape_margin: 8,
-        escape_steps: 6,
+        search_budget: 600,
+        dig_cost_cap: 150,
+        danger_horizon: 40,
+        escape_margin: 4,
+        escape_steps: 5,
         verify_retreat: true,
         use_ranged: true,
         use_remote: false,
         use_mines: false,
         bomb_digging: true,
         bomb_dig_threshold: 160,
-        mistake_pct: 14,
-        ignore_danger_pct: 10,
+        mistake_pct: 7,
+        ignore_danger_pct: 4,
         enemy_value: 75,
         special_weapons: SpecialWeapons::Safe,
         monster_alert: 2,
@@ -350,6 +366,17 @@ impl DangerMap {
           map.contact[cell_index(next)] = true;
         }
       }
+      if actor.kind == crate::world::actor::ActorKind::Grenadier {
+        let mut cell = cursor;
+        for _ in 0..GRENADE_RANGE {
+          let next = cell.to(actor.facing);
+          if next == cell || !world.maps.level[next].is_passable() {
+            break;
+          }
+          cell = next;
+          map.mark(cell, GRENADIER_WARNING);
+        }
+      }
     }
 
     for cursor in Cursor::all() {
@@ -378,6 +405,24 @@ impl DangerMap {
       }
     }
 
+    map
+  }
+
+  /// Only the blast of `weapon` if bot `bot_idx` dropped it at `at` now, together with every bomb
+  /// that blast would set off (they go off with it, whatever is left of their own fuse).
+  fn of_own_bomb(world: &World, bot_idx: usize, at: Cursor, weapon: Equipment) -> Self {
+    let mut map = DangerMap {
+      ticks: vec![SAFE; MAP_CELLS],
+      contact: vec![false; MAP_CELLS],
+    };
+    let fuse = super::item_placement_timer(weapon).max(1);
+    map.mark_blast(at, super::item_placement_level(weapon, Direction::Right, bot_idx), fuse);
+    for cell in Cursor::all() {
+      let value = world.maps.level[cell];
+      if value.is_bomb() && map.at(cell) != SAFE {
+        map.mark_blast(cell, value, fuse);
+      }
+    }
     map
   }
 
@@ -607,11 +652,17 @@ impl BotController {
           world.players[bot_idx].selection = weapon;
         }
       }
-      if action.keys.contains(&Key::Bomb) {
-        world.bots[bot_idx].last_bomb_at = Some(world.round_counter);
-      }
+      let item = world.players[bot_idx].selection;
+      let held = world.players[bot_idx].inventory[item];
+      let pressed_bomb = action.keys.contains(&Key::Bomb);
       for key in action.keys {
         world.player_action(bot_idx, key);
+      }
+      // Only an explosive that actually went down counts as "our own bomb" (instant reaction):
+      // the same key also fires clones, drills, the flamethrower and the extinguisher, and a press
+      // can fail - remembering those switched Easy's and Medium's reaction time off for 100 ticks.
+      if pressed_bomb && places_explosive(item) && world.players[bot_idx].inventory[item] < held {
+        world.bots[bot_idx].last_bomb_at = Some(world.round_counter);
       }
     }
   }
@@ -800,6 +851,15 @@ impl BotController {
   where
     F: Fn(Cursor, u32) -> bool,
   {
+    Self::walk_search_through(world, start, max_steps, |_| true, accept)
+  }
+
+  /// `walk_search` that only walks through tiles `pass` allows (the start excepted).
+  fn walk_search_through<P, F>(world: &World, start: Cursor, max_steps: u32, pass: P, accept: F) -> Option<Direction>
+  where
+    P: Fn(Cursor) -> bool,
+    F: Fn(Cursor, u32) -> bool,
+  {
     let mut visited = vec![false; MAP_CELLS];
     let mut queue = VecDeque::new();
     visited[cell_index(start)] = true;
@@ -814,7 +874,7 @@ impl BotController {
       }
       for dir in Direction::all() {
         let next = cell.to(dir);
-        if next == cell || visited[cell_index(next)] || !is_walkable(world, next) {
+        if next == cell || visited[cell_index(next)] || !is_walkable(world, next) || !pass(next) {
           continue;
         }
         visited[cell_index(next)] = true;
@@ -824,21 +884,40 @@ impl BotController {
     None
   }
 
-  /// Somewhere to run to after dropping `weapon` at our feet: a reachable tile outside its blast that
-  /// is not already threatened by something else. The clearance needed depends on the bomb - a small
-  /// bomb reaches one tile, dynamite three - so this is what stops a bot from "escaping" a dynamite
-  /// stick by stepping one tile sideways.
+  /// Somewhere to run to after dropping `weapon` at our feet: a tile outside its blast - the real
+  /// pattern, plus any bomb that blast would set off - that we can walk to before the fuse runs out
+  /// and that nothing else threatens. This used to be "more tiles away than the blast's reach", which
+  /// passed tiles a dynamite pattern still covers and ignored chain reactions; bots dropped dynamite in
+  /// dead ends and waited for it there.
   fn retreat_direction(
     world: &World,
+    bot_idx: usize,
     cursor: Cursor,
     danger: &DangerMap,
     params: &BotParams,
     weapon: Equipment,
   ) -> Option<Direction> {
-    let clearance = blast_clearance(weapon);
-    Self::walk_search(world, cursor, params.escape_steps, |cell, _| {
-      let (delta_row, delta_col) = cursor.distance(cell);
-      delta_row + delta_col > clearance && danger.at(cell) == SAFE
+    Self::retreat_direction_where(world, bot_idx, cursor, danger, params, weapon, |_| true)
+  }
+
+  /// `retreat_direction`, also requiring `accept` of the tile we end up on.
+  fn retreat_direction_where(
+    world: &World,
+    bot_idx: usize,
+    cursor: Cursor,
+    danger: &DangerMap,
+    params: &BotParams,
+    weapon: Equipment,
+    accept: impl Fn(Cursor) -> bool,
+  ) -> Option<Direction> {
+    let fuse = u32::from(super::item_placement_timer(weapon));
+    let blast = DangerMap::of_own_bomb(world, bot_idx, cursor, weapon);
+    let pass = |cell: Cursor| !danger.monster_contact(cell);
+    Self::walk_search_through(world, cursor, params.escape_steps, pass, |cell, arrival| {
+      blast.at(cell) == SAFE
+        && danger.at(cell) == SAFE
+        && (fuse == 0 || arrival + params.escape_margin < fuse)
+        && accept(cell)
     })
   }
 
@@ -868,7 +947,12 @@ impl BotController {
       .filter(|&idx| !world.actors[idx].is_dead && world.actors[idx].is_active)
       .filter(|&idx| world.actors[idx].kind != crate::world::actor::ActorKind::Grenadier)
       .filter(
-        |&idx| !matches!(world.actors[idx].kind, crate::world::actor::ActorKind::Clone(owner) if owner as usize == bot_idx),
+        // Clones never hurt their owner, and in campaign and survival they hurt nobody
+        // (`damage_players`): those are teammates, not monsters.
+        |&idx| {
+          !matches!(world.actors[idx].kind, crate::world::actor::ActorKind::Clone(owner)
+          if owner as usize == bot_idx || world.campaign_mode || world.survival_mode)
+        },
       )
       .map(|idx| {
         let at = world.actors[idx].pos.cursor();
@@ -886,10 +970,8 @@ impl BotController {
     };
     if (2..=3).contains(&distance) && state.bomb_cooldown == 0 && world.maps.level[cursor].is_passable() {
       if let Some(weapon) = Self::melee_weapon(world, bot_idx) {
-        let clearance = blast_clearance(weapon);
-        let away = Self::walk_search(world, cursor, params.escape_steps, |cell, _| {
-          let (rows, cols) = cursor.distance(cell);
-          rows + cols > clearance && farther(cell) > distance && danger.at(cell) == SAFE
+        let away = Self::retreat_direction_where(world, bot_idx, cursor, danger, params, weapon, |cell| {
+          farther(cell) > distance
         });
         if let Some(dir) = away {
           state.bomb_cooldown = BOMB_COOLDOWN;
@@ -902,8 +984,10 @@ impl BotController {
       }
     }
 
-    let away = Self::walk_search(world, cursor, params.escape_steps, |cell, _| {
-      farther(cell) > distance && !danger.monster_contact(cell) && danger.at(cell) == SAFE
+    // Through tiles clear of monsters only: past the one we flee from is no way out.
+    let pass = |cell: Cursor| !danger.monster_contact(cell);
+    let away = Self::walk_search_through(world, cursor, params.escape_steps, pass, |cell, _| {
+      farther(cell) > distance && danger.at(cell) == SAFE
     })?;
     state.clear_plan();
     Some(BotAction::step(away))
@@ -938,7 +1022,7 @@ impl BotController {
     // Point blank: the enemy stands inside the blast of a bomb dropped at our feet.
     if manhattan <= 1 && state.bomb_cooldown == 0 && on_bombable_tile {
       if let Some(weapon) = Self::melee_weapon(world, bot_idx) {
-        let retreat = Self::retreat_direction(world, cursor, danger, params, weapon);
+        let retreat = Self::retreat_direction(world, bot_idx, cursor, danger, params, weapon);
         if retreat.is_some() || !params.verify_retreat {
           state.bomb_cooldown = BOMB_COOLDOWN;
           state.clear_plan();
@@ -1062,7 +1146,7 @@ impl BotController {
     // Freeze bomb: 180 ticks of a motionless opponent is worth more than any single blast, but the
     // 5-tile radius catches the thrower too, so this needs real distance before the 90-tick fuse.
     if inventory[Equipment::FreezeBomb] > 0 && manhattan <= 5 {
-      if let Some(dir) = Self::retreat_direction(world, cursor, danger, params, Equipment::FreezeBomb) {
+      if let Some(dir) = Self::retreat_direction(world, bot_idx, cursor, danger, params, Equipment::FreezeBomb) {
         state.bomb_cooldown = BOMB_COOLDOWN;
         state.clear_plan();
         return Some(BotAction {
@@ -1096,7 +1180,7 @@ impl BotController {
     // both need a long run afterwards and the bot gives up its position to make it.
     for big in [Equipment::BlackHole, Equipment::AtomicBomb] {
       if inventory[big] > 0 && manhattan <= 6 {
-        if let Some(dir) = Self::retreat_direction(world, cursor, danger, params, big) {
+        if let Some(dir) = Self::retreat_direction(world, bot_idx, cursor, danger, params, big) {
           state.bomb_cooldown = BOMB_COOLDOWN;
           state.clear_plan();
           return Some(BotAction {
@@ -1425,7 +1509,7 @@ impl BotController {
     .copied()
     .find(|&weapon| inventory[weapon] > 0)?;
 
-    let retreat = Self::retreat_direction(world, cursor, danger, params, weapon);
+    let retreat = Self::retreat_direction(world, bot_idx, cursor, danger, params, weapon);
     if params.verify_retreat && retreat.is_none() {
       return None;
     }
@@ -1579,6 +1663,25 @@ impl BotController {
 // -----------------------------------------------------------------------------------------------
 
 #[inline]
+/// Whether activating `item` puts an explosive down (as opposed to a tool, armor, a clone, a wall or
+/// a teleport).
+fn places_explosive(item: Equipment) -> bool {
+  !matches!(
+    item,
+    Equipment::SmallPickaxe
+      | Equipment::LargePickaxe
+      | Equipment::Drill
+      | Equipment::Flamethrower
+      | Equipment::Extinguisher
+      | Equipment::Armor
+      | Equipment::SuperDrill
+      | Equipment::Clone
+      | Equipment::Teleport
+      | Equipment::MetalWall
+      | Equipment::Biomass
+  )
+}
+
 fn cell_index(cursor: Cursor) -> usize {
   usize::from(cursor.row) * usize::from(MAP_COLS) + usize::from(cursor.col)
 }
@@ -1596,25 +1699,6 @@ fn direction_to_adjacent(from: Cursor, to: Cursor) -> Option<Direction> {
     let next = from.to(dir);
     next != from && next == to
   })
-}
-
-/// Tiles away from its own blast a bot has to get after dropping `weapon`, from the explosion
-/// patterns in `world::explode` (a small bomb's cross reaches 1 tile, a big bomb's 2, dynamite's 3).
-fn blast_clearance(weapon: Equipment) -> u16 {
-  match weapon {
-    Equipment::SmallBomb | Equipment::Mine | Equipment::Grenade | Equipment::DrillDrone => 1,
-    Equipment::SmallRadio => 1,
-    Equipment::BigBomb | Equipment::Barrel | Equipment::ExplosivePlastic | Equipment::LargeRadio => 2,
-    Equipment::Dynamite | Equipment::Digger | Equipment::Plastic => 3,
-    // Freezes every actor within 5 tiles, the thrower included (`explode_freeze_bomb`).
-    Equipment::FreezeBomb => 5,
-    // Pulls everything within 9 tiles into itself for a minute before collapsing (`tick_black_hole`).
-    Equipment::BlackHole => 10,
-    Equipment::Napalm => 6,
-    // A 12-tile radius, and the centre takes double damage (`explode_entity`).
-    Equipment::AtomicBomb => 13,
-    _ => 3,
-  }
 }
 
 /// Whether the actor is part-way through a step: its position is between two tile centers along the
@@ -1845,6 +1929,33 @@ mod tests {
     }
   }
 
+  /// The map the balance measurements play on: `MB_BOT_MAP` (a classic map's file name, or `random`
+  /// for one generated cave), else BATTLE.MNE - the map the difficulties were tuned on, so check
+  /// others before trusting a result.
+  fn measurement_map() -> MeasurementMap {
+    match std::env::var("MB_BOT_MAP") {
+      Ok(name) if name.eq_ignore_ascii_case("random") => MeasurementMap::Generated,
+      Ok(name) => MeasurementMap::Classic(real_classic_map(&name)),
+      Err(_) => MeasurementMap::Classic(real_classic_map("BATTLE.MNE")),
+    }
+  }
+
+  /// One classic map for every match, or a freshly generated cave per match: a single generated map
+  /// once had Medium beating Hard 548-427 while six of them together had Hard ahead 65%.
+  enum MeasurementMap {
+    Classic(LevelMap),
+    Generated,
+  }
+
+  impl MeasurementMap {
+    fn get(&self) -> LevelMap {
+      match self {
+        MeasurementMap::Classic(map) => map.clone(),
+        MeasurementMap::Generated => LevelMap::random_map(50),
+      }
+    }
+  }
+
   fn real_classic_map(name: &str) -> LevelMap {
     let dir = game_dir().expect("original game files not found (set MB_GAME_DIR or keep them in res/minebomb)");
     let data = std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("cannot read {}: {}", name, e));
@@ -2048,6 +2159,86 @@ mod tests {
   /// Issue #20: a bot was seen alive and completely motionless for 1800+ ticks. Every fallback in
   /// `decide` now ends in a movement action - there is no "stand still" branch left - so a bot sealed
   /// into a one-tile pocket digs its way out instead of freezing.
+  /// A retreat has to clear the bombs our blast sets off too, not just our own pattern.
+  #[test]
+  fn own_bomb_danger_includes_the_bombs_it_sets_off() {
+    let options = Options::default();
+    let mut players = human_and_bot(BotDifficulty::Medium, &options);
+    let mut world = World::create(LevelMap::empty(), &mut players, false, 50, false);
+    place_bot(&mut world, Cursor::new(20, 20));
+    // A big bomb three tiles along the row, inside a dynamite stick's reach.
+    let other = Cursor::new(20, 23);
+    world.maps.level[other] = MapValue::BigBomb1;
+    world.maps.timer[other] = 300;
+
+    let blast = DangerMap::of_own_bomb(&world, 1, Cursor::new(20, 20), Equipment::Dynamite);
+    assert_ne!(blast.at(other), SAFE, "the dynamite reaches the big bomb");
+    // Two tiles past the big bomb: only its own blast reaches there.
+    assert_ne!(blast.at(Cursor::new(20, 25)), SAFE, "the big bomb goes off with it");
+  }
+
+  #[test]
+  fn walk_search_through_never_steps_past_a_blocked_tile() {
+    let options = Options::default();
+    let mut players = human_and_bot(BotDifficulty::Medium, &options);
+    let mut world = World::create(filled_map(MapValue::Stone1), &mut players, false, 50, false);
+    for col in 5..=20 {
+      world.maps.level[Cursor::new(10, col)] = MapValue::Passage;
+    }
+    let start = Cursor::new(10, 10);
+    let blocked = Cursor::new(10, 11);
+    let pass = |cell: Cursor| cell != blocked;
+    let east = BotController::walk_search_through(&world, start, 10, pass, |cell, _| cell.col >= 15);
+    assert_eq!(east, None, "the only way east is through the blocked tile");
+    let west = BotController::walk_search_through(&world, start, 10, pass, |cell, _| cell.col <= 6);
+    assert_eq!(west, Some(Direction::Left));
+  }
+
+  #[test]
+  fn only_placed_explosives_count_as_own_bombs() {
+    for item in [
+      Equipment::SmallBomb,
+      Equipment::Dynamite,
+      Equipment::Grenade,
+      Equipment::Mine,
+    ] {
+      assert!(places_explosive(item), "{:?}", item);
+    }
+    for item in [
+      Equipment::Clone,
+      Equipment::Extinguisher,
+      Equipment::SuperDrill,
+      Equipment::Flamethrower,
+    ] {
+      assert!(!places_explosive(item), "{:?}", item);
+    }
+  }
+
+  /// The one balance check that runs in CI: no original files there, so generated caves and short
+  /// rounds. It only guards against a reversal - Hard won 28-36 of 40 such rounds when this was
+  /// written (about 79%), so needing 24 fails by chance about once in 500 runs. The real balance
+  /// measurements are the `measure_*` tests below, run by hand with the game files.
+  #[test]
+  fn hard_beats_easy_in_short_rounds_on_generated_maps() {
+    const ROUNDS: u32 = 40;
+    let (hard, easy, _) = parallel_tally(ROUNDS, |i| {
+      let level = LevelMap::random_map(50);
+      if i % 2 == 0 {
+        run_match_with_real_shop_equipment(level, BotDifficulty::Hard, BotDifficulty::Easy, 2650, 3000)
+      } else {
+        run_match_with_real_shop_equipment(level, BotDifficulty::Easy, BotDifficulty::Hard, 2650, 3000)
+          .map(|winner| 1 - winner)
+      }
+    });
+    assert!(
+      hard >= 24,
+      "Hard won only {} of {} rounds against Easy ({} lost)",
+      hard,
+      ROUNDS,
+      easy
+    );
+  }
+
   #[test]
   fn walled_in_bot_digs_its_way_out() {
     let options = Options::default();
@@ -2216,7 +2407,7 @@ mod tests {
   fn measure_bot_difficulty_win_rates() {
     const TRIALS: u32 = 250;
     const MAX_TICKS: u32 = 60 * 180;
-    let level = real_classic_map("BATTLE.MNE");
+    let level = measurement_map();
 
     let mut broken = Vec::new();
     for (label, a, b) in [
@@ -2231,9 +2422,9 @@ mod tests {
       let mut draws = 0;
       for i in 0..TRIALS {
         let result = if i % 2 == 0 {
-          run_match(level.clone(), a, b, MAX_TICKS)
+          run_match(level.get(), a, b, MAX_TICKS)
         } else {
-          run_match(level.clone(), b, a, MAX_TICKS).map(|winner| 1 - winner)
+          run_match(level.get(), b, a, MAX_TICKS).map(|winner| 1 - winner)
         };
         match result {
           Some(0) => a_wins += 1,
@@ -2268,7 +2459,7 @@ mod tests {
     // The in-game CASH option's maximum, so each difficulty's shop *priorities* actually diverge
     // instead of everyone being cut off early by a shared budget limit.
     const STARTING_CASH: u32 = 2650;
-    let level = real_classic_map("BATTLE.MNE");
+    let level = measurement_map();
 
     let mut broken = Vec::new();
     for (label, a, b) in [
@@ -2278,9 +2469,9 @@ mod tests {
     ] {
       let (a_wins, b_wins, draws) = parallel_tally(trials, |i| {
         if i % 2 == 0 {
-          run_match_with_real_shop_equipment(level.clone(), a, b, STARTING_CASH, MAX_TICKS)
+          run_match_with_real_shop_equipment(level.get(), a, b, STARTING_CASH, MAX_TICKS)
         } else {
-          run_match_with_real_shop_equipment(level.clone(), b, a, STARTING_CASH, MAX_TICKS).map(|winner| 1 - winner)
+          run_match_with_real_shop_equipment(level.get(), b, a, STARTING_CASH, MAX_TICKS).map(|winner| 1 - winner)
         }
       });
       println!("{label}: {a:?}={a_wins} {b:?}={b_wins} draws={draws} (of {trials})");
@@ -2338,7 +2529,7 @@ mod tests {
 
   /// `trials()` matches of `a` against `b` with the shop's equipment, alternating spawn slots;
   /// returns (a wins, b wins, draws).
-  fn tally_params(level: &LevelMap, a: BotParams, b: BotParams) -> (u32, u32, u32) {
+  fn tally_params(level: &MeasurementMap, a: BotParams, b: BotParams) -> (u32, u32, u32) {
     const MAX_TICKS: u32 = 60 * 180;
     const STARTING_CASH: u32 = 2650;
     parallel_tally(trials(), |i| {
@@ -2346,7 +2537,7 @@ mod tests {
       let (first, second) = if swap { (b, a) } else { (a, b) };
       let result = with_params(first, second, || {
         run_match_with_real_shop_equipment(
-          level.clone(),
+          level.get(),
           BotDifficulty::Medium,
           BotDifficulty::Medium,
           STARTING_CASH,
@@ -2370,7 +2561,7 @@ mod tests {
   #[test]
   #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
   fn measure_against_previous_difficulties() {
-    let level = real_classic_map("BATTLE.MNE");
+    let level = measurement_map();
     let levels = [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard];
     let mut broken = Vec::new();
     for opponent in [BotDifficulty::Easy, BotDifficulty::Medium] {
@@ -2594,7 +2785,7 @@ mod tests {
   #[ignore = "needs the original game files: set MB_GAME_DIR or keep them in res/minebomb"]
   fn measure_self_destruction() {
     use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
-    let level = real_classic_map("BATTLE.MNE");
+    let level = measurement_map();
     let trials = trials();
     let runs = [BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard]
       .iter()
@@ -2616,7 +2807,7 @@ mod tests {
         crate::shop::auto_buy_for_bot(&mut players[1], &prices);
         // Slot 0 is the idle human, so only slot 1's parameters matter.
         with_params(params, params, || {
-          let mut world = World::create(level.clone(), &mut players, false, 50, false);
+          let mut world = World::create(level.get(), &mut players, false, 50, false);
           let mut last_bomb = None;
           let mut dropped: Option<(Cursor, usize)> = None;
           let mut health = world.actors[1].health;
