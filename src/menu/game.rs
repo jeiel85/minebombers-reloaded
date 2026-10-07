@@ -22,8 +22,10 @@ use sdl2::keyboard::Scancode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
+use std::ffi::CString;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 const CAMPAIGN_ROUNDS: u16 = 15;
@@ -49,20 +51,56 @@ fn time_bar_elapsed_width(played: Duration, round: Duration) -> i32 {
 const ROUND_MUSIC_ORDERS: i32 = 83;
 const SHOP_MUSIC_ORDER: i32 = 83;
 
-extern "C" {
-  // SDL_mixer 2.6+; sdl2 0.35 has no binding for it. The build already links SDL2_mixer.
-  fn Mix_ModMusicJumpToOrder(order: std::os::raw::c_int) -> std::os::raw::c_int;
+type JumpToOrder = unsafe extern "C" fn(std::os::raw::c_int) -> std::os::raw::c_int;
+
+/// `Mix_ModMusicJumpToOrder` from SDL_mixer 2.6, looked up at run time: sdl2 0.35 has no binding for
+/// it, and linking it directly would stop the game from building or starting against an older
+/// SDL_mixer (Ubuntu 22.04 and Debian 11 ship 2.0.4). Without it the music plays from its start.
+fn jump_to_order_fn() -> Option<JumpToOrder> {
+  static FUNCTION: OnceLock<Option<JumpToOrder>> = OnceLock::new();
+  *FUNCTION.get_or_init(|| {
+    let library = if cfg!(windows) {
+      "SDL2_mixer.dll"
+    } else if cfg!(target_os = "macos") {
+      "libSDL2_mixer-2.0.0.dylib"
+    } else {
+      "libSDL2_mixer-2.0.so.0"
+    };
+    let library = CString::new(library).ok()?;
+    // SAFETY: both strings are NUL-terminated; SDL_mixer is already loaded, so this only takes another
+    // reference to it, and the symbol has the C signature of `JumpToOrder`.
+    unsafe {
+      let handle = sdl2::sys::SDL_LoadObject(library.as_ptr());
+      if handle.is_null() {
+        return None;
+      }
+      let function = sdl2::sys::SDL_LoadFunction(handle, b"Mix_ModMusicJumpToOrder\0".as_ptr().cast());
+      if function.is_null() {
+        None
+      } else {
+        Some(std::mem::transmute::<*mut std::ffi::c_void, JumpToOrder>(function))
+      }
+    }
+  })
 }
 
-/// Moves the playing module to the start of `order`. A replacement music file that is not a module,
-/// or has fewer orders, refuses the jump; the music then plays from its start.
+/// Moves the playing module to the start of `order`. An SDL_mixer older than 2.6, or a replacement
+/// music file that is not a module or has fewer orders, cannot jump; the music then plays from its
+/// start.
 fn jump_to_order(order: i32) {
   if order == 0 {
     // `play` already starts there, and libxmp answers a jump to order 0 with -1 even though it works
     return;
   }
+  let jump = match jump_to_order_fn() {
+    Some(jump) => jump,
+    None => {
+      eprintln!("Music cannot jump to order {}: needs SDL_mixer 2.6 or newer", order);
+      return;
+    }
+  };
   // SAFETY: plain C call with no pointers; SDL_mixer checks that module music is playing.
-  let result = unsafe { Mix_ModMusicJumpToOrder(order) };
+  let result = unsafe { jump(order) };
   // SDL_mixer passes on libxmp's answer, the new order, so only a negative value is a failure
   if result < 0 {
     eprintln!("Music cannot jump to order {} (SDL_mixer returned {})", order, result);
@@ -1228,6 +1266,13 @@ mod tests {
     assert_eq!(time_bar_elapsed_width(round, round), 636);
     assert_eq!(time_bar_elapsed_width(Duration::from_secs(90), round), 636);
     assert_eq!(time_bar_elapsed_width(Duration::from_secs(1), Duration::ZERO), 636);
+  }
+
+  /// The SDL_mixer we ship with the Windows build is new enough to start music at an order.
+  #[cfg(windows)]
+  #[test]
+  fn the_bundled_sdl_mixer_can_jump_to_an_order() {
+    assert!(jump_to_order_fn().is_some());
   }
 
   /// In a round every key goes to every human player, so a key shared by two default bindings would act
