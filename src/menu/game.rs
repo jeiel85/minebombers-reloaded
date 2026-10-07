@@ -107,6 +107,20 @@ fn jump_to_order(order: i32) {
   }
 }
 
+/// Input: a place in the hall of fame (from 1) and the score there, if any.
+/// Output: the line the original prints for it. Like the original, every one of the ten places gets a
+/// line; an empty place shows level and money 0.
+fn hall_of_fame_line(place: usize, score: Option<&Score>) -> String {
+  let (name, level, cash) = score.map_or(("", 0, 0), |score| (score.name.as_str(), score.level, score.cash));
+  format!(
+    "{:<6}{:<20}Level {:<2} Money {}",
+    format!("{}.", place),
+    name,
+    level,
+    cash
+  )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SpeedHotkey {
   Slower,
@@ -334,21 +348,14 @@ impl Application<'_> {
       scores.save(ctx.user_dir())?;
     }
 
-    // FIXME: implement rendering!
+    // Positions and colours match the original (captured in DOSBox, issue #36). The bar behind the
+    // first place is part of HALLOFFA.SPY.
     ctx.with_render_context(|canvas| {
       canvas.copy(&self.halloffa.texture, None, None).map_err(SdlError)?;
       let color = self.halloffa.palette[1];
       for (idx, score) in scores.scores.iter().enumerate() {
-        if let Some(score) = score {
-          let text = format!(
-            "{:<2}    {:<20}Level {:<2} Money {}",
-            idx + 1,
-            score.name,
-            score.level,
-            score.cash
-          );
-          self.font.render(canvas, 127, 10 * (idx as i32) + 179, color, &text)?;
-        }
+        let text = hall_of_fame_line(idx + 1, score.as_ref());
+        self.font.render(canvas, 127, 10 * (idx as i32) + 179, color, &text)?;
       }
       Ok(())
     })?;
@@ -1273,6 +1280,26 @@ mod tests {
   #[test]
   fn the_bundled_sdl_mixer_can_jump_to_an_order() {
     assert!(jump_to_order_fn().is_some());
+  }
+
+  /// The columns land where the original draws them: 8 pixels per character from x 127, so the name
+  /// starts at 175, "Level" at 335 and "Money" at 407.
+  #[test]
+  fn hall_of_fame_lines_match_the_original_layout() {
+    let score = Score {
+      name: "Park".to_string(),
+      level: 3,
+      cash: 307,
+    };
+    let line = hall_of_fame_line(1, Some(&score));
+    assert_eq!(line, "1.    Park                Level 3  Money 307");
+    assert_eq!(line.find("Park"), Some(6));
+    assert_eq!(line.find("Level"), Some(26));
+    assert_eq!(line.find("Money"), Some(35));
+    assert_eq!(
+      hall_of_fame_line(10, None),
+      "10.                       Level 0  Money 0"
+    );
   }
 
   /// In a round every key goes to every human player, so a key shared by two default bindings would act
