@@ -28,6 +28,47 @@ use std::time::{Duration, Instant};
 
 const CAMPAIGN_ROUNDS: u16 = 15;
 
+/// Where the original draws the time bar: over the bottom border row, filled from the left with the
+/// time left, the elapsed part blacked out from the right (measured from DOSBox captures, issue #36).
+const TIME_BAR_X: i32 = 2;
+const TIME_BAR_Y: i32 = 473;
+const TIME_BAR_WIDTH: u32 = 636;
+const TIME_BAR_HEIGHT: u32 = 5;
+
+/// Input: time played in the round and the round length. Output: how many pixels from the right of
+/// the time bar are elapsed, never more than the whole bar.
+fn time_bar_elapsed_width(played: Duration, round: Duration) -> i32 {
+  let elapsed = u128::from(TIME_BAR_WIDTH) * played.as_millis() / round.as_millis().max(1);
+  elapsed.min(u128::from(TIME_BAR_WIDTH)) as i32
+}
+
+/// OEKU.S3M holds two tunes: orders 0 to 82 are the round music (order 82 jumps back to 4), and 83
+/// onwards is the shop music (order 89 jumps back to 84). Like the original (recorded in DOSBox, issue
+/// #36), the shop plays the shop tune from its start and every round starts at the first row of a
+/// random order of the round music.
+const ROUND_MUSIC_ORDERS: i32 = 83;
+const SHOP_MUSIC_ORDER: i32 = 83;
+
+extern "C" {
+  // SDL_mixer 2.6+; sdl2 0.35 has no binding for it. The build already links SDL2_mixer.
+  fn Mix_ModMusicJumpToOrder(order: std::os::raw::c_int) -> std::os::raw::c_int;
+}
+
+/// Moves the playing module to the start of `order`. A replacement music file that is not a module,
+/// or has fewer orders, refuses the jump; the music then plays from its start.
+fn jump_to_order(order: i32) {
+  if order == 0 {
+    // `play` already starts there, and libxmp answers a jump to order 0 with -1 even though it works
+    return;
+  }
+  // SAFETY: plain C call with no pointers; SDL_mixer checks that module music is playing.
+  let result = unsafe { Mix_ModMusicJumpToOrder(order) };
+  // SDL_mixer passes on libxmp's answer, the new order, so only a negative value is a failure
+  if result < 0 {
+    eprintln!("Music cannot jump to order {} (SDL_mixer returned {})", order, result);
+  }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SpeedHotkey {
   Slower,
@@ -355,7 +396,7 @@ impl Application<'_> {
 
     // Play shop music
     self.music2.play(-1).map_err(SdlError)?;
-    sdl2::mixer::Music::set_pos(464.8).map_err(SdlError)?;
+    jump_to_order(SHOP_MUSIC_ORDER);
 
     let mut shared_cash = if campaign_mode { Some(players[0].cash) } else { None };
     let mut it = players.iter_mut();
@@ -389,8 +430,8 @@ impl Application<'_> {
       .with_survival_mode(is_survival, (round + 1) as u16);
 
     sdl2::mixer::Music::halt();
-    // FIXME: start playing random music from the level music; also, don't play shop music?
     self.music2.play(-1).map_err(SdlError)?;
+    jump_to_order(thread_rng().gen_range(0..ROUND_MUSIC_ORDERS));
     let mut music_on = true;
 
     ctx.with_render_context(|canvas| {
@@ -638,8 +679,9 @@ impl Application<'_> {
         }
 
         // Update end of round indicator
-        if !world.campaign_mode {
-          let width = ((635 * round_time.as_millis()) / settings.options.round_time.as_millis()).min(635) as i32;
+        let width = time_bar_elapsed_width(round_time, settings.options.round_time);
+        // `Rect::new` widens a zero width to one pixel, which would land on the border
+        if !world.campaign_mode && width > 0 {
           if world.sudden_death_active {
             canvas.set_draw_color(Color::RGB(240, 40, 30));
           } else if world.sudden_death_warning {
@@ -653,7 +695,12 @@ impl Application<'_> {
             canvas.set_draw_color(self.players.palette[0]);
           }
           canvas
-            .fill_rect(Rect::new(636 - width, 473, width as u32, 5))
+            .fill_rect(Rect::new(
+              TIME_BAR_X + TIME_BAR_WIDTH as i32 - width,
+              TIME_BAR_Y,
+              width as u32,
+              TIME_BAR_HEIGHT,
+            ))
             .map_err(SdlError)?;
         }
 
@@ -791,7 +838,9 @@ impl Application<'_> {
     } else {
       // Time bar
       canvas.set_draw_color(self.players.palette[6]);
-      canvas.fill_rect(Rect::new(2, 473, 635, 5)).map_err(SdlError)?;
+      canvas
+        .fill_rect(Rect::new(TIME_BAR_X, TIME_BAR_Y, TIME_BAR_WIDTH, TIME_BAR_HEIGHT))
+        .map_err(SdlError)?;
     }
     Ok(())
   }
@@ -1073,7 +1122,8 @@ impl Application<'_> {
   }
 
   fn reveal_map_square(&self, canvas: &mut WindowCanvas, cursor: Cursor, maps: &mut Maps) -> Result<(), anyhow::Error> {
-    // FIXME: temporary. Need to figure out what to do with time bar
+    // The time bar is drawn over the bottom border row, as in the original, and only its elapsed
+    // part is redrawn; redrawing a square of that row would wipe the bar there.
     if cursor.row == MAP_ROWS - 1 {
       return Ok(());
     }
@@ -1166,6 +1216,18 @@ mod tests {
     let mut player = PlayerComponent::default();
     player.keys = keys.to_key_bindings().to_player_keys();
     player
+  }
+
+  /// The original's bar spans x 2..=637; the elapsed part must reach its last pixel when time is up.
+  #[test]
+  fn the_time_bar_blacks_out_completely_when_the_round_ends() {
+    let round = Duration::from_secs(60);
+    assert_eq!(TIME_BAR_X + TIME_BAR_WIDTH as i32 - 1, 637);
+    assert_eq!(time_bar_elapsed_width(Duration::ZERO, round), 0);
+    assert_eq!(time_bar_elapsed_width(Duration::from_secs(30), round), 318);
+    assert_eq!(time_bar_elapsed_width(round, round), 636);
+    assert_eq!(time_bar_elapsed_width(Duration::from_secs(90), round), 636);
+    assert_eq!(time_bar_elapsed_width(Duration::from_secs(1), Duration::ZERO), 636);
   }
 
   /// In a round every key goes to every human player, so a key shared by two default bindings would act
