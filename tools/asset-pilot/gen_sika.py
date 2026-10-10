@@ -647,6 +647,7 @@ for y in range(ROWS):
         screen.paste(glyph_at(grid[y][x]), (x * 10, y * 10 + 30))
 
 SAND_LIKE = {"Sand1", "Sand2", "Sand3", "LightGravel", "HeavyGravel"}
+SOLID_STONE = {"Stone1", "Stone2", "Stone3", "Stone4"}
 OPEN = lambda n: not (n in SAND_LIKE or is_st(n) or n in ("MetalWall", "Brick", "BrickLightCracked", "BrickHeavyCracked"))
 OFFS = {"Left": (-9, -5), "Right": (5, -5), "Up": (-5, -8), "Down": (-5, 5)}
 STEP = {"Left": (0, -1), "Right": (0, 1), "Up": (-1, 0), "Down": (1, 0)}
@@ -661,7 +662,8 @@ for y in range(1, ROWS - 1):
         for kind in ("sand", "stone"):
             for dname in ("Right", "Left", "Up", "Down"):
                 n = grid[y + STEP[dname][0]][x + STEP[dname][1]]
-                hit = (n in SAND_LIKE or n in CORNER[dname]) if kind == "sand" else is_st(n)
+                # stone pass mirrors MapValue::is_stone(): solid Stone1..Stone4 only, not corners or cracks
+                hit = (n in SAND_LIKE or n in CORNER[dname]) if kind == "sand" else n in SOLID_STONE
                 if hit:
                     ox, oy = OFFS[dname]
                     screen.paste(BORDERS[(kind, REV[dname], False)].image(), (cx + ox, cy + oy))
