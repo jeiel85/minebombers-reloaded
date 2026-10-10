@@ -404,6 +404,24 @@ def player(pi, direction, frame):
     return sprite(rows, cols, base=passage(13))
 
 
+# Pickaxe swing, drawn over the standing pose: raised, half-way, strike, half-way.
+# (x, y, colour) for a miner facing right; Left mirrors it, Up/Down swing on the miner's right side.
+PICK_SWING = [
+    [(7, 4, "skin"), (7, 3, "fuse"), (8, 2, "fuse"), (7, 1, "stoneL"), (8, 1, "stoneL"), (9, 1, "stoneL"), (9, 2, "stoneD")],
+    [(7, 5, "skin"), (8, 4, "fuse"), (9, 3, "fuse"), (9, 2, "stoneL"), (9, 4, "stoneL"), (9, 5, "stoneD")],
+    [(7, 6, "skin"), (8, 6, "fuse"), (9, 6, "fuse"), (9, 5, "stoneL"), (9, 7, "stoneL"), (9, 8, "stoneD")],
+    [(7, 5, "skin"), (8, 4, "fuse"), (9, 3, "fuse"), (9, 2, "stoneL"), (9, 4, "stoneL"), (9, 5, "stoneD")],
+]
+
+
+def player_pickaxe(pi, direction, frame):
+    """Glyph::Monster(.., Digging::Pickaxe, ..): shown while the miner digs stone or brick."""
+    t = player(pi, direction, 0)
+    for x, y, c in PICK_SWING[frame]:
+        t.set(9 - x if direction == "Left" else x, y, c)
+    return t
+
+
 # ---------------------------------------------------------------- the pilot glyph set
 MAP_TILES = {
     "Passage": passage(1),
@@ -457,6 +475,11 @@ for pi, (ox, oy) in enumerate(PLAYER_ORIGIN):
     for di, d in enumerate(DIRS):
         for f in range(4):
             sheet.paste(player(pi, d, f).image(), (ox + di * 40 + f * 10, oy))
+PICKAXE_ORIGIN = [(160, 200), (0, 200), (0, 210), (160, 210)]
+for pi, (ox, oy) in enumerate(PICKAXE_ORIGIN):
+    for di, d in enumerate(DIRS):
+        for f in range(4):
+            sheet.paste(player_pickaxe(pi, d, f).image(), (ox + di * 40 + f * 10, oy))
 sheet.save(OUT / "sika_pilot.png")
 
 
@@ -656,6 +679,8 @@ items += [(f"{k[0]}Border {k[1]}", BORDERS[k].image()) for k in BORDER_RECTS if 
 for pi in range(4):
     for di, dn in enumerate(DIRS):
         items.append((f"P{pi + 1} {dn}", player(pi, dn, 0).image()))
+for f in range(4):
+    items.append((f"P1 pick R{f + 1}", player_pickaxe(0, "Right", f).image()))
 Z, CELL_W, CELL_H, PER_ROW = 8, 120, 112, 10
 rows_n = (len(items) + PER_ROW - 1) // PER_ROW
 zoom = Image.new("RGB", (PER_ROW * CELL_W, rows_n * CELL_H), C["hud"])
