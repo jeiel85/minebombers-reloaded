@@ -1,7 +1,7 @@
 use crate::bitmap;
 use crate::bitmap::MapValueSet;
 use crate::effects::SoundEffect;
-use crate::world::map::{MapValue, MAP_ROWS};
+use crate::world::map::{LevelMap, MapValue, MAP_ROWS};
 use crate::world::position::{Cursor, Direction};
 use crate::world::{drone_direction, grenade_direction, SplatterKind, World};
 use rand::prelude::*;
@@ -265,26 +265,7 @@ impl World<'_> {
 
     let jumps = self.maps.hits[cursor];
     if jumps > 1 {
-      let mut next = None;
-      for _ in 0..6 {
-        // Note that ranges are not symmetric as per original game!
-        let delta_row = rng.gen_range(-4..4);
-        let delta_col = rng.gen_range(-4..4);
-        if let Some(cur) = cursor.offset(delta_row, delta_col) {
-          let v = self.maps.level[cur];
-          // FIXME: verify: cannot jump on blood; cannot jump on brick; cannot jump on cracked stone
-          if v == MapValue::Passage
-            || v.is_sand()
-            || v.is_stone_corner()
-            || v.is_stone()
-            || v == MapValue::Boulder
-            || v == MapValue::Explosion
-          {
-            next = Some(cur);
-          }
-        }
-      }
-      let next = next.unwrap_or(cursor);
+      let next = jumping_bomb_target(cursor, &self.maps.level, &mut rng);
       self.maps.level[next] = MapValue::JumpingBomb;
       self.maps.hits[cursor] = 0;
       self.maps.hits[next] = jumps - 1;
@@ -305,7 +286,8 @@ impl World<'_> {
     let from = rng.gen_range(0..5);
     for _ in from..15 {
       let center = loop {
-        // FIXME: again, non-symmetric
+        // -10..=9 like the original's `Random(20) - 10`; `offset` keeps the centre off the border
+        // rows and columns, which is the same bound the original checks.
         let delta_col = rng.gen_range(-10..10);
         let delta_row = rng.gen_range(-10..10);
         if let Some(next) = cursor.offset(delta_row, delta_col) {
@@ -314,7 +296,8 @@ impl World<'_> {
       };
 
       self.explode_pattern(center, 84, &BIG_BOMB_PATTERN, total);
-      self.effects.play(SoundEffect::Explos1, 11000, center);
+      // The original pans every one of these at the barrel's column, not at the blast's.
+      self.effects.play(SoundEffect::Explos1, 11000, cursor);
     }
   }
 
@@ -627,6 +610,45 @@ pub(crate) const BIG_BOMB_PATTERN: [(i16, i16); 12] = [
   (-1, -1),
 ];
 
+/// Where a jumping bomb lands after a bounce.
+///
+/// Input: the bomb's cell and the level. Output: the landing cell, `cursor` itself if no try hits.
+///
+/// Mirrors the original 3.11 (`MB.EXE`, segment 3 at 0x18b4), checked against its disassembly
+/// (issue #36):
+/// - each try picks `Random(8) - 4` (-4..=3) for the column, then the same for the row, so the
+///   jump leans up and left;
+/// - a try counts only inside rows 2..=43 and columns 2..=62. The original tests `> 1` on the low
+///   side but `< 44` / `< 63` on the high side, so the row and column just inside the top and left
+///   border are never a target while the ones inside the bottom and right border are;
+/// - the target must be passage, sand, stone, a stone corner, a boulder or an explosion (blood,
+///   bricks and cracked stone are not), and the first try that fits wins;
+/// - after 6 failed tries the bomb stays where it is. The original draws a 7th pair but throws
+///   it away even when it fits, so only 6 tries can move the bomb.
+fn jumping_bomb_target(cursor: Cursor, level: &LevelMap, rng: &mut impl Rng) -> Cursor {
+  for _ in 0..6 {
+    let delta_col = rng.gen_range(-4..4);
+    let delta_row = rng.gen_range(-4..4);
+    let Some(target) = cursor.offset(delta_row, delta_col) else {
+      continue;
+    };
+    if target.row < 2 || target.col < 2 {
+      continue;
+    }
+    let v = level[target];
+    if v == MapValue::Passage
+      || v.is_sand()
+      || v.is_stone_corner()
+      || v.is_stone()
+      || v == MapValue::Boulder
+      || v == MapValue::Explosion
+    {
+      return target;
+    }
+  }
+  cursor
+}
+
 /// Cross pattern of small bomb explosion (these are offsets to row and column).
 pub(crate) const SMALL_BOMB_PATTERN: [(i16, i16); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
 
@@ -862,4 +884,102 @@ fn is_flame_passable(value: MapValue) -> bool {
     || value == MapValue::Biomass
     || (value >= MapValue::Explosion && value <= MapValue::MonsterSmoke2)
     || value == MapValue::Plastic
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use rand::rngs::StdRng;
+
+  #[test]
+  fn jumping_bomb_never_lands_next_to_the_top_or_left_border() {
+    // Every try from (2, 2) that moves up or left would land in row/column 0 or 1.
+    let level = LevelMap::empty();
+    let from = Cursor::new(2, 2);
+    for seed in 0..2000 {
+      let target = jumping_bomb_target(from, &level, &mut StdRng::seed_from_u64(seed));
+      assert!(
+        target.row >= 2 && target.col >= 2,
+        "seed {}: landed on {:?}",
+        seed,
+        target
+      );
+    }
+  }
+
+  #[test]
+  fn jumping_bomb_can_land_next_to_the_bottom_and_right_border() {
+    // The original's high-side bounds let row 43 and column 62 through.
+    let level = LevelMap::empty();
+    let from = Cursor::new(41, 60);
+    let (mut row_43, mut col_62) = (false, false);
+    for seed in 0..2000 {
+      let target = jumping_bomb_target(from, &level, &mut StdRng::seed_from_u64(seed));
+      row_43 |= target.row == 43;
+      col_62 |= target.col == 62;
+    }
+    assert!(row_43 && col_62);
+  }
+
+  #[test]
+  fn jumping_bomb_stays_when_nothing_around_can_take_it() {
+    let mut level = LevelMap::empty();
+    for row in 0..MAP_ROWS {
+      for col in 0..crate::world::map::MAP_COLS {
+        level[Cursor::new(row, col)] = MapValue::Blood;
+      }
+    }
+    let from = Cursor::new(20, 30);
+    for seed in 0..200 {
+      assert_eq!(
+        jumping_bomb_target(from, &level, &mut StdRng::seed_from_u64(seed)),
+        from
+      );
+    }
+  }
+
+  #[test]
+  fn jumping_bomb_lands_only_on_cells_the_original_allows() {
+    let allowed = [
+      MapValue::Passage,
+      MapValue::Sand1,
+      MapValue::Sand2,
+      MapValue::Sand3,
+      MapValue::StoneTopLeft,
+      MapValue::StoneTopRight,
+      MapValue::StoneBottomRight,
+      MapValue::StoneBottomLeft,
+      MapValue::Boulder,
+      MapValue::Stone1,
+      MapValue::Stone2,
+      MapValue::Stone3,
+      MapValue::Stone4,
+      MapValue::Explosion,
+    ];
+    let refused = [
+      MapValue::Blood,
+      MapValue::Brick,
+      MapValue::BrickLightCracked,
+      MapValue::StoneLightCracked,
+      MapValue::StoneHeavyCracked,
+      MapValue::MetalWall,
+      MapValue::LightGravel,
+      MapValue::Map3A,
+    ];
+    let from = Cursor::new(20, 30);
+    for (value, lands) in allowed
+      .iter()
+      .map(|v| (*v, true))
+      .chain(refused.iter().map(|v| (*v, false)))
+    {
+      let mut level = LevelMap::empty();
+      for row in 0..MAP_ROWS {
+        for col in 0..crate::world::map::MAP_COLS {
+          level[Cursor::new(row, col)] = value;
+        }
+      }
+      let moved = (0..200).any(|seed| jumping_bomb_target(from, &level, &mut StdRng::seed_from_u64(seed)) != from);
+      assert_eq!(moved, lands, "{:?}", value);
+    }
+  }
 }
