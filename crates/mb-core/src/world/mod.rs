@@ -433,11 +433,23 @@ impl<'p> World<'p> {
     }
   }
 
+  /// The tick counter as the original game keeps it.
+  ///
+  /// Output: `round_counter` cut to one byte (0..=255).
+  ///
+  /// The original counts ticks in a single byte that wraps from 255 to 0 (`inc byte ptr [0x9a4]`
+  /// in MB.EXE segment 1) and runs every periodic check (`% 5`, `% 26`, a monster's speed, ...) on
+  /// that byte, so the check right after a wrap comes early. `round_counter` keeps counting for the
+  /// engine's own timers; the checks that copy the original use this instead.
+  pub(crate) fn classic_tick(&self) -> usize {
+    self.round_counter % 256
+  }
+
   /// Run on tick of update for the world state
   pub fn tick(&mut self) {
     self.flash = false;
 
-    if self.round_counter % 18 == 0 {
+    if self.classic_tick() % 18 == 0 {
       self.update_super_drill();
     }
 
@@ -446,7 +458,7 @@ impl<'p> World<'p> {
       self.shake -= 1;
     }
 
-    if self.round_counter % 5 == 0 {
+    if self.classic_tick() % 5 == 0 {
       if self.survival_mode {
         if self.alive_players() == 0 {
           // All players dead in survival mode -> Round Defeat
@@ -507,10 +519,13 @@ impl<'p> World<'p> {
       self.check_dead_players();
     }
 
-    // In original game, players 3 and 4 are checked on condition `% 5 == 3`.
-    // We, for simplicity, run in the same tick.
-    if self.round_counter % 5 == 0 {
-      self.monsters_detect_players();
+    // The original looks for players 1 and 2 on `% 5 == 0` and, with more than two players, for
+    // players 3 and 4 on `% 5 == 3` (MB.EXE segment 1 at 0xb1e7).
+    if self.classic_tick() % 5 == 0 {
+      self.monsters_detect_players(0..self.players.len().min(2));
+    }
+    if self.players.len() > 2 && self.classic_tick() % 5 == 3 {
+      self.monsters_detect_players(2..self.players.len());
     }
 
     self.animate_monsters();
@@ -534,7 +549,7 @@ impl<'p> World<'p> {
       }
     }
 
-    if self.round_counter % 20 == 0 && !self.campaign_mode && !self.survival_mode && self.gold_remaining() == 0 {
+    if self.classic_tick() % 20 == 0 && !self.campaign_mode && !self.survival_mode && self.gold_remaining() == 0 {
       self.end_round_counter += 20;
     }
 
@@ -882,8 +897,9 @@ impl<'p> World<'p> {
     }
   }
 
-  fn monsters_detect_players(&mut self) {
+  fn monsters_detect_players(&mut self, which: std::ops::Range<usize>) {
     let (players, monsters) = self.actors.split_at_mut(self.players.len());
+    let players = &players[which];
     for monster in monsters {
       if monster.is_active || monster.is_dead {
         // Monster is active already or dead
@@ -1588,6 +1604,9 @@ fn spawn_actors(map: &mut LevelMap, players_count: usize, campaign_mode: bool) -
         health: kind.initial_health(),
         drilling: kind.drilling_power(),
         facing,
+        // The original starts a monster walking the way its map cell faces (MB.EXE segment 1 at
+        // 0x7488); it moves as soon as it notices a player.
+        moving: true,
         ..Default::default()
       });
 

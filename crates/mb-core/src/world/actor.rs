@@ -145,83 +145,100 @@ impl ActorComponent {
     value.is_passable() || value.is_sand() || value.is_treasure()
   }
 
+  /// Whether a monster is walking into a cell it cannot enter.
+  ///
+  /// Output: false for a monster that stands still, whatever is in front of it.
+  ///
+  /// The original keeps a monster's movement as a command where 0 means "stand still", and its
+  /// blocked check (MB.EXE segment 1 at 0x83a2) answers "not blocked" for 0. `moving == false` is
+  /// that 0 here, so a monster that stopped stays stopped until something gives it a direction.
+  pub fn blocked(&self, level: &LevelMap) -> bool {
+    self.moving && !self.can_move(level)
+  }
+
+  /// Step in `dir`, or keep the current command when there is no direction to pick (`None`).
+  fn command(&mut self, dir: Option<Direction>) {
+    if let Some(dir) = dir {
+      self.facing = dir;
+      self.moving = true;
+    }
+  }
+
   /// Actively avoid given location
+  ///
+  /// Mirrors MB.EXE segment 1 at 0x854e: run along the axis the bomb is farther away on (or, 3 times
+  /// in 100, sideways anyway), and turn when blocked. A monster level with the bomb on that axis
+  /// keeps its command, which may be "stand still".
   pub fn avoid_position(&mut self, bomb: Cursor, level: &LevelMap) {
     let cursor = self.pos.cursor();
     let mut rng = rand::thread_rng();
     let (delta_row, delta_col) = cursor.distance(bomb);
 
     if delta_col > delta_row || rng.gen_range(0..100) < 3 {
-      self.facing = match cursor.col.cmp(&bomb.col) {
-        Ordering::Greater => Direction::Right,
-        Ordering::Less => Direction::Left,
-        Ordering::Equal => self.facing,
-      };
+      self.command(match cursor.col.cmp(&bomb.col) {
+        Ordering::Greater => Some(Direction::Right),
+        Ordering::Less => Some(Direction::Left),
+        Ordering::Equal => None,
+      });
 
-      if !self.can_move(level) {
-        self.facing = Direction::Down;
+      if self.blocked(level) {
+        self.command(Some(Direction::Down));
       }
-      if !self.can_move(level) {
-        self.facing = Direction::Up;
+      if self.blocked(level) {
+        self.command(Some(Direction::Up));
       }
     } else {
-      self.facing = match cursor.row.cmp(&bomb.row) {
-        Ordering::Greater => Direction::Down,
-        Ordering::Less => Direction::Up,
-        Ordering::Equal => self.facing,
-      };
+      self.command(match cursor.row.cmp(&bomb.row) {
+        Ordering::Greater => Some(Direction::Down),
+        Ordering::Less => Some(Direction::Up),
+        Ordering::Equal => None,
+      });
 
-      if !self.can_move(level) {
-        self.facing = Direction::Left;
+      if self.blocked(level) {
+        self.command(Some(Direction::Left));
       }
-      if !self.can_move(level) {
-        self.facing = Direction::Right;
+      if self.blocked(level) {
+        self.command(Some(Direction::Right));
       }
     }
-    self.moving = true;
   }
 
-  /// Actively avoid given location
+  /// Head for the given location
+  ///
+  /// Mirrors MB.EXE segment 1 at 0x86c7: go along the longer axis first, the shorter one when
+  /// blocked, and a random command (stand still included) when still blocked.
   pub fn head_to_target(&mut self, target: Cursor, level: &LevelMap) {
     let cursor = self.pos.cursor();
     let (delta_row, delta_col) = cursor.distance(target);
-
-    self.moving = true;
+    let horizontal = |cursor: Cursor| match cursor.col.cmp(&target.col) {
+      Ordering::Greater => Some(Direction::Left),
+      Ordering::Less => Some(Direction::Right),
+      Ordering::Equal => None,
+    };
+    let vertical = |cursor: Cursor| match cursor.row.cmp(&target.row) {
+      Ordering::Greater => Some(Direction::Up),
+      Ordering::Less => Some(Direction::Down),
+      Ordering::Equal => None,
+    };
 
     // Try going for longer direction first
     if delta_col > delta_row {
-      self.facing = match cursor.col.cmp(&target.col) {
-        Ordering::Greater => Direction::Left,
-        Ordering::Less => Direction::Right,
-        Ordering::Equal => self.facing,
-      };
+      self.command(horizontal(cursor));
     } else {
-      self.facing = match cursor.row.cmp(&target.row) {
-        Ordering::Greater => Direction::Up,
-        Ordering::Less => Direction::Down,
-        Ordering::Equal => self.facing,
-      };
+      self.command(vertical(cursor));
     }
 
     // If blocked, try going for shorter direction
-    if !self.can_move(level) {
+    if self.blocked(level) {
       if delta_col <= delta_row {
-        self.facing = match cursor.col.cmp(&target.col) {
-          Ordering::Greater => Direction::Left,
-          Ordering::Less => Direction::Right,
-          Ordering::Equal => self.facing,
-        };
+        self.command(horizontal(cursor));
       } else {
-        self.facing = match cursor.row.cmp(&target.row) {
-          Ordering::Greater => Direction::Up,
-          Ordering::Less => Direction::Down,
-          Ordering::Equal => self.facing,
-        };
+        self.command(vertical(cursor));
       }
     }
 
     // If blocked, choose random direction!
-    if !self.can_move(level) {
+    if self.blocked(level) {
       let mut rng = rand::thread_rng();
 
       // Note that this is a bit different than other place we go in random direction
