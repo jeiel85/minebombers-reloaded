@@ -58,7 +58,7 @@ def hx(s):
 
 # SPY images are 4 bitplanes: 16 colours for the whole sheet. Every named colour below is one of them.
 PAL = [hx(c) for c in (
-    "#1c1510",  # 0 passage (near-black brown)
+    "#000000",  # 0 passage; must stay pure black: mb-wasm fills passages with it and keys it out of glyphs
     "#7f5428",  # 1 sand dark / boots / gold shade
     "#a8733d",  # 2 sand
     "#c48f55",  # 3 sand light / fuse
@@ -648,7 +648,12 @@ for y in range(ROWS):
 
 SAND_LIKE = {"Sand1", "Sand2", "Sand3", "LightGravel", "HeavyGravel"}
 SOLID_STONE = {"Stone1", "Stone2", "Stone3", "Stone4"}
-OPEN = lambda n: not (n in SAND_LIKE or is_st(n) or n in ("MetalWall", "Brick", "BrickLightCracked", "BrickHeavyCracked"))
+STONE_CORNERS = {"StoneTopLeft", "StoneTopRight", "StoneBottomLeft", "StoneBottomRight"}
+bitmaps_rs = (REPO / "crates/mb-core/src/world/map/bitmaps.rs").read_text(encoding="utf-8")
+dbb = bitmaps_rs[bitmaps_rs.index("DIRT_BORDER_BITMAP") :]
+dbb = [int(b.replace("_", ""), 2) for b in re.findall(r"0b([01_]+)", dbb[: dbb.index("]);")])]
+assert len(dbb) == 32, len(dbb)
+OPEN = lambda n: bool(dbb[VALUE[n] // 8] & (1 << (VALUE[n] & 7)))  # MapValueSet indexing
 OFFS = {"Left": (-9, -5), "Right": (5, -5), "Up": (-5, -8), "Down": (-5, 5)}
 STEP = {"Left": (0, -1), "Right": (0, 1), "Up": (-1, 0), "Down": (1, 0)}
 REV = {"Left": "Right", "Right": "Left", "Up": "Down", "Down": "Up"}
@@ -667,6 +672,19 @@ for y in range(1, ROWS - 1):
                 if hit:
                     ox, oy = OFFS[dname]
                     screen.paste(BORDERS[(kind, REV[dname], False)].image(), (cx + ox, cy + oy))
+
+# render_burned_border: explosion cells get burned edges on neighbouring dirt and stone
+for y in range(1, ROWS - 1):
+    for x in range(1, COLS - 1):
+        if grid[y][x] != "Explosion":
+            continue
+        cx, cy = x * 10 + 5, y * 10 + 35
+        for dname in ("Right", "Left", "Up", "Down"):
+            n = grid[y + STEP[dname][0]][x + STEP[dname][1]]
+            kind = "sand" if n in SAND_LIKE else "stone" if n in SOLID_STONE or n in STONE_CORNERS else None
+            if kind:
+                ox, oy = OFFS[dname]
+                screen.paste(BORDERS[(kind, REV[dname], True)].image(), (cx + ox, cy + oy))
 
 # players standing in tunnels, mid-walk
 for i, (sy, sx) in enumerate(starts):
