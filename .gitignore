@@ -3,7 +3,7 @@ target/
 *.log
 .DS_Store
 Thumbs.db
-tools/
+tools/asset-pilot/out/
 res/minebomb/
 web/data/
 # Built by scripts/build_web.ps1 and by pages.yml; never committed, so it cannot drift from the source.
