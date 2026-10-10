@@ -501,8 +501,10 @@ impl Application<'_> {
 
       // Handle player commands
       if world.round_counter % 2 == 0 {
-        // FIXME: in original game, command has slight delay on facing direction
-        //  However, facing seems to be only used when holding still, so doesn't really matter much.
+        // The original copies the movement command into the facing direction before it reads the
+        // keys (MB.EXE segment 1 at 0x3da8), so its facing trails the command by one read. Only a
+        // player standing still is drawn and aims items by the facing, and by the time "stop" takes
+        // effect the facing already holds the last direction, which is what `facing` holds here.
 
         let mut paused = false;
         let mut display_toggle_fullscreen = false;
