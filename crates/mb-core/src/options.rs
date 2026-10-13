@@ -1,3 +1,4 @@
+use anyhow::Context;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Read;
 use std::path::Path;
@@ -111,8 +112,7 @@ impl Options {
   pub fn save(&self, game_dir: &Path) -> Result<(), anyhow::Error> {
     let data = self.save_inner();
     let path = game_dir.join("OPTIONS.CFG");
-    // FIXME: either proper errors or logging
-    std::fs::write(path, data)?;
+    std::fs::write(&path, data).with_context(|| format!("Failed to save options to '{}'", path.display()))?;
     Ok(())
   }
 

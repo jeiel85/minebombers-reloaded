@@ -163,7 +163,8 @@ impl PlayersRoster {
         }
 
         out.extend_from_slice(&record.history);
-        // FIXME: should this be history?
+        // Byte 100 follows the 34 history entries (the original indexes them `mod 34`, `MB.EXE` segment 1 `0x16d9`).
+        // Its use is unknown; it is written as 0.
         out.push(0);
       } else {
         out.push(1);

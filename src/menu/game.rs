@@ -411,8 +411,6 @@ impl Application<'_> {
       .play(SoundEffect::Applause, 11000, Cursor::new(0, MAP_COLS / 2))?;
     ctx.wait_key_pressed();
     ctx.animate(Animation::FadeDown, 7)?;
-
-    // FIXME: save stats back!
     Ok(())
   }
 
@@ -1000,7 +998,8 @@ impl Application<'_> {
         self.glyphs.render(canvas, pos_x + dx, pos_y + dy, glyph)?;
       }
     } else if value == MapValue::HeavyGravel {
-      // FIXME: not sure when this one is triggered?
+      // Explosions never leave heavy gravel themselves: a burned cell gets here only if it turned into heavy gravel
+      // (a cracked stone dug through) after it burned and before it was drawn.
       for dir in Direction::all() {
         let value = level[cursor.to(dir)];
         if value.is_passable() || value == MapValue::Explosion || value == MapValue::MonsterDying {
@@ -1180,7 +1179,7 @@ impl Application<'_> {
     self
       .glyphs
       .render(canvas, i32::from(pos.x) - 5, i32::from(pos.y) - 5, glyph)?;
-    // FIXME: move to world?
+    // `dark` means "not drawn yet": the world reads it only to decide what to redraw, so it is cleared here.
     maps.fog[cursor].reveal();
     Ok(())
   }
