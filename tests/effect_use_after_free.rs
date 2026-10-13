@@ -4,7 +4,8 @@
 //! and the mixer reads it once more when the callback returns (`e = e->next`): a use-after-free on the audio thread.
 //! What it does depends on what the allocator leaves in freed memory, so it only crashed now and then. Here SDL gets an
 //! allocator that fills freed blocks with a poison pattern and never reuses them, so any read of freed memory fails
-//! right away: the test process dies with an access violation (SIGSEGV) instead of passing.
+//! right away: the test process dies with an access violation (SIGSEGV) instead of passing. The same check covers the
+//! game cutting a sound off by halting its channel.
 //!
 //! The test sits in the main package, not in `mb-sdl2-effects`, on purpose: cargo starts it from the repository root,
 //! where Windows finds the bundled SDL2 DLLs. It is the only test in the file because `SDL_SetMemoryFunctions` is
@@ -114,4 +115,21 @@ fn finished_sounds_do_not_touch_freed_effects() {
     "channels {:?} are still playing after their sounds are over",
     busy
   );
+
+  // The game cuts sounds off: it halts a busy channel (from the main thread) and plays the next sound there. The
+  // halt frees the running effect, so the mixer must not run it again afterwards.
+  let long_sample: Arc<[u8]> = sample.iter().copied().cycle().take(20_000).collect::<Vec<_>>().into();
+  let stop = Instant::now() + Duration::from_secs(2);
+  let mut round = 0;
+  while Instant::now() < stop {
+    let channel = Channel(round % 3);
+    channel.halt();
+    play_sound_sample(channel, 11000, long_sample.clone(), 0.5).unwrap();
+    round += 1;
+    std::thread::sleep(Duration::from_millis(3));
+  }
+  for channel in 0..3 {
+    Channel(channel).halt();
+  }
+  std::thread::sleep(Duration::from_millis(100));
 }

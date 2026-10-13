@@ -1,9 +1,12 @@
 use crate::error::ApplicationError::SdlError;
 use crate::world::map::MAP_COLS;
 use crate::world::position::Cursor;
+use mb_core::sound::{pick_pool_channel, SoundChannels, SOUND_CHANNELS};
 use sdl2::mixer::Channel;
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -34,6 +37,23 @@ pub struct SoundEffects {
   pikkupom: RawSample,
   urethan: RawSample,
   applause: RawSample,
+  /// What was last started on each mixer channel, to tell how much of it is left.
+  playing: RefCell<[Option<Playing>; SOUND_CHANNELS as usize]>,
+}
+
+#[derive(Clone, Copy)]
+struct Playing {
+  started: Instant,
+  samples: usize,
+  frequency: i32,
+}
+
+impl Playing {
+  /// Source samples still to play; 0 once the sound is over.
+  fn remaining(&self, now: Instant) -> u32 {
+    let played = now.duration_since(self.started).as_secs_f64() * f64::from(self.frequency);
+    (self.samples as f64 - played).clamp(0.0, f64::from(u32::MAX)).ceil() as u32
+  }
 }
 
 impl SoundEffects {
@@ -52,12 +72,14 @@ impl SoundEffects {
       pikkupom: load_sample(path.join("PIKKUPOM.VOC"))?,
       urethan: load_sample(path.join("URETHAN.VOC"))?,
       applause: load_sample(path.join("APPLAUSE.VOC"))?,
+      playing: RefCell::new([None; SOUND_CHANNELS as usize]),
     })
   }
 
-  /// Play sound effec
+  /// Play sound effect on the channel the original would use, cutting off what plays there.
   pub fn play(&self, effect: SoundEffect, frequency: i32, location: Cursor) -> Result<(), anyhow::Error> {
     let position = f32::from(location.col) / f32::from(MAP_COLS - 1);
+    let channels = effect.channels();
     let effect = match effect {
       SoundEffect::Kili => &self.kili,
       SoundEffect::Picaxe => &self.picaxe,
@@ -72,9 +94,23 @@ impl SoundEffects {
       SoundEffect::Urethan => &self.urethan,
       SoundEffect::Applause => &self.applause,
     };
-    // FIXME: reuse channels if all cannels are busy
-    let channel = Channel::all();
-    mb_sdl2_effects::play_sound_sample(channel, frequency, effect.0.clone(), position).map_err(SdlError)?;
+    let now = Instant::now();
+    let mut playing = self.playing.borrow_mut();
+    let channel = match channels {
+      SoundChannels::Fixed(channel) => channel,
+      SoundChannels::Pool { first, count } => pick_pool_channel(first, count, |channel| {
+        playing[usize::from(channel)].map_or(0, |sound| sound.remaining(now))
+      }),
+    };
+    // Halt from here, not from the effect callback: see `mb_sdl2_effects::play_sound_sample`.
+    Channel(i32::from(channel)).halt();
+    playing[usize::from(channel)] = Some(Playing {
+      started: now,
+      samples: effect.0.len(),
+      frequency,
+    });
+    mb_sdl2_effects::play_sound_sample(Channel(i32::from(channel)), frequency, effect.0.clone(), position)
+      .map_err(SdlError)?;
     Ok(())
   }
 }
