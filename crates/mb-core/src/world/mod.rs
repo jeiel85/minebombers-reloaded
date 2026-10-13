@@ -862,7 +862,8 @@ impl<'p> World<'p> {
   /// Returns `true` if cell is passable
   fn extinguish_cell(&mut self, cursor: Cursor) -> bool {
     let value = self.maps.level[cursor];
-    // FIXME: adjust bitmap not to include grenade!
+    // `EXTINGUISHER_PASSABLE` is copied as is from the original's data and includes the flying grenades, so they are
+    // left out here.
     if EXTINGUISHER_PASSABLE[value] && (value < MapValue::GrenadeFlyingRight || value > MapValue::GrenadeFlyingUp) {
       self.maps.timer[cursor] = 0;
 
@@ -937,7 +938,7 @@ impl<'p> World<'p> {
     }
 
     if value == MapValue::Passage {
-      // FIXME: temporary
+      // Nothing to dig
     } else if value == MapValue::MetalWall
       || value.is_sand()
       || value.is_stone_like()
@@ -950,9 +951,8 @@ impl<'p> World<'p> {
     {
       let actor = &self.actors[entity];
       // Diggable squares
-      // FIXME: use mapvalueset
       if self.maps.hits[cursor] == 30_000 {
-        // 30_000 is a metal wall
+        // 30_000 hits mark an indestructible metal wall
       } else if self.maps.hits[cursor] > 1 {
         self.maps.hits[cursor] -= i32::from(actor.drilling);
         if value.is_stone_like() {
@@ -1041,7 +1041,7 @@ impl<'p> World<'p> {
       // Go to the target position
       let target = cursor.to(actor.facing);
       if self.maps.hits[cursor] == 30_000 {
-        // FIXME: wall shouldn't be pushable anyways?
+        // Only metal walls get 30_000 hits; such a cell never moves
       } else if self.maps.hits[cursor] > 1 {
         // Still need to push a little
         self.maps.hits[cursor] -= i32::from(actor.drilling);
