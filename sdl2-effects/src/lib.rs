@@ -47,7 +47,7 @@ pub fn play_sound_sample(channel: Channel, frequency: i32, chunk: Arc<[u8]>, pos
     raw: &raw mut PLACEHOLDER as *mut _,
     owned: false,
   };
-  // FIXME: maybe, stop other channel?
+  // The caller picks the channel and halts what plays there (the original's channel rules live in `mb-core`).
   let channel = match channel.play(&placeholder, loops) {
     Ok(channel) => channel,
     Err(_) => return Ok(()),

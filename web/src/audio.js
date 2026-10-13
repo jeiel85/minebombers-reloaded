@@ -1,5 +1,6 @@
 import { ChiptuneJsPlayer } from '../vendor/chiptune3/chiptune3.js';
 import { SFX_FILES, BGM_FILE, decodeVoc } from './assets.js';
+import { SOUND_CHANNELS, pickChannel } from './sfx-channels.js';
 
 const BGM_VOLUME = 0.45;
 
@@ -8,6 +9,8 @@ export class AudioManager {
     this.ctx = null;
     // Indexed like SFX_FILES / the wasm module's AudioEvent.effect_id
     this.buffers = [];
+    // What was last started on each mixer channel: { source, started, samples, freq }
+    this.channels = new Array(SOUND_CHANNELS).fill(null);
     this.bgmData = null;
     this.bgm = null;
     this.bgmReady = false;
@@ -55,8 +58,23 @@ export class AudioManager {
     if (!buffer) return;
 
     try {
+      const now = this.ctx.currentTime;
+      const channel = pickChannel(id, (c) => {
+        const sound = this.channels[c];
+        return sound ? Math.max(0, Math.ceil(sound.samples - (now - sound.started) * sound.freq)) : 0;
+      });
+      const previous = this.channels[channel];
+      if (previous) {
+        try {
+          previous.source.stop();
+        } catch (e) {
+          // Already over
+        }
+      }
+
       const source = this.ctx.createBufferSource();
       source.buffer = buffer;
+      this.channels[channel] = { source, started: now, samples: buffer.length, freq: freq > 0 ? freq : 11000 };
 
       // Pitch/frequency scaling
       if (freq > 0 && freq !== 11000) {

@@ -154,6 +154,8 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
 
     // Initialize audio
     sdl2::mixer::open_audio(44100, AUDIO_S16LSB, 2, 1024).map_err(SdlError)?;
+    // Sound effects use the original's channel numbers, see `SoundEffect::channels`
+    sdl2::mixer::allocate_channels(i32::from(mb_core::sound::SOUND_CHANNELS));
 
     // Initialize game controller subsystem
     let controller_subsystem = sdl_context.game_controller().map_err(SdlError)?;
