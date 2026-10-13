@@ -998,8 +998,8 @@ impl Application<'_> {
         self.glyphs.render(canvas, pos_x + dx, pos_y + dy, glyph)?;
       }
     } else if value == MapValue::HeavyGravel {
-      // Explosions never leave heavy gravel themselves: a burned cell gets here only if it turned into heavy gravel
-      // (a cracked stone dug through) after it burned and before it was drawn.
+      // No way to get here was found: explosions never leave heavy gravel, and digging makes it only from a stone
+      // corner, which an explosion would already have changed. Kept as ported.
       for dir in Direction::all() {
         let value = level[cursor.to(dir)];
         if value.is_passable() || value == MapValue::Explosion || value == MapValue::MonsterDying {
