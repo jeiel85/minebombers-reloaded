@@ -82,17 +82,12 @@ function Write-StubS3m([string]$Path, [int]$InstrumentCount) {
     # Minimal Scream Tracker 3 module: 96-byte header, order count 1 (-> pattern 0), pattern count 1,
     # 2 enabled channels, one pattern of 64 empty rows, plus $InstrumentCount empty (type 0) instruments.
     #
-    # $InstrumentCount has to differ by platform - verified directly against the two DLLs/shared
-    # libraries SDL2_mixer's S3M/MOD loader actually resolves to, by probing several candidates with
-    # sdl2::mixer::Music::from_file and seeing which loaded (see PR history for the probe):
-    #   Windows bundles libxmp.dll:        rejects the file if InstrumentCount > 0, however well-formed
-    #                                       the instrument entries are (libxmp wants a bare 0-instrument
-    #                                       module here) -> pass 0.
-    #   Linux's apt libsdl2-mixer-dev uses ModPlug (linked into SDL2_mixer itself): rejects the file if
-    #                                       InstrumentCount = 0, but accepts an all-zero (type 0, "empty")
-    #                                       instrument entry happily -> pass 1.
-    # There is no single byte layout both accept; this is an actual difference between the two codec
-    # libraries, not a bug to keep chasing.
+    # $InstrumentCount depends on the codec behind SDL2_mixer, not on the OS name:
+    #   libxmp (bundled on Windows, and what the current Linux runner loads): rejects the file if
+    #     InstrumentCount > 0, however well-formed the instrument entries are -> needs 0.
+    #   ModPlug (some Linux packages link it into SDL2_mixer): rejects the file if InstrumentCount = 0,
+    #     but accepts an all-zero (type 0, "empty") instrument entry happily -> needs 1.
+    # There is no single byte layout both accept, so the runner below tries 0 and then 1 on Linux.
     $b = New-Object byte[] 0x60
     [System.Text.Encoding]::ASCII.GetBytes("stub").CopyTo($b, 0)
     $b[0x1C] = 0x1A
@@ -147,7 +142,7 @@ function Write-StubS3m([string]$Path, [int]$InstrumentCount) {
     [System.IO.File]::WriteAllBytes($Path, $out.ToArray())
 }
 
-function New-StubGameDir([string]$Dir) {
+function New-StubGameDir([string]$Dir, [int]$S3mInstrumentCount) {
     New-Item -ItemType Directory -Force $Dir | Out-Null
 
     $spyFiles = @(
@@ -165,7 +160,7 @@ function New-StubGameDir([string]$Dir) {
     )
     foreach ($name in $vocFiles) { Write-StubVoc (Join-Path $Dir "$name.VOC") }
 
-    $s3mInstrumentCount = if ($onWindows) { 0 } else { 1 } # see Write-StubS3m: libxmp vs ModPlug disagree
+    $s3mInstrumentCount = $S3mInstrumentCount
     Write-StubS3m (Join-Path $Dir "HUIPPE.S3M") $s3mInstrumentCount
     Write-StubS3m (Join-Path $Dir "OEKU.S3M") $s3mInstrumentCount
 
@@ -182,81 +177,100 @@ $exeName = if ($onWindows) { "MineBombers.exe" } else { "MineBombers" }
 $exe = Join-Path $ExeDir $exeName
 if (-not (Test-Path $exe)) { throw "Missing $exe (run 'cargo build --release' first)" }
 
-$gameDir = Join-Path ([System.IO.Path]::GetTempPath()) "mb-smoke-gamedir-$([guid]::NewGuid())"
-$userDir = Join-Path ([System.IO.Path]::GetTempPath()) "mb-smoke-userdir-$([guid]::NewGuid())"
-New-StubGameDir $gameDir
-New-Item -ItemType Directory -Force $userDir | Out-Null
+# The bundled Windows SDL2_mixer uses libxmp, which rejects a module with instrument entries. The
+# Linux package may use libxmp or ModPlug, and only ModPlug needs one entry, so try both there rather
+# than pinning the answer to whatever codec the current runner image ships.
+$s3mInstrumentCounts = if ($onWindows) { @(0) } else { @(0, 1) }
+$attemptFailures = @()
+$smokeOk = $false
 
-$env:MINEBOMBERS_GAME_DIR = $gameDir
-$env:MINEBOMBERS_USER_DIR = $userDir
-$env:SDL_AUDIODRIVER = "dummy"
-if (-not $onWindows) {
-    $env:SDL_VIDEODRIVER = "dummy" # CI has no display; Windows runners have a real desktop session
-}
+foreach ($s3mInstrumentCount in $s3mInstrumentCounts) {
+    $gameDir = Join-Path ([System.IO.Path]::GetTempPath()) "mb-smoke-gamedir-$([guid]::NewGuid())"
+    $userDir = Join-Path ([System.IO.Path]::GetTempPath()) "mb-smoke-userdir-$([guid]::NewGuid())"
+    New-StubGameDir $gameDir $s3mInstrumentCount
+    New-Item -ItemType Directory -Force $userDir | Out-Null
 
-Write-Host "Stand-in game folder: $gameDir"
-Write-Host "Starting $exe ..."
-$proc = Start-Process -FilePath $exe -WorkingDirectory (Resolve-Path $ExeDir) -PassThru
-
-try {
-    if ($onWindows) {
-        # The window is created (with the right title) before `Application::init` loads a single asset -
-        # see src/context.rs `with_context`. So seeing the window is not enough: a codec DLL missing from
-        # the stand-in run would make `Application::init` fail right after, and the window can still be on
-        # screen for a moment while the process unwinds. What actually proves every asset (title screen,
-        # font, both S3M tracks, every sample) loaded is that the window is *still* up after a grace period
-        # with no sign of tearing down - by then it is blocked on `wait_key_pressed()` in the menu loop.
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        $sawWindow = $false
-        while ((Get-Date) -lt $deadline) {
-            $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-            if (-not $p) {
-                throw "$exeName exited before showing a window (exit code $($proc.ExitCode)). A DLL the stand-in run needs may be missing."
-            }
-            if ($p.MainWindowHandle -ne 0 -and $p.MainWindowTitle) {
-                $sawWindow = $true
-                break
-            }
-            Start-Sleep -Milliseconds 200
-        }
-        if (-not $sawWindow) {
-            throw "$exeName did not show a window within $TimeoutSeconds s (still running, no MainWindowHandle)."
-        }
-
-        $graceMs = 2500
-        $graceDeadline = (Get-Date).AddMilliseconds($graceMs)
-        while ((Get-Date) -lt $graceDeadline) {
-            Start-Sleep -Milliseconds 200
-            $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-            if (-not $p) {
-                throw "$exeName showed a window but then exited (exit code $($proc.ExitCode)) before $graceMs ms had passed - Application::init failed loading one of the stand-in assets. A codec DLL (libgme/libogg/libopus/libopusfile/libwavpack/libxmp) may be missing or broken."
-            }
-            if ($p.MainWindowHandle -eq 0) {
-                throw "$exeName's window disappeared during the $graceMs ms grace period (process still running, exit pending)."
-            }
-        }
-
-        Write-Host "Window stayed up for ${graceMs}ms after appearing - Application::init loaded every stand-in asset. Loaded DLLs:"
-        (Get-Process -Id $proc.Id).Modules | Where-Object { $_.ModuleName -match '\.dll$' } | ForEach-Object { Write-Host "  $($_.ModuleName)" }
-    } else {
-        # No display, so SDL runs on the `dummy` video driver and there is no window to inspect. The same
-        # risk (Application::init failing partway through the stand-in assets) still shows up as an early
-        # exit, so "still running after a grace period" (blocked on wait_key_pressed) is the whole check.
-        $graceMs = 2500
-        $graceDeadline = (Get-Date).AddMilliseconds($graceMs)
-        while ((Get-Date) -lt $graceDeadline) {
-            Start-Sleep -Milliseconds 200
-            $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-            if (-not $p) {
-                throw "$exeName exited (exit code $($proc.ExitCode)) before $graceMs ms had passed - Application::init failed loading one of the stand-in assets, or a shared library SDL2_mixer needs on demand is missing."
-            }
-        }
-        Write-Host "Process stayed alive for ${graceMs}ms (SDL_VIDEODRIVER=dummy) - Application::init loaded every stand-in asset and is blocked in the menu's event loop."
+    $env:MINEBOMBERS_GAME_DIR = $gameDir
+    $env:MINEBOMBERS_USER_DIR = $userDir
+    $env:SDL_AUDIODRIVER = "dummy"
+    if (-not $onWindows) {
+        $env:SDL_VIDEODRIVER = "dummy" # CI has no display; Windows runners have a real desktop session
     }
-    Write-Host "Smoke test OK: the exe starts, loads every codec it needs and reaches the title screen."
-} finally {
-    $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-    if ($p) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-    Remove-Item -Recurse -Force $gameDir -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force $userDir -ErrorAction SilentlyContinue
+
+    Write-Host "Stand-in game folder: $gameDir (S3M instrument count $s3mInstrumentCount)"
+    Write-Host "Starting $exe ..."
+    $proc = Start-Process -FilePath $exe -WorkingDirectory (Resolve-Path $ExeDir) -PassThru
+
+    try {
+        if ($onWindows) {
+            # The window is created (with the right title) before `Application::init` loads a single asset -
+            # see src/context.rs `with_context`. So seeing the window is not enough: a codec DLL missing from
+            # the stand-in run would make `Application::init` fail right after, and the window can still be on
+            # screen for a moment while the process unwinds. What actually proves every asset (title screen,
+            # font, both S3M tracks, every sample) loaded is that the window is *still* up after a grace period
+            # with no sign of tearing down - by then it is blocked on `wait_key_pressed()` in the menu loop.
+            $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+            $sawWindow = $false
+            while ((Get-Date) -lt $deadline) {
+                $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+                if (-not $p) {
+                    throw "$exeName exited before showing a window (exit code $($proc.ExitCode)). A DLL the stand-in run needs may be missing."
+                }
+                if ($p.MainWindowHandle -ne 0 -and $p.MainWindowTitle) {
+                    $sawWindow = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 200
+            }
+            if (-not $sawWindow) {
+                throw "$exeName did not show a window within $TimeoutSeconds s (still running, no MainWindowHandle)."
+            }
+
+            $graceMs = 2500
+            $graceDeadline = (Get-Date).AddMilliseconds($graceMs)
+            while ((Get-Date) -lt $graceDeadline) {
+                Start-Sleep -Milliseconds 200
+                $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+                if (-not $p) {
+                    throw "$exeName showed a window but then exited (exit code $($proc.ExitCode)) before $graceMs ms had passed - Application::init failed loading one of the stand-in assets. A codec DLL (libgme/libogg/libopus/libopusfile/libwavpack/libxmp) may be missing or broken."
+                }
+                if ($p.MainWindowHandle -eq 0) {
+                    throw "$exeName's window disappeared during the $graceMs ms grace period (process still running, exit pending)."
+                }
+            }
+
+            Write-Host "Window stayed up for ${graceMs}ms after appearing - Application::init loaded every stand-in asset. Loaded DLLs:"
+            (Get-Process -Id $proc.Id).Modules | Where-Object { $_.ModuleName -match '\.dll$' } | ForEach-Object { Write-Host "  $($_.ModuleName)" }
+        } else {
+            # No display, so SDL runs on the `dummy` video driver and there is no window to inspect. The same
+            # risk (Application::init failing partway through the stand-in assets) still shows up as an early
+            # exit, so "still running after a grace period" (blocked on wait_key_pressed) is the whole check.
+            $graceMs = 2500
+            $graceDeadline = (Get-Date).AddMilliseconds($graceMs)
+            while ((Get-Date) -lt $graceDeadline) {
+                Start-Sleep -Milliseconds 200
+                $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+                if (-not $p) {
+                    throw "$exeName exited (exit code $($proc.ExitCode)) before $graceMs ms had passed - Application::init failed loading one of the stand-in assets, or a shared library SDL2_mixer needs on demand is missing."
+                }
+            }
+            Write-Host "Process stayed alive for ${graceMs}ms (SDL_VIDEODRIVER=dummy) - Application::init loaded every stand-in asset and is blocked in the menu's event loop."
+        }
+        $smokeOk = $true
+    } catch {
+        $attemptFailures += "instrument count ${s3mInstrumentCount}: $($_.Exception.Message)"
+        Write-Host "Attempt with S3M instrument count $s3mInstrumentCount failed: $($_.Exception.Message)"
+    } finally {
+        $p = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+        if ($p) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item -Recurse -Force $gameDir -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $userDir -ErrorAction SilentlyContinue
+    }
+
+    if ($smokeOk) { break }
 }
+
+if (-not $smokeOk) {
+    throw "Smoke test failed:`n$($attemptFailures -join "`n")"
+}
+Write-Host "Smoke test OK: the exe starts, loads every codec it needs and reaches the title screen."
