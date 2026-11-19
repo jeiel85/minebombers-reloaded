@@ -1,4 +1,4 @@
-use crate::context::{Animation, ApplicationContext};
+use crate::context::{save_failed, Animation, ApplicationContext};
 use crate::error::ApplicationError::SdlError;
 use crate::glyphs::Glyph;
 use crate::options::{Options, WinCondition};
@@ -225,8 +225,8 @@ impl Application<'_> {
       }
     }
 
-    // Save options
-    settings.options.save(ctx.user_dir())?;
+    // Save options; a read-only folder is reported but must not end the game.
+    save_failed(settings.options.save(ctx.user_dir()), "the options", ctx.user_dir());
     Ok(())
   }
 

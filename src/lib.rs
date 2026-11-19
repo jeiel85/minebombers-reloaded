@@ -85,7 +85,7 @@ impl<'textures> Application<'textures> {
       levels_menu: ctx.load_spy("LEVSELEC.SPY")?,
       keys: ctx.load_spy("KEYS.SPY")?,
       shop: ctx.load_spy("SHOPPIC.SPY")?,
-      glyphs: Glyphs::from_texture(ctx.load_spy("SIKA.SPY")?),
+      glyphs: Glyphs::from_textures(ctx.load_spy("SIKA.SPY")?, ctx.load_spy_transparent("SIKA.SPY")?),
       font: ctx.load_font("FONTTI.FON")?,
       info: [
         ctx.load_spy("INFO1.SPY")?,

@@ -63,6 +63,24 @@ pub fn display_change_failed(result: Result<(), anyhow::Error>) -> bool {
   }
 }
 
+/// Input: the result of writing one of the game's data files, what the file holds, and the folder.
+/// Output: `true` when the write failed (it is logged here), so the caller can say so on screen.
+/// Why: a read-only or full folder used to end the whole game from a menu through `?`. What the
+/// player changed already applies for this session; only the file is stale, so warn and carry on.
+pub fn save_failed<E>(result: Result<(), E>, what: &str, dir: &Path) -> bool
+where
+  E: Into<anyhow::Error>,
+{
+  match result {
+    Ok(()) => false,
+    Err(err) => {
+      let err = err.into();
+      eprintln!("Warning: could not save {} to '{}' ({:#}).", what, dir.display(), err);
+      true
+    }
+  }
+}
+
 pub enum Animation {
   FadeUp,
   FadeDown,
@@ -209,6 +227,18 @@ impl<'canvas, 'textures> ApplicationContext<'canvas, 'textures> {
   pub fn load_spy(&self, file_name: &str) -> Result<TexturePalette<'textures>, anyhow::Error> {
     let path = self.game_dir.join(file_name);
     Ok(crate::images::load_texture(
+      self.texture_creator,
+      &path,
+      TextureFormat::SPY,
+    )?)
+  }
+
+  /// Load SPY texture with exact black made transparent, for sprite glyphs.
+  ///
+  /// Map tiles and their edge overlays keep using `load_spy`; see `mb_core::glyphs::Glyph::is_transparent`.
+  pub fn load_spy_transparent(&self, file_name: &str) -> Result<TexturePalette<'textures>, anyhow::Error> {
+    let path = self.game_dir.join(file_name);
+    Ok(crate::images::load_texture_keyed(
       self.texture_creator,
       &path,
       TextureFormat::SPY,

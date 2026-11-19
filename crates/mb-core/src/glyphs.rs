@@ -142,6 +142,16 @@ impl Glyph {
     let rect = self.rect();
     (rect.w, rect.h)
   }
+
+  /// Whether exact-black pixels in this glyph are transparent.
+  ///
+  /// Map tiles and their edge overlays are opaque: terrain has to overwrite whatever was under it,
+  /// and a border's black area is the cut that faces a passage. Everything else is a sprite drawn
+  /// over the map or a menu, where black is the background. Both editions read this rule so the
+  /// same SIKA.SPY data looks the same in each.
+  pub fn is_transparent(self) -> bool {
+    !matches!(self, Glyph::Map(_) | Glyph::SandBorder(..) | Glyph::StoneBorder(..))
+  }
 }
 
 pub const EQUIPMENT_GLYPHS: [(i16, i16); Equipment::TOTAL] = [
@@ -316,3 +326,42 @@ pub const MAP_GLYPHS: [(i16, i16); 135] = [
   (40, 70),
   (50, 70),
 ];
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn terrain_and_edges_stay_opaque_but_sprites_key_black_out() {
+    assert!(!Glyph::Map(MapValue::Passage).is_transparent());
+    assert!(!Glyph::Map(MapValue::GoldPileCoins).is_transparent());
+    for dir in Direction::all() {
+      for border in [Border::Normal, Border::Burned] {
+        assert!(!Glyph::SandBorder(dir, border).is_transparent());
+        assert!(!Glyph::StoneBorder(dir, border).is_transparent());
+      }
+    }
+
+    for glyph in [
+      Glyph::ShovelPointer,
+      Glyph::ArrowPointer,
+      Glyph::RadioButton(false),
+      Glyph::RadioButton(true),
+      Glyph::ShopSlot(false),
+      Glyph::ShopSlot(true),
+      Glyph::Selection(Equipment::SmallBomb),
+      Glyph::Ready,
+      Glyph::Life,
+      Glyph::LifeLost,
+    ] {
+      assert!(glyph.is_transparent(), "sprite glyph must key black out");
+    }
+    assert!(Glyph::Monster(
+      ActorKind::Slime,
+      Direction::Left,
+      Digging::Hands,
+      AnimationPhase::Phase1
+    )
+    .is_transparent());
+  }
+}
