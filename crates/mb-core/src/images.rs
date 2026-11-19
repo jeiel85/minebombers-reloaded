@@ -104,6 +104,79 @@ pub fn decode_spy(width: u32, height: u32, data: &[u8]) -> Result<DecodedImage, 
   })
 }
 
+/// Inverse of [`decode_spy`]: a 768-byte palette (the first 16 colours, the rest zero) followed by
+/// four RLE-encoded bitplanes. Every pixel must match one of the 16 palette colours exactly, and
+/// `width * height` must be a multiple of 8. Anything the decoder could not read back is rejected
+/// with `InvalidSpyFile`.
+pub fn encode_spy(image: &DecodedImage) -> Result<Vec<u8>, InvalidSpyFile> {
+  let width = image.width as usize;
+  let height = image.height as usize;
+  let pixels = width
+    .checked_mul(height)
+    .filter(|count| *count > 0 && count % 8 == 0)
+    .ok_or(InvalidSpyFile)?;
+  if image.image.len() != pixels * 3 {
+    return Err(InvalidSpyFile);
+  }
+
+  let mut indices = Vec::with_capacity(pixels);
+  for px in image.image.chunks_exact(3) {
+    let color = Color {
+      r: px[0],
+      g: px[1],
+      b: px[2],
+    };
+    let index = image
+      .palette
+      .iter()
+      .position(|entry| *entry == color)
+      .ok_or(InvalidSpyFile)?;
+    indices.push(index as u8);
+  }
+
+  let mut out = Vec::with_capacity(768 + pixels / 8 * 4);
+  for color in &image.palette {
+    out.push(color.r);
+    out.push(color.g);
+    out.push(color.b);
+  }
+  out.resize(768, 0);
+
+  for plane in 0..4 {
+    let mut raw = Vec::with_capacity(pixels / 8);
+    for chunk in indices.chunks_exact(8) {
+      let mut byte = 0u8;
+      for (bit, index) in chunk.iter().enumerate() {
+        byte |= ((index >> plane) & 1) << (7 - bit);
+      }
+      raw.push(byte);
+    }
+    encode_plane(&raw, &mut out);
+  }
+  Ok(out)
+}
+
+/// Emit one bitplane exactly as `decode_plane` reads it. A literal `0x01` must be escaped, and runs
+/// of four or more bytes are shorter as `01 value count`.
+fn encode_plane(raw: &[u8], out: &mut Vec<u8>) {
+  let mut index = 0;
+  while index < raw.len() {
+    let value = raw[index];
+    let mut run = 1;
+    while index + run < raw.len() && raw[index + run] == value && run < usize::from(u8::MAX) {
+      run += 1;
+    }
+    if run >= 4 || value == 1 {
+      out.push(1);
+      out.push(value);
+      out.push(run as u8);
+    } else {
+      out.extend(std::iter::repeat(value).take(run));
+    }
+    index += run;
+  }
+}
+
 fn decode_plane(bitplane_len: usize, mut it: impl Iterator<Item = u8>) -> Result<Vec<u8>, InvalidSpyFile> {
   let mut image = Vec::new();
   while image.len() < bitplane_len {
@@ -177,4 +250,93 @@ fn decode_palette(data: &[u8]) -> [Color; 16] {
     palette[color] = Color::rgb(r, g, b);
   }
   palette
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// 16 distinct colours; the odd offsets make an accidental match with black impossible.
+  fn palette() -> [Color; 16] {
+    let mut palette = [Color::BLACK; 16];
+    for (index, color) in palette.iter_mut().enumerate() {
+      *color = Color::rgb(index as u8 * 16, index as u8 * 16 + 1, index as u8 * 16 + 2);
+    }
+    palette
+  }
+
+  #[test]
+  fn spy_encoder_round_trips_every_plane_and_palette_entry() {
+    let width = 16;
+    let height = 8;
+    let palette = palette();
+    let mut image = Vec::with_capacity(width as usize * height as usize * 3);
+    for row in 0..height {
+      for col in 0..width {
+        let index = if row == 0 { col % 16 } else { (col + row * 3) % 16 };
+        let color = palette[index as usize];
+        image.extend_from_slice(&[color.r, color.g, color.b]);
+      }
+    }
+
+    let encoded = encode_spy(&DecodedImage {
+      width,
+      height,
+      palette,
+      image: image.clone(),
+    })
+    .unwrap();
+    let decoded = decode_spy(width, height, &encoded).unwrap();
+    assert_eq!(decoded.width, width);
+    assert_eq!(decoded.height, height);
+    assert_eq!(decoded.palette, palette);
+    assert_eq!(decoded.image, image);
+  }
+
+  #[test]
+  fn spy_encoder_escapes_a_literal_0x01_plane_byte() {
+    let width = 8;
+    let height = 1;
+    let palette = palette();
+    // Plane 0's only byte is 0b00000001. The encoder must write `01 01 01`; a plain `01` would be
+    // read back as the start of an RLE command.
+    let mut image = Vec::new();
+    for index in [0usize, 0, 0, 0, 0, 0, 0, 1] {
+      let color = palette[index];
+      image.extend_from_slice(&[color.r, color.g, color.b]);
+    }
+
+    let encoded = encode_spy(&DecodedImage {
+      width,
+      height,
+      palette,
+      image: image.clone(),
+    })
+    .unwrap();
+    assert_eq!(&encoded[768..771], &[1, 1, 1]);
+    let decoded = decode_spy(width, height, &encoded).unwrap();
+    assert_eq!(decoded.image, image);
+  }
+
+  #[test]
+  fn spy_encoder_rejects_a_mismatched_buffer() {
+    let image = DecodedImage {
+      width: 16,
+      height: 8,
+      palette: palette(),
+      image: vec![0; 3],
+    };
+    assert!(encode_spy(&image).is_err());
+  }
+
+  #[test]
+  fn spy_encoder_rejects_a_colour_outside_the_palette() {
+    let image = DecodedImage {
+      width: 8,
+      height: 1,
+      palette: palette(),
+      image: [1u8, 2, 3].repeat(8),
+    };
+    assert!(encode_spy(&image).is_err());
+  }
 }

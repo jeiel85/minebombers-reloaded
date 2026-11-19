@@ -1,7 +1,7 @@
 //! Player selection menu.
 //!
 //! Note that this screen in particular behaves a bit differently from the original one.
-use crate::context::{display_change_failed, Animation, ApplicationContext, InputEvent};
+use crate::context::{display_change_failed, save_failed, Animation, ApplicationContext, InputEvent};
 use crate::error::ApplicationError::SdlError;
 use crate::glyphs::Glyph;
 use crate::identities::Identities;
@@ -267,8 +267,12 @@ impl Application<'_> {
       ctx.present()?;
     };
 
-    state.identities.save(ctx.user_dir())?;
-    state.roster.save(ctx.user_dir())?;
+    save_failed(
+      state.identities.save(ctx.user_dir()),
+      "the player identities",
+      ctx.user_dir(),
+    );
+    save_failed(state.roster.save(ctx.user_dir()), "the player roster", ctx.user_dir());
     ctx.animate(Animation::FadeDown, 7)?;
 
     let mut selected = Vec::new();

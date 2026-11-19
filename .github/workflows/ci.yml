@@ -73,6 +73,34 @@ jobs:
       - name: JavaScript tests
         run: node --test web/test/*.test.mjs
 
+  asset-pilot:
+    name: Asset pilot
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # gen_sika.py reads glyphs.rs, level.rs and bitmaps.rs with regular expressions and asserts the
+      # shapes it expects. Running it here turns a silent parse break into a failed check.
+      - name: Generate the pilot sheet
+        run: |
+          python3 -m venv "$RUNNER_TEMP/pilot-venv"
+          "$RUNNER_TEMP/pilot-venv/bin/pip" install --disable-pip-version-check pillow
+          OUT="$RUNNER_TEMP/pilot-out"
+          "$RUNNER_TEMP/pilot-venv/bin/python" tools/asset-pilot/gen_sika.py "$OUT"
+          "$RUNNER_TEMP/pilot-venv/bin/python" - "$OUT" <<'PY'
+          import pathlib
+          import sys
+
+          from PIL import Image
+
+          out = pathlib.Path(sys.argv[1])
+          assert (out / "SIKA.SPY").stat().st_size > 768, "SPY has a palette but no bitplanes"
+          assert Image.open(out / "sika_pilot.png").size == (640, 480), "sheet must stay 640x480"
+          assert (out / "scene_pilot.png").stat().st_size > 0
+          print("asset pilot output ok")
+          PY
+
   fmt:
     name: Formatting
     runs-on: ubuntu-latest

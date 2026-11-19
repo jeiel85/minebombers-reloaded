@@ -1,4 +1,4 @@
-use crate::context::{Animation, ApplicationContext};
+use crate::context::{save_failed, Animation, ApplicationContext};
 use crate::error::ApplicationError::SdlError;
 use crate::keys::{Key, KeysConfig};
 use crate::Application;
@@ -82,10 +82,10 @@ impl Application<'_> {
       }
     }
 
-    // Save all assigned keys to config.toml and legacy cfg
-    keys_config.save(ctx.user_dir())?;
+    // Save all assigned keys to config.toml and legacy cfg; a read-only folder must not end the game
+    save_failed(keys_config.save(ctx.user_dir()), "the key bindings", ctx.user_dir());
     ctx.config.update_from_keys_config(keys_config);
-    let _ = ctx.config.save(ctx.user_dir());
+    save_failed(ctx.config.save(ctx.user_dir()), "the settings", ctx.user_dir());
     ctx.animate(Animation::FadeDown, 7)?;
     Ok(())
   }

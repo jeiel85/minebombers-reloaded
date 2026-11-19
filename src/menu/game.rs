@@ -1,4 +1,4 @@
-use crate::context::{display_change_failed, Animation, ApplicationContext};
+use crate::context::{display_change_failed, save_failed, Animation, ApplicationContext};
 use crate::effects::SoundEffect;
 use crate::error::ApplicationError::SdlError;
 use crate::glyphs::{AnimationPhase, Border, Digging, Glyph};
@@ -337,6 +337,7 @@ impl Application<'_> {
           .then_with(|| player.cash.cmp(score.as_ref().map_or(&0, |s| &s.cash)))
       })
       .unwrap_or_else(|pos| pos);
+    let mut highscore_save_failed = false;
     if pos < scores.scores.len() {
       // Drop the last element, replace it with the new score
       scores.scores[pos..].rotate_right(1);
@@ -345,7 +346,7 @@ impl Application<'_> {
         level: rounds,
         cash: player.cash,
       });
-      scores.save(ctx.user_dir())?;
+      highscore_save_failed = save_failed(scores.save(ctx.user_dir()), "the high scores", ctx.user_dir());
     }
 
     // Positions and colours match the original (captured in DOSBox, issue #36). The bar behind the
@@ -360,6 +361,11 @@ impl Application<'_> {
       Ok(())
     })?;
     ctx.animate(Animation::FadeUp, 7)?;
+    if highscore_save_failed {
+      // The score is already on screen; say that it will not be there next time.
+      ctx.show_osd(&self.font, "HIGH SCORES NOT SAVED", None)?;
+      ctx.present()?;
+    }
     ctx.wait_key_pressed();
     ctx.animate(Animation::FadeDown, 7)?;
     Ok(())
@@ -1247,7 +1253,7 @@ fn update_player_stats(
       roster_stats.update_stats_tournament(stats);
     }
   }
-  roster.save(game_dir)?;
+  save_failed(roster.save(game_dir), "the player stats", game_dir);
   Ok(())
 }
 

@@ -597,7 +597,15 @@ impl WebGame {
 
   pub fn blit_glyph(&self, x: i32, y: i32, glyph: Glyph) {
     let rect = glyph.rect();
-    self.blit_sika(rect.x as u32, rect.y as u32, rect.w, rect.h, x, y, true);
+    self.blit_sika(
+      rect.x as u32,
+      rect.y as u32,
+      rect.w,
+      rect.h,
+      x,
+      y,
+      glyph.is_transparent(),
+    );
   }
 
   pub fn render_current_state(&mut self) {
@@ -1444,7 +1452,15 @@ impl WebGame {
 
     let glyph = Glyph::Map(val);
     let rect = glyph.rect();
-    self.blit_sika(rect.x as u32, rect.y as u32, rect.w, rect.h, dst_x, dst_y, false);
+    self.blit_sika(
+      rect.x as u32,
+      rect.y as u32,
+      rect.w,
+      rect.h,
+      dst_x,
+      dst_y,
+      glyph.is_transparent(),
+    );
   }
 
   fn draw_hud(&self) {
@@ -1963,7 +1979,7 @@ pub extern "C" fn mb_step(p1: u32, p2: u32, p3: u32, p4: u32) -> u32 {
                 rect.h,
                 pos.x as i32 - 5,
                 pos.y as i32 - 5,
-                true,
+                glyph.is_transparent(),
               );
             }
           }

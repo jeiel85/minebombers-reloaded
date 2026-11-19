@@ -1,7 +1,7 @@
 //! Tools to work with SPY files
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::render::{Texture, TextureCreator};
+use sdl2::render::{BlendMode, Texture, TextureCreator};
 use sdl2::video::WindowContext;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -51,7 +51,22 @@ pub fn load_texture<'t>(
   path: &Path,
   format: TextureFormat,
 ) -> Result<TexturePalette<'t>, TextureLoadingFailed> {
-  load_texture_internal(texture_creator, path, format).map_err(|source| TextureLoadingFailed {
+  load_texture_internal(texture_creator, path, format, false).map_err(|source| TextureLoadingFailed {
+    path: path.to_owned(),
+    source,
+  })
+}
+
+/// Load texture at the given path with exact black `(0, 0, 0)` made fully transparent.
+///
+/// Glyphs that are sprites use this sheet (see `mb_core::glyphs::Glyph::is_transparent`); map tiles
+/// and their edge overlays keep the opaque sheet so terrain can overwrite stale pixels.
+pub fn load_texture_keyed<'t>(
+  texture_creator: &'t TextureCreator<WindowContext>,
+  path: &Path,
+  format: TextureFormat,
+) -> Result<TexturePalette<'t>, TextureLoadingFailed> {
+  load_texture_internal(texture_creator, path, format, true).map_err(|source| TextureLoadingFailed {
     path: path.to_owned(),
     source,
   })
@@ -61,6 +76,7 @@ fn load_texture_internal<'t>(
   texture_creator: &'t TextureCreator<WindowContext>,
   path: &Path,
   format: TextureFormat,
+  transparent_black: bool,
 ) -> Result<TexturePalette<'t>, anyhow::Error> {
   let data = std::fs::read(path)?;
 
@@ -68,10 +84,27 @@ fn load_texture_internal<'t>(
     TextureFormat::SPY => decode_spy(SCREEN_WIDTH, SCREEN_HEIGHT, &data)?,
     TextureFormat::PPM => decode_ppm(&data)?,
   };
-  let mut texture =
-    texture_creator.create_texture_static(PixelFormatEnum::RGB24, decoded.width as u32, decoded.height as u32)?;
 
-  texture.update(None, &decoded.image, (decoded.width as usize) * 3)?;
+  let texture = if transparent_black {
+    let mut rgba = Vec::with_capacity(decoded.image.len() / 3 * 4);
+    for px in decoded.image.chunks_exact(3) {
+      rgba.push(px[0]);
+      rgba.push(px[1]);
+      rgba.push(px[2]);
+      rgba.push(if px[0] == 0 && px[1] == 0 && px[2] == 0 { 0 } else { 255 });
+    }
+    let mut texture =
+      texture_creator.create_texture_static(PixelFormatEnum::RGBA32, decoded.width as u32, decoded.height as u32)?;
+    texture.update(None, &rgba, (decoded.width as usize) * 4)?;
+    texture.set_blend_mode(BlendMode::Blend);
+    texture
+  } else {
+    let mut texture =
+      texture_creator.create_texture_static(PixelFormatEnum::RGB24, decoded.width as u32, decoded.height as u32)?;
+    texture.update(None, &decoded.image, (decoded.width as usize) * 3)?;
+    texture
+  };
+
   Ok(TexturePalette {
     palette: decoded.palette,
     texture,
